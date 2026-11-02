@@ -67,7 +67,7 @@ try {
       )
       foreach ($line in (Get-Content $envPath -Encoding UTF8)) {
         if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=') {
-          if (@('ZALO_BOT_TOKEN', 'NIM_API_KEY', 'DEEPSEEK_API_KEY', 'TAVILY_API_KEY') -contains $matches[1]) {
+          if (@('ZALO_BOT_TOKEN', 'NIM_API_KEY', 'DEEPSEEK_API_KEY', 'TAVILY_API_KEY', 'DISCORD_BOT_TOKEN') -contains $matches[1]) {
             $lines += $line.TrimEnd()
           }
         }

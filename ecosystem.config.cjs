@@ -8,7 +8,8 @@
 const base = {
   cwd: __dirname,
   interpreter: 'node',
-  node_args: '--env-file-if-exists=.env',
+  // No --env-file-if-exists: the entries load .env themselves (src/env.js), which keeps
+  // the Node >= 20.6 floor from package.json engines.
   autorestart: true,
   max_restarts: 20,
   restart_delay: 3000,

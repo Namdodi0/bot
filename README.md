@@ -35,11 +35,12 @@ shortcuts such as `mai`/`mốt` for reminders remain supported.
 
 ```powershell
 cd zalo-group-bot
-npm install          # 0 runtime deps; installs typescript/@types/node for typecheck
+npm install          # runtime deps (discord.js); .npmrc sets omit=dev on the server
+npm install --include=dev   # adds typescript/@types/node for `npm run typecheck` and dev
 copy .env.example .env
 # .env: fill in ZALO_BOT_TOKEN, DEEPSEEK_API_KEY, NIM_API_KEY (fallback), TAVILY_API_KEY
 # config.json is tracked and already present; edit it if you need different settings
-# (config.example.json is the baseline reference)
+# (config.example.json is a reference and may differ from the tracked config.json)
 npm run smoke        # checks token + DeepSeek + NIM + Tavily + image validation
 ```
 
@@ -57,7 +58,7 @@ npm run typecheck                # tsc checkJs over src/
 npm run simulate -- "gold price today?"   # run the real agent (DeepSeek/NIM/Tavily) but do NOT send to Zalo
 ```
 
-Environment precedence for **API keys**: variables already in `process.env` (hosting panel, pm2, terminal) **win** over the `.env` file; if a declared variable is **empty**, the `.env` value is filled in. If the token is missing, the error log also prints the working directory and which `.env` file was not found. Non-secret settings are read only from `config.json` (Zalo) or `config.discord.json` (Discord); `--config <path>` selects another file; old non-secret variables left in `.env` are ignored with a startup warning, and the bot refuses to start until they are moved if `config.json` is missing.
+Environment precedence for **API keys**: variables already in `process.env` (hosting panel, pm2, terminal) **win** over the `.env` file; if a declared variable is **empty**, the `.env` value is filled in. If the token is missing, the error log also prints the working directory and which `.env` file was not found. Non-secret settings are read only from `config.json` (Zalo) or `config.discord.json` (Discord); `--config <path>` selects another file for **both** entry points (it overrides the default the entry would pick); old non-secret variables left in `.env` are ignored with a startup warning, and the bot refuses to start until they are moved if `config.json` is missing. Settings the code never reads (a typo such as `allowChatIds`) are also reported at startup.
 
 `simulate` prints the answer as if the bot were in the group, using its own context in `data/simulate/` — handy for trying out tool calling, memory, `/status` and `/reset` before letting the bot loose in a real group.
 
@@ -163,7 +164,7 @@ Run both processes if you want both platforms; their histories and reminders nev
    "dataDir": "./data/discord",
    "discord": { "guildId": "", "allowedChannelIds": [] }
    ```
-   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). When `guildId` is set the bot clears its global commands so the client does not show duplicates. `allowedChannelIds` empty = every channel and DM. The engine settings (model, AI, search, context, tone) are in the same file, independent from the Zalo config.
+   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). When `guildId` is set the bot clears its global commands so the client does not show duplicates. `allowedChannelIds` empty = every channel; DMs are always allowed and a thread inherits its parent channel's entry. The engine settings (model, AI, search, context, tone) are in the same file, independent from the Zalo config.
 6. Start it with `npm run start:discord` (or pm2 `discord-bot`). The log shows `discord bot ready` and the slash-command registration.
 
 In a server the bot answers when it is **@mentioned** or someone **replies** to its message; DMs work directly. Slash commands mirror `/help`, `/status`, `/id`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, `/model`, `/tone`, `/think`, `/split`, `/ping` (Zalo-only `/sticker` is absent). The first reply is a native Discord reply to the triggering message, and images are uploaded as attachments. Discord admins are members with **Manage Server**; `adminIds` in `config.json` applies to Zalo only.
@@ -200,8 +201,8 @@ There are only two files:
 
 | File | Contents |
 |---|---|
-| `.env` (gitignored) | **API keys/tokens only**: `ZALO_BOT_TOKEN`, `NIM_API_KEY`, `DEEPSEEK_API_KEY`, `TAVILY_API_KEY` |
-| `config.json` (tracked) | Settings committed with the repo (`config.example.json` is the same baseline); do **not** put API keys or a real `webhook.secret` in it |
+| `.env` (gitignored) | **API keys/tokens only**: `ZALO_BOT_TOKEN`, `NIM_API_KEY`, `DEEPSEEK_API_KEY`, `TAVILY_API_KEY`, `DISCORD_BOT_TOKEN` (Discord process only) |
+| `config.json` (tracked) | Settings committed with the repo; `config.example.json` is a reference copy and may differ from the tracked file. Do **not** put API keys or a real `webhook.secret` in it |
 
 `.env` variables already set in the host panel/CI win over the file. Non-secret settings are
 read **only** from `config.json` (use `--config <path>` for another file). If an old `.env`
@@ -211,8 +212,9 @@ the ignored names.
 Main `config.json` groups:
 
 - **Zalo / transport**: `mode` (`polling|webhook`), `zalo.botId`, `zalo.baseUrl`, `zalo.parseMode`, `allowedChatIds`, `adminIds`, `webhook.port`, `webhook.host`, `webhook.path`, `webhook.secret` (optional, ≥ 8 chars; empty = auto-generated), `webhook.publicUrl`.
+- **Allow lists**: `allowedChatIds` empty = **every chat** is served (the bot warns at startup — set the group chat IDs in real deployments). For Discord, `discord.allowedChannelIds` empty = every channel; DMs are always allowed, and a **thread inherits its parent channel's entry** (allow the parent and its threads work too).
 - **Two configs**: `config.json` (Zalo, `platform: "zalo"` by default) and `config.discord.json` (Discord, `platform: "discord"`). The engine settings (model, ai, search, context, tone, limits) are per file so each bot can be tuned and deployed independently.
-- **Discord**: `discord.guildId` (instant slash-command registration for one server; empty = global), `discord.allowedChannelIds` (empty = all channels/DMs), `dataDir` (default `./data/discord`). The token is secret: `DISCORD_BOT_TOKEN` in `.env`. `allowedChatIds`/`adminIds` in the Zalo config do not apply to Discord (admin = Manage Server).
+- **Discord**: `discord.guildId` (instant slash-command registration for one server; empty = global), `discord.allowedChannelIds` (empty = all channels; DMs always allowed; threads inherit the parent entry), `dataDir` (default `./data/discord`). The token is secret: `DISCORD_BOT_TOKEN` in `.env`. `allowedChatIds`/`adminIds` in the Zalo config do not apply to Discord (admin = Manage Server).
 - **Models**: `model.defaultAlias` (`deepseek|pro|nim|ultra|nim-light`), `model.fallbackAlias`, `ai.reasoning` (`none|low|medium|high|auto`), `ai.maxTokens` (`null`/`0` = unlimited), `ai.maxToolRounds` (`0` = unlimited tool rounds; default `3`), `responseTimeoutMs` (`0` = no deadline).
 - **DeepSeek**: `deepseek.baseUrl`, `deepseek.model`, `deepseek.proModel`, `deepseek.temperature` (0–2), `deepseek.timeoutMs` (`0` = no limit), `deepseek.topP`, `deepseek.frequencyPenalty`, `deepseek.presencePenalty`, `deepseek.seed`.
 - **NIM**: `nim.baseUrl`, `nim.model`, `nim.ultraModel`, `nim.fallbackModel`, `nim.temperature` (0–2), `nim.timeoutMs` (`0` = no limit), `nim.topP`, `nim.topK`, `nim.minP`, `nim.repetitionPenalty`, `nim.frequencyPenalty`, `nim.presencePenalty`, `nim.seed` (only non-null values are sent).
@@ -222,7 +224,7 @@ Main `config.json` groups:
 - **Behavior**: `tone` (`friendly|roast|roast-hard|roast-extreme`; default `roast-hard`), `typing`, `typingIntervalMs`, `progressive` (`auto|on|off`), `progressiveAfterMs`, `maxMessagesPerReply` (**0 = unlimited**), `maxQueueDepth` (`50`), `userRateLimitPerMinute` (`12`; `0` = off), `image.enabled`, `sticker.enabled`, `sticker.echo`, `sticker.ids` (`id1,id2:name two`).
 - **Log / ops**: `logLevel`, `logThinking`, `logFormat` (`pretty|json`), `logColor` (`auto|always|never`), `opsPort` (`null` = disabled).
 
-CLI flags: `--config <path> --model <alias> --mode --think --max-tokens --progressive --no-progressive --no-search --no-typing --dry-run --once --verbose --json --help`.
+CLI flags: `--config <path> --model <alias> --mode --think --max-tokens --progressive --no-progressive --no-search --no-typing --dry-run --once --verbose --json --help`. `--config` applies to both entry points (Zalo and Discord).
 
 ### Sampling defaults
 
@@ -320,7 +322,7 @@ test-utils/          shared test helpers
 | Bot doesn't answer in the group | Zalo only sends events when the bot is **@mentioned** or someone **replies** to its message. Check for `chat_type=GROUP` in the log and check `allowedChatIds` in `config.json`. |
 | Discord bot doesn't answer in a server | It only answers when **@mentioned** or **replied to** (or in DMs). Enable the **Message Content** intent and check `discord.allowedChannelIds`. |
 | Discord bot isn't running | It is a separate process: `npm start` only starts Zalo. Run `npm run start:discord` (or pm2 `discord-bot`) as well. |
-| Discord bot uses the wrong settings | It always loads `config.discord.json` (not `config.json`); check `platform: "discord"` there. |
+| Discord bot uses the wrong settings | It loads `config.discord.json` (not `config.json`) unless `--config <path>` is given; check `platform: "discord"` there. |
 | Discord slash commands are missing | Invite with the `applications.commands` scope; global commands can take up to an hour — set `discord.guildId` for instant registration. |
 | Discord image upload fails | Discord's default attachment limit is 8MB; the validator rejects larger images. |
 | Log `zalo.getUpdates.empty` / `error_code 408` | Normal: the long-poll timed out with no new messages. The client treats it as "no messages" and does not back off. |
