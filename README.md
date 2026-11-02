@@ -194,33 +194,33 @@ Main `config.json` groups:
 
 CLI flags: `--config <path> --model <alias> --mode --think --max-tokens --progressive --no-progressive --no-search --no-typing --dry-run --once --verbose --json --help`.
 
-### Creative sampling (default)
+### Sampling defaults
 
-The defaults are a balanced creative preset; `config.json` can override any value. Higher
-temperatures (1.2+) made Nemotron Ultra output multilingual token salad, so the tracked
-config uses safer values:
+The defaults are tuned for coherent, moderately creative replies. Higher temperatures
+(1.2+) made Nemotron Ultra output multilingual token salad, so the tracked config stays
+lower. Add the language-lock prompt rule (already in `sections.js`) so the model does not
+mix Vietnamese with Chinese/Korean/Japanese.
 
 ```json
 {
   "nim": {
-    "temperature": 0.85,
-    "topP": 0.95,
-    "frequencyPenalty": 0.1,
-    "presencePenalty": 0.2
+    "temperature": 0.7,
+    "topP": 0.9,
+    "frequencyPenalty": 0,
+    "presencePenalty": 0
   },
   "deepseek": {
-    "temperature": 0.9,
-    "topP": 0.95,
-    "frequencyPenalty": 0.1,
-    "presencePenalty": 0.2
+    "temperature": 0.7,
+    "topP": 0.9,
+    "frequencyPenalty": 0,
+    "presencePenalty": 0
   }
 }
 ```
 
-- Treat `temperature` above ~1.0 as experimental; raise it gradually and check coherence.
+- If the model still mixes languages, lower `temperature` to `0.5–0.6` and `topP` to `0.85`.
+- Penalties stay `0` here because they encourage rare/foreign tokens; raise them only for repetitive answers.
 - `topK: -1`, `minP: 0`, `repetitionPenalty: 1.0–1.05` are NIM-only extras; leave them unset if your hosted endpoint rejects them.
-- `frequencyPenalty` reduces repeated wording; `presencePenalty` pushes new topics/ideas.
-- `seed` makes sampling repeatable (useful for testing, not for creativity).
 
 ## Design & optimizations
 

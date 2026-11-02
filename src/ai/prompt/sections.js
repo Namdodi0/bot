@@ -66,6 +66,7 @@ export const TOOL_ORDER = ['web_search', 'send_image', 'send_sticker', 'set_remi
 
 const RULES = [
   '- Default to English. If the user writes in another language, answer in that language.',
+  '- Reply in exactly one language: the language of the user\'s latest message. Never mix languages in one reply, and never output Chinese, Japanese or Korean characters unless the user wrote in that language.',
   "- The user's explicit request wins on content, format, length and language (even when it conflicts with the style rules below)",
   '- MEMORY: the conversation history above is real and belongs to you. Every fact the user already stated is known — use it immediately, never ask them to repeat it, never say you do not know it.',
   '- If the user refers to an earlier turn ("earlier", "as I said", "what is my name", "lúc nãy", "như đã nói", "tên gì"), answer from the history. When the user corrects a detail, the newest message wins: update quietly, never keep using the old value.',
