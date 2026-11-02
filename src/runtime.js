@@ -12,7 +12,7 @@ import { createCommands } from './commands/index.js';
 import { collectSecrets, describeConfig, isEphemeralDataDir } from './config.js';
 import { createCompactionEngine } from './context/compaction/engine.js';
 import { createContextStore } from './context/store.js';
-import { createHttp } from './http.js';
+import { closeHttpServer, createHttp } from './http.js';
 import { createLogger } from './logger.js';
 import { createImageValidator } from './media/validate.js';
 import { createMetrics } from './metrics.js';
@@ -41,6 +41,9 @@ export function createBoot(input) {
     logger.warn('non-secret .env settings are ignored; move them to config.json', {
       keys: config.ignoredEnvKeys,
     });
+  }
+  if (config.unknownConfigKeys?.length) {
+    logger.warn('unknown config keys are ignored', { keys: config.unknownConfigKeys });
   }
   logger.debug('config', describeConfig(config));
   if (input.envReport) {
@@ -332,7 +335,7 @@ export async function createRuntime(input) {
       logger.error('ops server error (check opsPort)', { error });
     });
     opsServer.listen(config.opsPort, '127.0.0.1');
-    addCleanup(() => new Promise((resolve) => opsServer.close(() => resolve(undefined))));
+    addCleanup(() => closeHttpServer(opsServer));
     logger.info('ops server listening', {
       port: config.opsPort,
       url: `http://127.0.0.1:${config.opsPort}/metrics`,

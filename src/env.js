@@ -29,15 +29,29 @@ let lastReport = null;
 
 /**
  * Strip quotes and trailing comments from a value.
+ * A quoted value ends at its matching closing quote, so `KEY="sk-…" # prod` yields `sk-…`
+ * and anything after the closing quote is ignored. `#` inside the quotes is kept.
  * @param {string} raw
  */
 function normalizeValue(raw) {
   const value = raw.trim();
-  if (value.length >= 2) {
-    const first = value[0];
-    const last = value[value.length - 1];
-    if ((first === '"' || first === "'") && last === first) {
-      const inner = value.slice(1, -1);
+  const first = value[0];
+  if (first === '"' || first === "'") {
+    let end = -1;
+    for (let i = 1; i < value.length; i += 1) {
+      const ch = value[i];
+      // Only "..." supports escapes; inside '...' a backslash is a literal character.
+      if (first === '"' && ch === '\\') {
+        i += 1;
+        continue;
+      }
+      if (ch === first) {
+        end = i;
+        break;
+      }
+    }
+    if (end > 0) {
+      const inner = value.slice(1, end);
       if (first === "'") return inner;
       // Only decode basic escapes for "..."; \n in .env is commonly used for PEM.
       return inner.replace(/\\([nrt"\\])/g, (_, ch) =>
@@ -45,7 +59,7 @@ function normalizeValue(raw) {
       );
     }
   }
-  // Unquoted value: "abc  # note" → "abc"
+  // Unquoted value (or an unterminated quote, which keeps today's behaviour): "abc  # note" → "abc"
   const hash = value.search(/\s#/);
   if (hash >= 0) return value.slice(0, hash).trim();
   return value;

@@ -45,6 +45,7 @@ test('defaults: DeepSeek primary, reasoning off, unlimited context', () => {
   assert.equal(config.deepseek.presencePenalty, 0);
   assert.equal(config.configFile, null);
   assert.equal(config.configFileFound, true);
+  assert.deepEqual(config.unknownConfigKeys, []);
 });
 
 test('reads every setting from config.json', async () => {
@@ -275,6 +276,63 @@ test('platform selects the bot and its required token', () => {
   assert.equal(config.discord.token, 'discord-token');
   assert.deepEqual(config.discord.allowedChannelIds, ['c1', 'c2']);
   assert.deepEqual(config.discord.respondToAllChannelIds, ['c3']);
+});
+
+test('--config overrides the configPath default passed by an entry point', async () => {
+  const dir = await tempDir();
+  const entryDefault = path.join(dir, 'config.discord.json');
+  const cliPath = path.join(dir, 'custom.json');
+  await fsp.writeFile(entryDefault, JSON.stringify({ dataDir: dir, tone: 'friendly' }));
+  await fsp.writeFile(cliPath, JSON.stringify({ dataDir: dir, tone: 'roast' }));
+
+  const config = loadConfig({
+    argv: ['--config', 'custom.json'],
+    env: baseEnv(),
+    cwd: dir,
+    configPath: entryDefault,
+  });
+
+  assert.equal(config.tone, 'roast');
+  assert.equal(config.configFile, cliPath);
+});
+
+test('a missing --config file throws even when configPath is given', async () => {
+  const dir = await tempDir();
+  const entryDefault = path.join(dir, 'config.discord.json');
+  await fsp.writeFile(entryDefault, JSON.stringify({ dataDir: dir }));
+  assert.throws(
+    () =>
+      loadConfig({
+        argv: ['--config', 'missing.json'],
+        env: baseEnv(),
+        cwd: dir,
+        configPath: entryDefault,
+      }),
+    /Config file not found/,
+  );
+});
+
+test('unknown config keys are reported instead of silently dropped', () => {
+  const config = load({ allowChatIds: ['g1'], dataDir: os.tmpdir(), nim: { temperature: 0.5 } });
+
+  assert.deepEqual(config.unknownConfigKeys, ['allowChatIds']);
+  assert.deepEqual(config.allowedChatIds, []);
+});
+
+test('the shipped config files use only known keys', async () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const files = [
+    'config.json',
+    'config.discord.json',
+    'config.example.json',
+    'config.discord.example.json',
+  ];
+  const env = baseEnv({ DISCORD_BOT_TOKEN: 'discord-token' });
+  for (const name of files) {
+    const settings = JSON.parse(await fsp.readFile(path.join(repoRoot, name), 'utf8'));
+    const config = loadConfig({ argv: [], env, config: settings });
+    assert.deepEqual(config.unknownConfigKeys, [], name);
+  }
 });
 
 test('collectSecrets includes every configured key', () => {

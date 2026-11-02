@@ -34,6 +34,28 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const MAX_TIMER_MS = 2_147_483_647;
 
+/** How long a server close may block on keep-alive sockets before shutdown moves on. */
+export const SERVER_CLOSE_TIMEOUT_MS = 2000;
+
+/**
+ * Close an http.Server without hanging on idle keep-alive connections: destroy them
+ * right away and give the close callback a bounded amount of time.
+ * @param {import('node:http').Server} server
+ * @param {number} [timeoutMs]
+ */
+export function closeHttpServer(server, timeoutMs = SERVER_CLOSE_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    timer.unref?.();
+    server.close(() => {
+      clearTimeout(timer);
+      resolve(undefined);
+    });
+    // Node >= 18.2; older runtimes simply wait for the timeout above.
+    server.closeAllConnections?.();
+  });
+}
+
 /**
  * Combine the caller signal with a timeout signal. A non-finite or <= 0 timeout means
  * "no limit": the request waits until the caller aborts or the connection drops.
@@ -88,9 +110,13 @@ export function createHttp(options = {}) {
   /** @param {string} service */
   function assertClosed(service) {
     const state = breakerFor(service);
-    if (state.openedUntil > now()) {
-      throw new CircuitOpenError(service, state.openedUntil - now());
-    }
+    if (state.openedUntil === 0) return;
+    const remaining = state.openedUntil - now();
+    if (remaining > 0) throw new CircuitOpenError(service, remaining);
+    // Cooldown over: start a clean window (half-open probe). Without the reset the old
+    // failure count stays >= threshold, so a single new failure would re-open instantly.
+    state.failures = 0;
+    state.openedUntil = 0;
   }
 
   /** @param {string} service */

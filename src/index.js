@@ -63,7 +63,10 @@ async function main() {
       icon: '🤖',
     });
     if (config.zalo.botId && me.id && String(me.id) !== config.zalo.botId) {
-      logger.warn('ZALO_BOT_ID does not match the token', { expected: config.zalo.botId, actual: me.id });
+      logger.warn('config.zalo.botId does not match the token', {
+        expected: config.zalo.botId,
+        actual: me.id,
+      });
     }
     if (me.can_join_groups !== true) {
       logger.warn('this bot is not allowed to join groups (can_join_groups=false)');

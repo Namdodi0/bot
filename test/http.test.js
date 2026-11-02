@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CircuitOpenError, HttpError, createHttp } from '../src/http.js';
+import { CircuitOpenError, HttpError, closeHttpServer, createHttp } from '../src/http.js';
 
 /** @param {unknown} body @param {number} [status] */
 function response(body, status = 200) {
@@ -91,6 +91,91 @@ test('circuit breaker opens after 5 server failures', async () => {
   );
   assert.equal(calls, 5);
   assert.equal(http.stateOf('breaker').open, true);
+});
+
+test('circuit breaker re-arms after the cooldown (one new failure does not re-open it)', async () => {
+  let time = 1_000;
+  let failing = true;
+  let calls = 0;
+  const http = createHttp({
+    sleep: noSleep,
+    now: () => time,
+    fetchImpl: async () => {
+      calls += 1;
+      return failing ? response({ error: 'nope' }, 500) : response({ ok: true });
+    },
+  });
+
+  for (let i = 0; i < 5; i += 1) {
+    await assert.rejects(() => http.requestJson('https://example.com', { service: 'rearm', retries: 0 }));
+  }
+  await assert.rejects(
+    () => http.requestJson('https://example.com', { service: 'rearm', retries: 0 }),
+    (error) => error instanceof CircuitOpenError,
+  );
+
+  time += 30_000;
+  // Cooldown over: a single new failure must not re-open the breaker.
+  await assert.rejects(() => http.requestJson('https://example.com', { service: 'rearm', retries: 0 }));
+  assert.equal(http.stateOf('rearm').open, false);
+  assert.equal(http.stateOf('rearm').failures, 1);
+
+  failing = false;
+  const result = await http.requestJson('https://example.com', { service: 'rearm', retries: 0 });
+  assert.equal(result.status, 200);
+  assert.equal(http.stateOf('rearm').failures, 0);
+  assert.equal(calls, 7);
+});
+
+test('breaker state resets failures before evaluating the next request', async () => {
+  let time = 0;
+  const http = createHttp({
+    sleep: noSleep,
+    now: () => time,
+    fetchImpl: async () => response({ error: 'nope' }, 500),
+  });
+  for (let i = 0; i < 5; i += 1) {
+    await assert.rejects(() => http.requestJson('https://example.com', { service: 'window', retries: 0 }));
+  }
+  assert.equal(http.stateOf('window').failures, 5);
+
+  time += 30_001;
+  await assert.rejects(() => http.requestJson('https://example.com', { service: 'window', retries: 0 }));
+  assert.equal(http.stateOf('window').failures, 1);
+  assert.equal(http.stateOf('window').open, false);
+});
+
+test('closeHttpServer destroys keep-alive connections and resolves on close', async () => {
+  let closeCalled = false;
+  let connectionsDestroyed = false;
+  const fake = {
+    close(callback) {
+      closeCalled = true;
+      setTimeout(callback, 0);
+    },
+    closeAllConnections() {
+      connectionsDestroyed = true;
+    },
+  };
+  await closeHttpServer(fake);
+  assert.equal(closeCalled, true);
+  assert.equal(connectionsDestroyed, true);
+});
+
+test('closeHttpServer gives up after the timeout when close never calls back', async () => {
+  const fake = { close() {}, closeAllConnections() {} };
+  const started = Date.now();
+  await closeHttpServer(fake, 20);
+  assert.ok(Date.now() - started >= 10);
+});
+
+test('closeHttpServer still resolves without closeAllConnections', async () => {
+  const fake = {
+    close(callback) {
+      setTimeout(callback, 0);
+    },
+  };
+  await closeHttpServer(fake);
 });
 
 test('client errors (4xx) do not trip the circuit breaker', async () => {

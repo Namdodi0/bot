@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { createMetrics } from '../src/metrics.js';
 import { createWebhookServer } from '../src/zalo/webhook.js';
 import { makeConfig, silentLogger } from '../test-utils/helpers.js';
@@ -64,6 +65,40 @@ test('webhook: secret, broken JSON, event dispatch, query string', async () => {
     assert.equal(response.status, 404);
   } finally {
     await server.stop();
+  }
+});
+
+test('webhook: stop() closes idle keep-alive sockets instead of waiting for them', async () => {
+  const config = makeConfig();
+  config.webhook = { ...config.webhook, host: '127.0.0.1', port: 0 };
+  const server = createWebhookServer({
+    config,
+    logger: silentLogger,
+    metrics: createMetrics(),
+    onEvent: () => {},
+  });
+  const info = await server.start();
+  const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+
+  try {
+    const body = await new Promise((resolve, reject) => {
+      const req = http.request(`http://127.0.0.1:${info.port}/healthz`, { agent }, (res) => {
+        /** @type {Buffer[]} */
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.match(body, /"ok":true/);
+
+    // The socket now sits idle in the agent pool: a plain close() would wait for it.
+    const started = Date.now();
+    await server.stop();
+    assert.ok(Date.now() - started < 1500, 'stop() must not wait for the idle keep-alive socket');
+  } finally {
+    agent.destroy();
   }
 });
 

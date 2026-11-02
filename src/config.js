@@ -250,6 +250,103 @@ export function collectSecrets(config) {
   ].filter(Boolean);
 }
 
+/**
+ * Settings that config.js reads, used to report typos (`allowChatIds` instead of
+ * `allowedChatIds`) instead of silently serving every chat. Keep in sync with loadConfig.
+ */
+const KNOWN_TOP_LEVEL_KEYS = new Set([
+  'platform',
+  'mode',
+  'dataDir',
+  'allowedChatIds',
+  'adminIds',
+  'tone',
+  'typing',
+  'typingIntervalMs',
+  'progressive',
+  'progressiveAfterMs',
+  'maxMessagesPerReply',
+  'maxQueueDepth',
+  'userRateLimitPerMinute',
+  'responseTimeoutMs',
+  'logLevel',
+  'logThinking',
+  'logFormat',
+  'logColor',
+  'opsPort',
+]);
+
+/** @type {Record<string, Set<string>>} */
+const KNOWN_SECTION_KEYS = {
+  zalo: new Set(['botId', 'baseUrl', 'parseMode']),
+  discord: new Set(['guildId', 'allowedChannelIds', 'respondToAllChannelIds']),
+  webhook: new Set(['port', 'host', 'path', 'secret', 'publicUrl']),
+  nim: new Set([
+    'baseUrl',
+    'model',
+    'ultraModel',
+    'fallbackModel',
+    'temperature',
+    'timeoutMs',
+    'topP',
+    'topK',
+    'minP',
+    'repetitionPenalty',
+    'frequencyPenalty',
+    'presencePenalty',
+    'seed',
+  ]),
+  deepseek: new Set([
+    'baseUrl',
+    'model',
+    'proModel',
+    'temperature',
+    'timeoutMs',
+    'topP',
+    'frequencyPenalty',
+    'presencePenalty',
+    'seed',
+  ]),
+  model: new Set(['defaultAlias', 'fallbackAlias']),
+  ai: new Set(['reasoning', 'maxTokens', 'maxToolRounds']),
+  context: new Set([
+    'maxTokens',
+    'maxMessages',
+    'maxCharsPerMessage',
+    'ttlHours',
+    'summary',
+    'modelWindow',
+    'compactThreshold',
+    'keepRecent',
+    'summaryMaxChars',
+    'toolResultKeepChars',
+  ]),
+  search: new Set(['enabled', 'auto', 'baseUrl', 'depth', 'maxResults', 'country', 'cacheTtlMs']),
+  image: new Set(['enabled']),
+  sticker: new Set(['enabled', 'echo', 'ids']),
+};
+
+/**
+ * Dotted names of settings that config.js never reads. Reported at startup (never fatal):
+ * a typo like `allowChatIds` would otherwise silently leave `allowedChatIds` empty.
+ * @param {Record<string, any>} root
+ */
+export function collectUnknownConfigKeys(root) {
+  /** @type {string[]} */
+  const unknown = [];
+  for (const key of Object.keys(root ?? {})) {
+    if (!KNOWN_TOP_LEVEL_KEYS.has(key) && !Object.hasOwn(KNOWN_SECTION_KEYS, key)) unknown.push(key);
+  }
+  for (const [name, known] of Object.entries(KNOWN_SECTION_KEYS)) {
+    const value = root?.[name];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    for (const key of Object.keys(value)) {
+      if (!known.has(key)) unknown.push(`${name}.${key}`);
+    }
+  }
+  return unknown.sort();
+}
+
 /** @type {import('node:util').ParseArgsOptionsConfig} */
 const CLI_OPTIONS = {
   config: { type: 'string' },
@@ -344,7 +441,9 @@ export function loadConfig(input = {}) {
     return /** @type {any} */ ({ help: true });
   }
 
-  const explicitConfigPath = input.configPath ?? (cli.config ? path.resolve(cwd, String(cli.config)) : null);
+  // An explicit --config always wins: entries that pass their own default path
+  // (config.discord.json) must still honour the flag.
+  const explicitConfigPath = cli.config ? path.resolve(cwd, String(cli.config)) : (input.configPath ?? null);
   const configPath = explicitConfigPath ?? DEFAULT_CONFIG_PATH;
   let root;
   let configFileFound;
@@ -536,6 +635,8 @@ export function loadConfig(input = {}) {
     asOptionalNumber(deepseekSection.presencePenalty, 'config.deepseek.presencePenalty', { min: -2, max: 2 }) ?? 0;
   const deepseekSeed = asOptionalInt(deepseekSection.seed, 'config.deepseek.seed', { min: 0 });
 
+  const unknownConfigKeys = collectUnknownConfigKeys(root);
+
   const config = {
     help: false,
     version: VERSION,
@@ -543,6 +644,7 @@ export function loadConfig(input = {}) {
     configFile: input.config !== undefined ? null : configPath,
     configFileFound,
     ignoredEnvKeys: legacyEnvKeys,
+    unknownConfigKeys,
     zalo: {
       token,
       botId: asString(zaloSection.botId, 'config.zalo.botId'),

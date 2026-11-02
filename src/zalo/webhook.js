@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import { closeHttpServer } from '../http.js';
 import { normalizeUpdates } from './events.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -150,7 +151,7 @@ export function createWebhookServer(options) {
     if (!server) return;
     const current = server;
     server = null;
-    await new Promise((resolve) => current.close(() => resolve(undefined)));
+    await closeHttpServer(current);
   }
 
   return { start, stop, get server() { return server; } };

@@ -36,6 +36,21 @@ test('parseEnvFile: single/double quotes and trailing comments', () => {
   assert.deepEqual(parseEnvFile('D="a\\nb"'), [['D', 'a\nb']]);
 });
 
+test('parseEnvFile: a quoted value drops the quotes and any trailing comment', () => {
+  assert.deepEqual(parseEnvFile('A="sk-abc123" # prod'), [['A', 'sk-abc123']]);
+  assert.deepEqual(parseEnvFile('B="sk-abc123"# no space before the hash'), [['B', 'sk-abc123']]);
+  assert.deepEqual(parseEnvFile('C="a # b" # note'), [['C', 'a # b']]);
+});
+
+test('parseEnvFile: single-quoted values keep hashes and drop the trailing comment', () => {
+  assert.deepEqual(parseEnvFile("A='tvly-x # not a comment'"), [['A', 'tvly-x # not a comment']]);
+  assert.deepEqual(parseEnvFile("B='plain' # note"), [['B', 'plain']]);
+});
+
+test('parseEnvFile: a hash without preceding whitespace stays part of the value', () => {
+  assert.deepEqual(parseEnvFile('A=abc#123'), [['A', 'abc#123']]);
+});
+
 test('parseEnvFile: skips junk lines and invalid keys', () => {
   const entries = parseEnvFile(['no-equals-sign', '=no-key', '1BAD=x', 'GOOD=1', '# A=1'].join('\n'));
   assert.deepEqual(entries, [['GOOD', '1']]);
