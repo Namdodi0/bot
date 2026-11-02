@@ -83,3 +83,15 @@ test('discord transport constructs without logging in', async () => {
   assert.equal(transport.displayName, '');
   assert.equal(transport.ping('discord:1'), 0);
 });
+
+test('isBotRoleMentioned accepts the bot managed role only', async () => {
+  const { isBotRoleMentioned } = await import('../src/discord/events.js');
+  const message = (botId) => ({
+    mentions: {
+      roles: new Map([['r1', { id: 'r1', tags: { botId } }]]),
+    },
+  });
+  assert.equal(isBotRoleMentioned(message('bot1'), 'bot1'), true);
+  assert.equal(isBotRoleMentioned(message('other-bot'), 'bot1'), false);
+  assert.equal(isBotRoleMentioned({ mentions: { roles: new Map() } }, 'bot1'), false);
+});

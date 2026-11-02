@@ -64,6 +64,19 @@ export function toDiscordEvent(message, client) {
 }
 
 /**
+ * Discord's mention picker also offers the bot's managed role (named after the bot).
+ * Treat a mention of that role as a mention of the bot itself.
+ * @param {any} message
+ * @param {string} botId
+ */
+export function isBotRoleMentioned(message, botId) {
+  const id = String(botId ?? '');
+  if (!id) return false;
+  const roles = [...(message?.mentions?.roles?.values?.() ?? [])];
+  return roles.some((role) => String(role?.tags?.botId ?? '') === id);
+}
+
+/**
  * Turn a slash command interaction into the same synthetic text event the command router
  * already understands (`/name arg1 arg2`). Boolean options named "all" become the word "all".
  * @param {any} interaction discord.js ChatInputCommandInteraction-like

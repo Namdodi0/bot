@@ -1,5 +1,5 @@
 import { AttachmentBuilder, Client, GatewayIntentBits, Partials } from 'discord.js';
-import { DISCORD_CHAT_PREFIX, toDiscordEvent, toDiscordInteractionEvent } from './events.js';
+import { DISCORD_CHAT_PREFIX, isBotRoleMentioned, toDiscordEvent, toDiscordInteractionEvent } from './events.js';
 
 const TYPING_REFRESH_MS = 8_000;
 
@@ -183,15 +183,25 @@ export function createDiscordTransport(options) {
   /** @param {any} message */
   async function handleMessage(message) {
     if (message.author?.bot) return;
-    if (config.allowedChannelIds?.length && !config.allowedChannelIds.includes(message.channelId)) return;
     const isDm = message.channel?.isDMBased?.() === true;
     const mentioned = Boolean(client.user && message.mentions?.users?.has(client.user.id));
+    // The mention picker also offers the bot's managed role; accept it as a mention.
+    const roleMentioned = isBotRoleMentioned(message, client.user?.id ?? '');
+    logger?.debug('discord message received', {
+      channelId: message.channelId,
+      author: message.author?.username,
+      isDm,
+      mentioned,
+      roleMentioned,
+      reference: Boolean(message.reference?.messageId),
+    });
+    if (config.allowedChannelIds?.length && !config.allowedChannelIds.includes(message.channelId)) return;
     let repliedToBot = false;
-    if (!mentioned && !isDm && message.reference?.messageId) {
+    if (!mentioned && !roleMentioned && !isDm && message.reference?.messageId) {
       const referenced = await message.fetchReference().catch(() => null);
       repliedToBot = Boolean(referenced && referenced.author?.id === client.user?.id);
     }
-    if (!mentioned && !repliedToBot && !isDm) return;
+    if (!mentioned && !roleMentioned && !repliedToBot && !isDm) return;
     const event = toDiscordEvent(message, client);
     if (!event) return;
     metrics?.inc('discord.messages.in');
