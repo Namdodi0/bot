@@ -19,9 +19,9 @@ A chat bot for **Zalo group chats**, powered by **DeepSeek Flash** (primary) wit
 
 ## Language
 
-English is the default language for replies, commands, logs and documentation. The bot
-switches to the user's language when they write in Vietnamese (or any other language);
-Vietnamese input shortcuts such as `mai`/`mốt` for reminders remain supported.
+The bot replies in the language the user is using; there is no forced default language or
+language lock. Commands, logs and documentation remain in English. Vietnamese input
+shortcuts such as `mai`/`mốt` for reminders remain supported.
 
 ## Requirements
 
@@ -198,19 +198,19 @@ CLI flags: `--config <path> --model <alias> --mode --think --max-tokens --progre
 
 The defaults are tuned for coherent, moderately creative replies. Higher temperatures
 (1.2+) made Nemotron Ultra output multilingual token salad, so the tracked config stays
-lower. Add the language-lock prompt rule (already in `sections.js`) so the model does not
-mix Vietnamese with Chinese/Korean/Japanese.
+lower. There is no language-lock prompt rule; if a model starts mixing languages, lower the
+temperature further.
 
 ```json
 {
   "nim": {
-    "temperature": 0.7,
+    "temperature": 0.5,
     "topP": 0.9,
     "frequencyPenalty": 0,
     "presencePenalty": 0
   },
   "deepseek": {
-    "temperature": 0.7,
+    "temperature": 0.5,
     "topP": 0.9,
     "frequencyPenalty": 0,
     "presencePenalty": 0
@@ -218,7 +218,7 @@ mix Vietnamese with Chinese/Korean/Japanese.
 }
 ```
 
-- If the model still mixes languages, lower `temperature` to `0.5–0.6` and `topP` to `0.85`.
+- If the model still mixes languages or rambles, lower `temperature` to `0.4–0.5` and `topP` to `0.85`; the prompt already asks for 1–3 sentence replies by default.
 - Penalties stay `0` here because they encourage rare/foreign tokens; raise them only for repetitive answers.
 - `topK: -1`, `minP: 0`, `repetitionPenalty: 1.0–1.05` are NIM-only extras; leave them unset if your hosted endpoint rejects them.
 

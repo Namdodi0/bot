@@ -22,8 +22,9 @@ this file is for agents and maintainers.
   - `src/ai/prompt/entries.js` keeps Vietnamese time keywords.
   - `src/ai/reminders.js` keeps Vietnamese aliases (`mai`, `mốt`) and `+10m`-style input.
   - Test fixtures may use Vietnamese text to exercise those paths.
-- The model still replies in Vietnamese when the user writes Vietnamese; otherwise it
-  replies in English (`Default to English` rule in `src/ai/prompt/sections.js`).
+- There is no hard language lock: the model replies in the language the user is using.
+  The former `Default to English` / single-language rules were removed from
+  `src/ai/prompt/sections.js` at the owner's request.
 - TONE_RULES are language-aware: Vietnamese register when replying in Vietnamese, English
   equivalents when replying in English.
 
