@@ -26,8 +26,8 @@
     "topK": null,
     "minP": null,
     "repetitionPenalty": null,
-    "frequencyPenalty": 0,
-    "presencePenalty": 0,
+    "frequencyPenalty": 0.3,
+    "presencePenalty": 0.3,
     "seed": null
   },
   "deepseek": {
@@ -37,8 +37,8 @@
     "temperature": 0.5,
     "timeoutMs": 0,
     "topP": 0.9,
-    "frequencyPenalty": 0,
-    "presencePenalty": 0,
+    "frequencyPenalty": 0.3,
+    "presencePenalty": 0.3,
     "seed": null
   },
   "model": {
@@ -47,7 +47,8 @@
   },
   "ai": {
     "reasoning": "none",
-    "maxTokens": null
+    "maxTokens": null,
+    "maxToolRounds": 3
   },
   "responseTimeoutMs": 0,
   "context": {

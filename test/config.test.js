@@ -120,6 +120,12 @@ test('the primary provider needs its key; other providers are optional', () => {
   assert.equal(config.model.defaultAlias, 'nim');
 });
 
+test('ai.maxToolRounds: 0 means unlimited; negative values are rejected', () => {
+  assert.equal(load({ ai: { maxToolRounds: 0 } }).ai.maxToolRounds, 0);
+  assert.equal(load({ ai: { maxToolRounds: 5 } }).ai.maxToolRounds, 5);
+  assert.throws(() => load({ ai: { maxToolRounds: -1 } }), /config\.ai\.maxToolRounds/);
+});
+
 test('maxTokens: 0 means unlimited; negative values are rejected', () => {
   assert.equal(load({ ai: { maxTokens: 0 } }).ai.maxTokens, null);
   assert.equal(load({ ai: { maxTokens: 512 } }).ai.maxTokens, 512);

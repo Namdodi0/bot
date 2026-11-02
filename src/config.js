@@ -583,6 +583,8 @@ export function loadConfig(input = {}) {
     ai: {
       reasoning: /** @type {ReasoningMode} */ (reasoning),
       maxTokens,
+      // 0 = unlimited tool rounds (the model may keep calling tools until it answers).
+      maxToolRounds: /** @type {number} */ (asInt(aiSection.maxToolRounds, 'config.ai.maxToolRounds', 3, { min: 0 })),
     },
     // 0 = no deadline (the bot waits until the provider answers).
     responseTimeoutMs: /** @type {number} */ (asInt(root.responseTimeoutMs, 'config.responseTimeoutMs', 0, { min: 0 })),

@@ -20,6 +20,7 @@ function runtime(config, stickerStore) {
     stickers: stickerStore,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
   });
   return { tools, zalo };
 }
@@ -180,4 +181,62 @@ test('set_reminder tool: reports the per-chat limit and is absent without a stor
   assert.match(result.text, /5 reminders/);
 
   assert.equal(make(null).definitions().some((tool) => tool.function.name === 'set_reminder'), false);
+});
+
+test('send_image sends the requested count', async () => {
+  /** @type {string[]} */
+  const sent = [];
+  const images = Array.from({ length: 12 }, (_, index) => `https://img.example/${index}.png`);
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: {
+      search: async (query) => ({
+        results: [],
+        images: String(query).endsWith('2') ? images.slice(6) : images.slice(0, 6),
+      }),
+    },
+    zalo: {
+      sendPhoto: async (_chatId, url) => {
+        sent.push(url);
+        return { ok: true };
+      },
+      sendSticker: async () => ({ ok: true }),
+    },
+    validator: { validate: async () => ({ ok: true }) },
+    stickers: fakeStickers,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+  });
+
+  const result = await tools.run('send_image', { query: 'create mod', count: 10 }, { chatId: 'c1' });
+  assert.equal(result.ok, true);
+  assert.equal(sent.length, 10);
+  assert.match(result.text, /Sent 10 images/);
+});
+
+test('send_image reports a partial batch when there are not enough unique images', async () => {
+  /** @type {string[]} */
+  const sent = [];
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png', 'https://img.example/b.png'] }) },
+    zalo: {
+      sendPhoto: async (_chatId, url) => {
+        sent.push(url);
+        return { ok: true };
+      },
+      sendSticker: async () => ({ ok: true }),
+    },
+    validator: { validate: async () => ({ ok: true }) },
+    stickers: fakeStickers,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+  });
+
+  const result = await tools.run('send_image', { query: 'cat', count: 5 }, { chatId: 'c1' });
+  assert.equal(result.ok, true);
+  assert.equal(sent.length, 2);
+  assert.match(result.text, /2 of 5/);
 });

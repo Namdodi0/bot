@@ -18,9 +18,11 @@ import {
 import { LLM_ERROR, isRetryableLlmError } from './llm/errors.js';
 import { createRetryExecutor } from './llm/retry.js';
 import { buildSearchContext, createZaloPrompt } from './prompt/index.js';
+import { pickStyleSeed } from './prompt/sections.js';
 
 const MAX_CONCURRENT_CHATS = 4;
-const MAX_TOOL_ROUNDS = 3;
+const DEFAULT_MAX_TOOL_ROUNDS = 3;
+const TOOL_ROUND_WARN = 20;
 const CHUNK_LIMIT = 1900;
 const FALLBACK_RESERVE_RATIO = 0.25;
 const FALLBACK_RESERVE_MAX_MS = 8000;
@@ -379,6 +381,8 @@ export function createAgent(deps) {
       tools: toolDefs,
       imageEnabled: config.image.enabled,
       tone,
+      // Rotates every turn so the roast reaches for different imagery instead of repeating itself.
+      styleSeed: pickStyleSeed((record?.turns ?? 0) + 1),
     });
     const promptAssembly = promptRegistry.assemble({ text: effectiveText, now: new Date() });
     const systemPrompt = promptRegistry.render(promptAssembly);
@@ -514,7 +518,13 @@ export function createAgent(deps) {
     let answeredBy = null;
     let abortReason = '';
 
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    const configuredRounds = Number(config.ai?.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS);
+    const unlimitedRounds = !Number.isFinite(configuredRounds) || configuredRounds <= 0;
+
+    for (let round = 0; unlimitedRounds || round < configuredRounds; round += 1) {
+      if (unlimitedRounds && round === TOOL_ROUND_WARN) {
+        logger.warn('many tool rounds (maxToolRounds=0)', { chatId: event.chatId, round, icon: '🔁' });
+      }
       const remaining = deadline - Date.now();
       if (remaining < 1500) {
         aborted = true;

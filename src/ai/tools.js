@@ -1,8 +1,11 @@
 import { formatSearchResults } from '../search/tavily.js';
 import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from './reminders.js';
 
+/** @param {number} ms */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, zalo: ReturnType<typeof import('../zalo/client.js').createZaloClient>, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any}} options
+ * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, zalo: ReturnType<typeof import('../zalo/client.js').createZaloClient>, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number}} options
  */
 export function createToolRuntime(options) {
   const config = options.config;
@@ -13,6 +16,7 @@ export function createToolRuntime(options) {
   const reminders = options.reminders;
   const logger = options.logger;
   const metrics = options.metrics;
+  const sendDelayMs = options.sendDelayMs ?? 400;
 
   function definitions() {
     /** @type {any[]} */
@@ -41,11 +45,18 @@ export function createToolRuntime(options) {
         type: 'function',
         function: {
           name: 'send_image',
-          description: 'Find and send an image into the current conversation. Use when the user asks for a picture.',
+          description:
+            'Find and send images into the current conversation. Use when the user asks for pictures. Set count to the number of images requested: it sends one Zalo message per image and has no per-request cap.',
           parameters: {
             type: 'object',
             properties: {
               query: { type: 'string', description: 'Image keywords to search for, e.g. "cute kitten"' },
+              count: {
+                type: 'integer',
+                minimum: 1,
+                description:
+                  'How many images to send (default 1). Pass the number the user asked for; never cap it yourself.',
+              },
               caption: { type: 'string', description: 'Short caption for the image (optional)' },
             },
             required: ['query'],
@@ -206,60 +217,86 @@ export function createToolRuntime(options) {
     }
     const query = String(args?.query ?? '').trim().slice(0, 200);
     if (!query) return { ok: false, text: 'Missing image keywords.' };
+    const requested = Math.max(1, Math.trunc(Number(args?.count ?? args?.number ?? 1)) || 1);
+    const caption = String(args?.caption ?? '').trim() || query;
 
-    try {
-      const data = await tavily.search(query, {
-        searchDepth: 'fast',
-        maxResults: 3,
-        includeImages: true,
-        country: config.search.country,
-        timeoutMs: Number.isFinite(ctx.deadline)
-          ? Math.max(1500, Math.min(9000, /** @type {number} */ (ctx.deadline) - Date.now()))
-          : 0,
-      });
+    const remaining = () =>
+      Number.isFinite(ctx.deadline) ? /** @type {number} */ (ctx.deadline) - Date.now() : Number.POSITIVE_INFINITY;
+    const searchTimeout = () => (Number.isFinite(ctx.deadline) ? Math.max(1500, Math.min(9000, remaining())) : 0);
 
-      /** @type {string[]} */
-      const urls = [];
-      for (const image of data.images) {
-        urls.push(typeof image === 'string' ? image : image?.url);
+    // Collect a small buffer beyond the requested count so rejected URLs can be replaced.
+    const wanted = requested + Math.max(3, Math.ceil(requested * 0.5));
+    /** @type {string[]} */
+    const urls = [];
+    const seen = new Set();
+    let searches = 0;
+    const maxSearches = Math.max(1, Math.ceil(wanted / 3) + 2);
+    while (urls.length < wanted && searches < maxSearches && remaining() > 1500) {
+      const searchQuery = searches === 0 ? query : `${query} ${searches + 1}`;
+      searches += 1;
+      try {
+        const data = await tavily.search(searchQuery, {
+          searchDepth: 'fast',
+          maxResults: Math.min(10, Math.max(3, config.search.maxResults)),
+          includeImages: true,
+          country: config.search.country,
+          timeoutMs: searchTimeout(),
+        });
+        const add = (image) => {
+          const url = typeof image === 'string' ? image : image?.url;
+          if (typeof url === 'string' && url.startsWith('http') && !seen.has(url)) {
+            seen.add(url);
+            urls.push(url);
+          }
+        };
+        for (const image of data.images) add(image);
+        for (const result of data.results) for (const image of result?.images ?? []) add(image);
+      } catch (error) {
+        logger.debug('image search failed', {
+          query: searchQuery,
+          error: String(/** @type {any} */ (error)?.message ?? error),
+        });
       }
-      for (const result of data.results) {
-        for (const image of result?.images ?? []) {
-          urls.push(typeof image === 'string' ? image : image?.url);
-        }
-      }
-      const unique = [...new Set(urls.filter((url) => typeof url === 'string' && url.startsWith('http')))].slice(0, 3);
-      const deadline = ctx.deadline ?? Date.now() + 30_000;
-
-      for (const url of unique) {
-        if (Date.now() > deadline) break;
-        const check = await validator.validate(url);
-        if (!check.ok) {
-          logger.debug('image rejected by validator', { url, reason: check.reason, icon: '🚫' });
-          continue;
-        }
-        if (Date.now() > deadline) break;
-        const caption = String(args?.caption ?? '').trim() || query;
-        try {
-          await zalo.sendPhoto(ctx.chatId, url, caption);
-          metrics?.inc('tool.sendImage.ok');
-          logger.info('image sent', { query, url, icon: '🖼️' });
-          return { ok: true, text: `Sent the image "${query}" to the user.`, data: { url } };
-        } catch (error) {
-          // A URL can validate but still be rejected by Zalo: try the next candidate.
-          logger.debug('send_image failed, trying next candidate', {
-            url,
-            error: String(/** @type {any} */ (error)?.message ?? error),
-          });
-        }
-      }
-
-      metrics?.inc('tool.sendImage.fail');
-      return { ok: false, text: 'Could not find a valid image to send.' };
-    } catch (error) {
-      logger.warn('send_image failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
-      return { ok: false, text: `Failed to send image: ${String(/** @type {any} */ (error)?.message ?? error)}` };
     }
+
+    let sent = 0;
+    /** @type {string[]} */
+    const sentUrls = [];
+    for (const url of urls) {
+      if (sent >= requested || remaining() <= 0) break;
+      const check = await validator.validate(url);
+      if (!check.ok) {
+        logger.debug('image rejected by validator', { url, reason: check.reason, icon: '🚫' });
+        continue;
+      }
+      if (remaining() <= 0) break;
+      try {
+        await zalo.sendPhoto(ctx.chatId, url, caption);
+        sent += 1;
+        sentUrls.push(url);
+        metrics?.inc('tool.sendImage.ok');
+        logger.info('image sent', { query, url, sent, requested, icon: '🖼️' });
+      } catch (error) {
+        // A URL can validate but still be rejected by Zalo (or hit a rate limit):
+        // move on to the next candidate instead of retrying the same one.
+        logger.debug('send_image failed, trying next candidate', {
+          url,
+          error: String(/** @type {any} */ (error)?.message ?? error),
+        });
+        continue;
+      }
+      if (sent < requested && sendDelayMs > 0) await sleep(sendDelayMs);
+    }
+
+    if (!sent) {
+      metrics?.inc('tool.sendImage.fail');
+      return { ok: false, text: `Could not find a valid image to send for "${query}".` };
+    }
+    const text =
+      sent >= requested
+        ? `Sent ${sent} image${sent === 1 ? '' : 's'} for "${query}".`
+        : `Sent ${sent} of ${requested} requested images for "${query}" — the search ran out of valid unique images.`;
+    return { ok: true, text, data: { sent, requested, urls: sentUrls } };
   }
 
   /**

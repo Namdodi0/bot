@@ -183,7 +183,7 @@ the ignored names.
 Main `config.json` groups:
 
 - **Zalo / transport**: `mode` (`polling|webhook`), `zalo.botId`, `zalo.baseUrl`, `zalo.parseMode`, `allowedChatIds`, `adminIds`, `webhook.port`, `webhook.host`, `webhook.path`, `webhook.secret` (optional, ≥ 8 chars; empty = auto-generated), `webhook.publicUrl`.
-- **Models**: `model.defaultAlias` (`deepseek|pro|nim|ultra|nim-light`), `model.fallbackAlias`, `ai.reasoning` (`none|low|medium|high|auto`), `ai.maxTokens` (`null`/`0` = unlimited), `responseTimeoutMs` (`0` = no deadline).
+- **Models**: `model.defaultAlias` (`deepseek|pro|nim|ultra|nim-light`), `model.fallbackAlias`, `ai.reasoning` (`none|low|medium|high|auto`), `ai.maxTokens` (`null`/`0` = unlimited), `ai.maxToolRounds` (`0` = unlimited tool rounds; default `3`), `responseTimeoutMs` (`0` = no deadline).
 - **DeepSeek**: `deepseek.baseUrl`, `deepseek.model`, `deepseek.proModel`, `deepseek.temperature` (0–2), `deepseek.timeoutMs` (`0` = no limit), `deepseek.topP`, `deepseek.frequencyPenalty`, `deepseek.presencePenalty`, `deepseek.seed`.
 - **NIM**: `nim.baseUrl`, `nim.model`, `nim.ultraModel`, `nim.fallbackModel`, `nim.temperature` (0–2), `nim.timeoutMs` (`0` = no limit), `nim.topP`, `nim.topK`, `nim.minP`, `nim.repetitionPenalty`, `nim.frequencyPenalty`, `nim.presencePenalty`, `nim.seed` (only non-null values are sent).
 - **Context**: `context.maxTokens` (**0 = unlimited**), `context.maxMessages` (**0**), `context.maxCharsPerMessage` (default `12000`, **0 = no truncation**), `context.ttlHours` (**0 = never delete**), `context.summary`, `dataDir` (relative → repo root; use a persistent volume, never `/tmp`).
@@ -206,20 +206,20 @@ temperature further.
   "nim": {
     "temperature": 0.5,
     "topP": 0.9,
-    "frequencyPenalty": 0,
-    "presencePenalty": 0
+    "frequencyPenalty": 0.3,
+    "presencePenalty": 0.3
   },
   "deepseek": {
     "temperature": 0.5,
     "topP": 0.9,
-    "frequencyPenalty": 0,
-    "presencePenalty": 0
+    "frequencyPenalty": 0.3,
+    "presencePenalty": 0.3
   }
 }
 ```
 
 - If the model still mixes languages or rambles, lower `temperature` to `0.4–0.5` and `topP` to `0.85`; the prompt already asks for 1–3 sentence replies by default.
-- Penalties stay `0` here because they encourage rare/foreign tokens; raise them only for repetitive answers.
+- Penalties are `0.3` to break repeated insults; raise to `0.4–0.5` only if it still repeats — higher values can push rare/foreign tokens.
 - `topK: -1`, `minP: 0`, `repetitionPenalty: 1.0–1.05` are NIM-only extras; leave them unset if your hosted endpoint rejects them.
 
 ## Design & optimizations

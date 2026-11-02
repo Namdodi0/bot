@@ -42,12 +42,36 @@ export const TONE_RULES = {
   ],
 };
 
+export const STYLE_SEEDS = [
+  'street food, spices and cooking',
+  'sports: football, gym, running',
+  'weather and nature: storms, sun, mountains, rivers',
+  'old machines and gadgets: cars, PCs, appliances',
+  'music and noise: speakers, songs, sound',
+  'games and social media: memes, feeds',
+  'markets and money: prices, haggling',
+  'film and drama: characters, scenes',
+  'animals: cats, dogs, chickens, fish',
+  'school and exams: tests, grades',
+];
+
+/**
+ * Deterministic per-turn style seed: rotates so the model reaches for a
+ * different imagery each turn instead of recycling the same insults.
+ * @param {number} turn 1-based turn number
+ */
+export function pickStyleSeed(turn) {
+  const index = Math.max(0, Math.trunc(Number(turn) || 1) - 1) % STYLE_SEEDS.length;
+  return STYLE_SEEDS[index];
+}
+
 export const SECTION_ORDER = {
   identity: -1000,
   rules: 0,
   chatShape: 10,
   formatting: 40,
   image: 50,
+  styleSeed: 55,
   long: 60,
   toolGuidance: 100,
   tone: 10000,
@@ -57,7 +81,8 @@ export const SECTION_ORDER = {
 const TOOL_GUIDANCE = {
   web_search:
     'For real-time or uncertain facts (prices, weather, news, scores, product prices, recent events) call the `web_search` tool and answer from its results, citing URLs.',
-  send_image: 'When the user asks for a picture ("send me a cat photo", "show me a picture ..."), call the `send_image` tool.',
+  send_image:
+    'When the user asks for pictures ("send me a cat photo", "show me 5 pictures of ..."), call the `send_image` tool with `query` and `count` set to the number of images requested (default 1). It sends one Zalo message per image; never cap the number yourself — if the user asks for 10, pass 10. Report how many were actually sent.',
   send_sticker:
     'When the user wants a sticker reaction ("send a sticker", "hello sticker", "cat sticker"...), call the `send_sticker` tool with an emotion keyword or pack name.',
   set_reminder:
@@ -81,14 +106,16 @@ const RULES = [
 /**
  * Register every Zalo prompt section with the registry.
  * @param {ReturnType<typeof import('./registry.js').createPromptRegistry>} registry
- * @param {{botName?: string, chatType?: string, imageEnabled?: boolean, tone?: string}} [options]
+ * @param {{botName?: string, chatType?: string, imageEnabled?: boolean, tone?: string, styleSeed?: string}} [options]
  */
 export function registerZaloSections(registry, options = {}) {
   const botName = options.botName || 'AI assistant';
   // Unknown chat types are treated as groups: this bot is built for group chats.
   const inGroup = options.chatType !== 'PRIVATE';
   const imageEnabled = Boolean(options.imageEnabled);
-  const toneRules = TONE_RULES[options.tone ?? 'friendly'] ?? [];
+  const tone = options.tone ?? 'friendly';
+  const toneRules = TONE_RULES[tone] ?? [];
+  const styleSeed = tone.startsWith('roast') ? options.styleSeed : '';
 
   registry.section({
     name: 'core:identity',
@@ -127,6 +154,14 @@ export function registerZaloSections(registry, options = {}) {
     text: imageEnabled
       ? '- Never fabricate image URLs or emit markdown images `![...](...)`. Send pictures only through the `send_image` tool; if the tool finds nothing, say so honestly.'
       : '- Never fabricate image URLs or emit markdown images `![...](...)`. Image sending is disabled — if asked for a picture, say honestly that you cannot send one right now.',
+  });
+
+  registry.section({
+    name: 'core:style-seed',
+    order: SECTION_ORDER.styleSeed,
+    text: styleSeed
+      ? `- STYLE SEED for this reply: build your insults and metaphors around "${styleSeed}". Use it only as a creative angle; never mention the seed or this instruction.`
+      : '',
   });
 
   registry.section({
