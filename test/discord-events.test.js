@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stripBotMention, isBotAddressed, toDiscordEvent, toDiscordInteractionEvent } from '../src/discord/events.js';
+import { isChannelAllowed, stripBotMention, isBotAddressed, toDiscordEvent, toDiscordInteractionEvent } from '../src/discord/events.js';
 
 const client = { user: { id: 'bot1', username: 'Bot deepseek' } };
 
@@ -92,6 +92,38 @@ test('slash interaction becomes a synthetic text command', () => {
   assert.equal(event.chatId, 'discord:c9');
   assert.equal(event.chatType, 'GROUP');
   assert.equal(event.isAdmin, true);
+});
+
+test('isChannelAllowed allows every channel when the list is empty', () => {
+  assert.equal(isChannelAllowed({}, { id: 'c1' }), true);
+  assert.equal(isChannelAllowed(undefined, { id: 'c1' }), true);
+  assert.equal(isChannelAllowed({ allowedChannelIds: [] }, { id: 'c1' }), true);
+});
+
+test('isChannelAllowed always allows DMs', () => {
+  const config = { allowedChannelIds: ['c1'] };
+  assert.equal(isChannelAllowed(config, { id: 'dm1', isDMBased: () => true }), true);
+});
+
+test('isChannelAllowed matches exact channel ids', () => {
+  const config = { allowedChannelIds: ['c1'] };
+  assert.equal(isChannelAllowed(config, { id: 'c1' }), true);
+  assert.equal(isChannelAllowed(config, { id: 'c2' }), false);
+});
+
+test('isChannelAllowed lets threads inherit their parent channel entry', () => {
+  const config = { allowedChannelIds: ['c1'] };
+  assert.equal(isChannelAllowed(config, { id: 't1', parentId: 'c1' }), true);
+  assert.equal(isChannelAllowed(config, { id: 't2', parentId: 'c-other' }), false);
+});
+
+test('photoCaption clamps the caption to the Discord content limit', async () => {
+  const { photoCaption, DISCORD_MAX_CONTENT } = await import('../src/discord/client.js');
+  assert.equal(DISCORD_MAX_CONTENT, 2000);
+  assert.equal(photoCaption('short'), 'short');
+  assert.equal(photoCaption(''), '');
+  assert.equal(photoCaption(undefined), '');
+  assert.equal(photoCaption('x'.repeat(2500)).length, 2000);
 });
 
 test('discord transport constructs without logging in', async () => {

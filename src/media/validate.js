@@ -291,7 +291,11 @@ export function createImageValidator(options = {}) {
         } catch {
           // ignore
         }
-        current = new URL(location, current);
+        try {
+          current = new URL(location, current);
+        } catch {
+          return { ok: false, reason: 'invalid redirect' };
+        }
         continue;
       }
       if (!response.ok && response.status !== 206) {

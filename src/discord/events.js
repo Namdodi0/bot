@@ -6,6 +6,24 @@
 export const DISCORD_CHAT_PREFIX = 'discord:';
 
 /**
+ * Whether a Discord channel is permitted by `config.allowedChannelIds`.
+ * An empty/absent list allows every channel. DMs are always allowed because they are
+ * addressed directly to the bot. Threads inherit their parent channel's entry by matching
+ * `channel.parentId`, so an allowed parent also allows its threads.
+ * @param {{allowedChannelIds?: string[]}|null|undefined} config
+ * @param {{id?: string, parentId?: string|null, isDMBased?: () => boolean}|null|undefined} channel
+ */
+export function isChannelAllowed(config, channel) {
+  const ids = config?.allowedChannelIds ?? [];
+  if (!ids.length) return true;
+  if (channel?.isDMBased?.() === true) return true;
+  const id = String(channel?.id ?? '').trim();
+  if (id && ids.includes(id)) return true;
+  const parentId = String(channel?.parentId ?? '').trim();
+  return Boolean(parentId) && ids.includes(parentId);
+}
+
+/**
  * Remove <@id> / <@!id> mentions of the bot, its managed role mention (<@&id>), and
  * collapse the leftover spaces.
  * @param {string} text

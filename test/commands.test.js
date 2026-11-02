@@ -190,6 +190,23 @@ test('/model is blocked for non-admins', async () => {
   assert.match(result.text, /Only group admins/);
 });
 
+test('/model settings work in a Discord DM but stay admin-only in a group', async () => {
+  const d = deps({ config: { adminIds: ['admin-1'] } });
+  const commands = createCommands(d);
+
+  const dm = await commands.run(
+    { name: 'model', args: 'nim' },
+    ctx(d, { chatId: 'discord:dm1', chatType: 'PRIVATE', platform: 'discord', isAdmin: false }),
+  );
+  assert.match(dm.text, /Switched to/);
+
+  const group = await commands.run(
+    { name: 'model', args: 'nim' },
+    ctx(d, { chatId: 'discord:c1', chatType: 'GROUP', platform: 'discord', isAdmin: false }),
+  );
+  assert.match(group.text, /Only group admins/);
+});
+
 test('/reset is blocked for non-admins', async () => {
   const d = deps({ config: { adminIds: ['admin-1'] } });
   const commands = createCommands(d);

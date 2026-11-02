@@ -1,8 +1,26 @@
 import { AttachmentBuilder, Client, GatewayIntentBits, Partials } from 'discord.js';
 import { slashCommandPayloads } from '../commands/registry.js';
-import { DISCORD_CHAT_PREFIX, isBotAddressed, isBotRoleMentioned, toDiscordEvent, toDiscordInteractionEvent } from './events.js';
+import {
+  DISCORD_CHAT_PREFIX,
+  isBotAddressed,
+  isBotRoleMentioned,
+  isChannelAllowed,
+  toDiscordEvent,
+  toDiscordInteractionEvent,
+} from './events.js';
 
 const TYPING_REFRESH_MS = 8_000;
+/** Discord's content limit for messages, and the practical limit for a photo caption. */
+export const DISCORD_MAX_CONTENT = 2000;
+
+/**
+ * Clamp a photo caption to Discord's content limit (an empty caption is dropped).
+ * @param {string} caption
+ */
+export function photoCaption(caption) {
+  const text = String(caption ?? '');
+  return text ? text.slice(0, DISCORD_MAX_CONTENT) : '';
+}
 
 /** Slash commands mirror the text command router; Zalo stickers are intentionally absent. */
 const SLASH_COMMANDS = slashCommandPayloads();
@@ -72,8 +90,9 @@ export function createDiscordTransport(options) {
   async function sendPhoto(chatId, url, caption = '', options = {}) {
     const channel = await channelOf(chatId);
     const file = new AttachmentBuilder(options?.data ? Buffer.from(options.data) : String(url), { name: 'image' });
+    const content = photoCaption(caption);
     return channel.send({
-      content: caption ? String(caption) : undefined,
+      content: content || undefined,
       files: [file],
       allowedMentions: { parse: [] },
     });
@@ -149,7 +168,7 @@ export function createDiscordTransport(options) {
       roleMentioned,
       reference: Boolean(message.reference?.messageId),
     });
-    if (config.allowedChannelIds?.length && !config.allowedChannelIds.includes(message.channelId)) return;
+    if (!isChannelAllowed(config, message.channel ?? { id: message.channelId })) return;
     let repliedToBot = false;
     if (!mentioned && !roleMentioned && !isDm && message.reference?.messageId) {
       const referenced = await message.fetchReference().catch(() => null);
@@ -167,8 +186,11 @@ export function createDiscordTransport(options) {
   /** @param {any} interaction */
   async function handleInteraction(interaction) {
     if (!interaction.isChatInputCommand()) return;
-    const allowed = config.allowedChannelIds ?? [];
-    if (allowed.length && interaction.channelId && !allowed.includes(interaction.channelId)) {
+    // Threads resolve through interaction.channel; a missing channel falls back to channelId.
+    const channel = interaction.channel ?? (interaction.channelId ? { id: interaction.channelId } : null);
+    // DMs (no guild) are direct to the bot, so they are always allowed.
+    const allowed = !interaction.guildId || !channel || isChannelAllowed(config, channel);
+    if (!allowed) {
       await interaction.reply({ content: 'This channel is not allowed.', ephemeral: true });
       return;
     }

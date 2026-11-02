@@ -117,6 +117,15 @@ test('download refuses a redirect to an internal address', async () => {
   assert.equal(calls, 1);
 });
 
+test('download returns a failure for a malformed redirect location', async () => {
+  const validator = makeValidator(async () =>
+    bodyResponse('', { status: 302, headers: { location: 'http://[' } }),
+  );
+  const result = await validator.download('https://example.com/a.png');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'invalid redirect');
+});
+
 test('rejects images that are too large even when HEAD returns content-length', async () => {
   const validator = makeValidator(async () =>
     fakeResponse({ headers: { 'content-type': 'image/png', 'content-length': String(100 * 1024 * 1024) } }),

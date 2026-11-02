@@ -33,9 +33,10 @@ export function createCommands(deps) {
   const logger = deps.logger;
 
   function canManage(ctx) {
+    // Private chats are per-chat settings, so the manager check is a group concern only.
+    if (ctx.chatType !== 'GROUP') return true;
     if (typeof ctx.isAdmin === 'boolean') return ctx.isAdmin;
     if (!config.adminIds.length) return true;
-    if (ctx.chatType !== 'GROUP') return true;
     return config.adminIds.includes(ctx.senderId);
   }
 
