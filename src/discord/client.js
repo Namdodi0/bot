@@ -1,64 +1,11 @@
 import { AttachmentBuilder, Client, GatewayIntentBits, Partials } from 'discord.js';
+import { slashCommandPayloads } from '../commands/registry.js';
 import { DISCORD_CHAT_PREFIX, isBotAddressed, isBotRoleMentioned, toDiscordEvent, toDiscordInteractionEvent } from './events.js';
 
 const TYPING_REFRESH_MS = 8_000;
 
 /** Slash commands mirror the text command router; Zalo stickers are intentionally absent. */
-const SLASH_COMMANDS = [
-  { name: 'help', description: 'List bot commands' },
-  { name: 'status', description: 'Bot status, model and context info' },
-  { name: 'id', description: 'Show this channel id and your user id' },
-  {
-    name: 'reset',
-    description: 'Clear this chat context (keeps settings)',
-    options: [{ name: 'all', description: 'Also clear per-chat settings', type: 5 }],
-  },
-  { name: 'compact', description: 'Compact the context now (admin)' },
-  {
-    name: 'summary',
-    description: 'Summarize recent messages',
-    options: [{ name: 'count', description: 'Messages to summarize (2-200, default 30)', type: 4, min_value: 2, max_value: 200 }],
-  },
-  {
-    name: 'search',
-    description: 'Force a web search for a question',
-    options: [{ name: 'query', description: 'Question to search', type: 3, required: true }],
-  },
-  {
-    name: 'image',
-    description: 'Find and send images',
-    options: [{ name: 'query', description: 'Image keywords', type: 3, required: true }],
-  },
-  {
-    name: 'model',
-    description: 'Show or switch the model for this chat',
-    options: [{ name: 'alias', description: 'deepseek | pro | nim | ultra | nim-light', type: 3 }],
-  },
-  {
-    name: 'tone',
-    description: 'Show or switch the tone for this chat',
-    options: [{ name: 'name', description: 'roast | hard | friendly | default', type: 3 }],
-  },
-  {
-    name: 'think',
-    description: 'Change the reasoning mode for this chat',
-    options: [{ name: 'mode', description: 'on | off | low | medium | high | auto', type: 3 }],
-  },
-  {
-    name: 'split',
-    description: 'Change how replies are split into messages',
-    options: [{ name: 'mode', description: 'on | off | auto', type: 3 }],
-  },
-  {
-    name: 'remind',
-    description: 'Set a reminder in this channel',
-    options: [
-      { name: 'when', description: 'HH:MM, HH:MM tomorrow, HH:MM dd/mm, +10m, +2h, +1d', type: 3, required: true },
-      { name: 'text', description: 'What to remind about', type: 3, required: true },
-    ],
-  },
-  { name: 'ping', description: 'Check the Discord connection' },
-];
+const SLASH_COMMANDS = slashCommandPayloads();
 
 /**
  * Discord transport backed by discord.js.

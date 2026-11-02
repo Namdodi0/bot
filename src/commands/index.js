@@ -3,6 +3,7 @@ import { createTokenMeter } from '../context/token-meter.js';
 import { SUMMARY_SYSTEM_PROMPT } from '../ai/prompt/index.js';
 import { formatDuration } from '../text/format.js';
 import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from '../ai/reminders.js';
+import { helpBullets } from './registry.js';
 
 const SUMMARY_DEFAULT_COUNT = 30;
 const SUMMARY_MAX_COUNT = 200;
@@ -43,23 +44,7 @@ export function createCommands(deps) {
     const isDiscord = platform === 'discord';
     const lines = [
       '**Bot commands**',
-      '• `/help` — list of commands',
-      '• `/status` — bot status, context, latency',
-      '• `/id` — id of the current chat',
-      '• `/reset` — clear this chat\'s context (keeps model/tone); `/reset all` also clears the settings',
-      '• `/compact` — compact the context now (admin)',
-      '• `/summary [N]` — summarize the last N messages (default 30)',
-      '• `/search <question>` — force a web search for the question',
-      '• `/image <keywords>` — find and send an image',
-      ...(isDiscord
-        ? []
-        : ['• `/sticker [mood]` — send a sticker; `/sticker add <id> [name]` to add an ID']),
-      '• `/remind <time> <text>` — set a reminder (e.g. `/remind 20:00 tomorrow team meeting`)',
-      '• `/model` — view/change the model for this chat',
-      '• `/tone` — view/change the tone (roast = snarky)',
-      '• `/think on|off|low|medium|high|auto` — turn reasoning on/off for this chat',
-      '• `/split on|off|auto` — disable/enable splitting replies into multiple messages',
-      isDiscord ? '• `/ping` — check the Discord connection' : '• `/ping` — check the connection to Zalo',
+      ...helpBullets(platform),
       '',
       isDiscord
         ? 'The bot runs on the Discord gateway; slash commands are registered in the configured server.'
