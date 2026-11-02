@@ -85,6 +85,38 @@ test('context entry is sent with the user role', () => {
   assert.equal(built.messages[1].content, '[Current time: today]');
 });
 
+test('an incomplete tool call is dropped with its partial results, complete pairs stay', () => {
+  const messages = [
+    toolCallEntry({ toolCalls: [{ id: 'c1', name: 'web_search', arguments: { query: 'x' } }], ts: 1 }),
+    toolResultEntry({ toolCallId: 'c1', text: 'complete result', ts: 2 }),
+    toolCallEntry({
+      toolCalls: [
+        { id: 'c2', name: 'web_search', arguments: { query: 'y' } },
+        { id: 'c3', name: 'web_search', arguments: { query: 'z' } },
+      ],
+      ts: 3,
+    }),
+    toolResultEntry({ toolCallId: 'c2', text: 'partial result', ts: 4 }),
+  ];
+  const built = assemble(messages);
+  const wire = built.messages.slice(1);
+  assert.equal(wire.length, 2);
+  assert.deepEqual(
+    wire.map((message) => message.role),
+    ['assistant', 'tool'],
+  );
+  assert.equal(wire[0].tool_calls[0].id, 'c1');
+  assert.equal(wire[1].tool_call_id, 'c1');
+  assert.equal(JSON.stringify(built.messages).includes('partial result'), false);
+  assert.equal(built.keptMessages, 2);
+});
+
+test('rawEstimatedTokens is the uncalibrated estimate', () => {
+  const meter = createTokenMeter({ calibrator: { estimate: (raw) => raw * 2, observe: () => {}, ratio: () => 2 } });
+  const built = assemble([{ role: 'user', text: 'hello', ts: 1 }], { meter });
+  assert.equal(built.rawEstimatedTokens * 2, built.estimatedTokens);
+});
+
 test('pressure is computed when the context window is known', () => {
   const built = assemble([{ role: 'user', text: 'x'.repeat(400), ts: 1 }], {
     meter: createTokenMeter(),

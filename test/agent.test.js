@@ -14,7 +14,7 @@ import { createMetrics } from '../src/metrics.js';
 import { makeConfig, silentLogger, textEvent } from '../test-utils/helpers.js';
 
 /**
- * @param {{replies?: any[], configOverrides?: Record<string, any>, tavily?: any, nimError?: any, delayMs?: number, deltaText?: string, logger?: any}} [options]
+ * @param {{replies?: any[], configOverrides?: Record<string, any>, tavily?: any, nimError?: any, delayMs?: number, deltaText?: string, logger?: any, toolRuntime?: any}} [options]
  */
 async function setup(options = {}) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-bot-test-'));
@@ -128,15 +128,17 @@ async function setup(options = {}) {
     size: () => 1,
   };
 
-  const tools = createToolRuntime({
-    config,
-    tavily: options.tavily ?? null,
-    transport,
-    validator: { validate: async () => ({ ok: true }) },
-    stickers,
-    logger,
-    metrics,
-  });
+  const tools =
+    options.toolRuntime ??
+    createToolRuntime({
+      config,
+      tavily: options.tavily ?? null,
+      transport,
+      validator: { validate: async () => ({ ok: true }) },
+      stickers,
+      logger,
+      metrics,
+    });
   const compaction = createCompactionEngine({
     config,
     logger,
@@ -653,6 +655,100 @@ test('fallback after a tool round sends a clean transcript without tools', async
     /\[tool result\]/,
   );
   assert.match(sent.at(-1).text, /Fallback answer/);
+});
+
+test('a throwing tool still records a paired result, so the next turn builds clean messages', async () => {
+  let runCount = 0;
+  const toolRuntime = {
+    definitions: () => [
+      {
+        type: 'function',
+        function: { name: 'web_search', description: 'search', parameters: { type: 'object', properties: {} } },
+      },
+    ],
+    run: async () => {
+      runCount += 1;
+      throw new Error('disk full');
+    },
+  };
+  const { agent, sent, store, nimCalls } = await setup({
+    toolRuntime,
+    replies: [
+      {
+        toolCalls: [{ id: 'call-1', name: 'web_search', arguments: { query: 'x' }, rawArguments: '{"query":"x"}' }],
+      },
+      { content: 'answered anyway' },
+    ],
+  });
+
+  await agent.handle(textEvent('search please', { messageId: 'm1' }));
+  const record = await store.get('chat-1');
+  const call = record.messages.find((message) => message.kind === 'tool-call');
+  const results = record.messages.filter((message) => message.kind === 'tool-result');
+  assert.ok(call);
+  assert.equal(results.length, call.toolCalls.length);
+  assert.equal(results[0].toolCallId, 'call-1');
+  assert.match(results[0].text, /Tool web_search failed: disk full/);
+  assert.match(sent.at(-1).text, /answered anyway/);
+
+  await agent.handle(textEvent('second question', { messageId: 'm2' }));
+  const messages = nimCalls.at(-1).messages;
+  const callIndex = messages.findIndex((message) => Array.isArray(message.tool_calls));
+  assert.ok(callIndex >= 0);
+  assert.equal(messages[callIndex + 1].role, 'tool');
+  assert.equal(messages[callIndex + 1].tool_call_id, messages[callIndex].tool_calls[0].id);
+  assert.ok(runCount >= 1);
+});
+
+test('the no-tools fallback prompt does not advertise tool guidance', async () => {
+  const tavily = {
+    search: async () => ({ results: [{ title: 'Gold', url: 'https://x', content: 'price' }], images: [] }),
+  };
+  const { agent, nimCalls } = await setup({
+    tavily,
+    failPrimaryAfterFirst: true,
+    replies: [
+      {
+        content: '',
+        toolCalls: [{ id: 'call_1', name: 'web_search', arguments: { query: 'gold' }, rawArguments: '{"query":"gold"}' }],
+      },
+      { content: 'Fallback answer' },
+    ],
+  });
+
+  await agent.handle(textEvent('gold price?'));
+
+  const primary = nimCalls[0];
+  const fallback = nimCalls.at(-1);
+  assert.ok(primary.tools?.length);
+  assert.equal(fallback.tools, undefined);
+  assert.equal(primary.messages[0].role, 'system');
+  assert.equal(fallback.messages[0].role, 'system');
+  assert.match(String(primary.messages[0].content), /call the `web_search` tool/);
+  assert.doesNotMatch(String(fallback.messages[0].content), /call the `web_search` tool/);
+});
+
+test('the final answer call after tool rounds also sends no tool guidance', async () => {
+  const tavily = {
+    search: async () => ({ results: [{ title: 'Gold', url: 'https://x', content: 'price' }], images: [] }),
+  };
+  const toolRound = {
+    content: '',
+    toolCalls: [{ id: 'call_1', name: 'web_search', arguments: { query: 'gold' }, rawArguments: '{"query":"gold"}' }],
+  };
+  const { agent, nimCalls } = await setup({
+    tavily,
+    configOverrides: { ai: { maxToolRounds: 1 } },
+    replies: [toolRound],
+    finalContent: 'Final synthesis from search results',
+  });
+
+  await agent.handle(textEvent('gold price?'));
+
+  const finalCall = nimCalls.at(-1);
+  assert.equal(finalCall.tools, undefined);
+  assert.doesNotMatch(String(finalCall.messages[0].content), /call the `web_search` tool/);
+  assert.match(String(nimCalls[0].messages[0].content), /call the `web_search` tool/);
 });
 
 test('after MAX_TOOL_ROUNDS a final no-tools call answers from the tool results', async () => {

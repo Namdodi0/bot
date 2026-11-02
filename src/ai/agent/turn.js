@@ -66,19 +66,27 @@ export function createTurnRunner(deps) {
 
     const tone = record?.meta?.tone ?? config.tone;
     const toolDefs = tools.definitions(event.platform);
-    const promptRegistry = createZaloPrompt({
+    const promptOptions = {
       botName: event.botName || transport.displayName || 'AI assistant',
       chatType: isGroup ? 'GROUP' : 'PRIVATE',
       platform: event.platform,
-      // Tool guidance only appears when the matching schema is actually sent to the model.
-      tools: toolDefs,
       imageEnabled: config.image.enabled,
       tone,
       // Rotates every turn so the roast reaches for different imagery instead of repeating itself.
       styleSeed: pickStyleSeed((record?.turns ?? 0) + 1),
+    };
+    const promptRegistry = createZaloPrompt({
+      ...promptOptions,
+      // Tool guidance only appears when the matching schema is actually sent to the model.
+      tools: toolDefs,
     });
     const promptAssembly = promptRegistry.assemble({ text: effectiveText, now: new Date() });
     const systemPrompt = promptRegistry.render(promptAssembly);
+    // Same prompt without tool guidance, for the calls that send no tool schemas.
+    const noToolsRegistry = createZaloPrompt({ ...promptOptions, tools: [] });
+    const noToolsSystemPrompt = noToolsRegistry.render(
+      noToolsRegistry.assemble({ text: effectiveText, now: new Date() }),
+    );
 
     const reasoning = effectiveReasoning(config, record, effectiveText);
     const target = llm.resolve(record);
@@ -153,6 +161,13 @@ export function createTurnRunner(deps) {
     }
 
     const messages = built.messages;
+    // Tool history must not go to a call without tool schemas, and that call must not
+    // advertise tools in its system prompt either.
+    const noToolsMessages = () => {
+      const list = fallbackMessages(messages);
+      if (list[0]?.role === 'system') list[0] = { role: 'system', content: noToolsSystemPrompt };
+      return list;
+    };
 
     // Proof that context reaches the API: with config.logLevel=debug you see the message count
     // (history included) and the character count of the whole payload on every turn.
@@ -348,7 +363,7 @@ export function createTurnRunner(deps) {
             providerLimit > 0 ? (timeLeft > 0 ? Math.min(providerLimit, timeLeft) : providerLimit) : timeLeft;
           try {
             response = await llm.chatWith(fallbackAlias, {
-              messages: fallbackMessages(messages),
+              messages: noToolsMessages(),
               reasoning: 'none',
               maxTokens: config.ai.maxTokens,
               sampling: samplingFor(config, fallbackEntry?.provider ?? target.provider),
@@ -403,7 +418,8 @@ export function createTurnRunner(deps) {
       // so do not use them for calibration (it would skew the ratio).
       if (round === 0) {
         const promptTokens = Number(response.usage?.prompt_tokens ?? 0);
-        if (promptTokens > 0) meter.observe(built.estimatedTokens, promptTokens);
+        // The calibrator needs the RAW estimate, not the already calibrated one.
+        if (promptTokens > 0) meter.observe(built.rawEstimatedTokens ?? built.estimatedTokens, promptTokens);
       }
       if (typeof response.reasoning === 'string' && response.reasoning.trim()) {
         thinkingText += `${thinkingText ? '\n\n' : ''}${response.reasoning.trim()}`;
@@ -427,12 +443,27 @@ export function createTurnRunner(deps) {
 
         for (const call of response.toolCalls) {
           const started = Date.now();
-          const result = await tools.run(call.name, call.arguments, {
-            chatId: event.chatId,
-            senderId: event.senderId,
-            platform: event.platform,
-            deadline,
-          });
+          /** @type {{ok?: boolean, text: string}} */
+          let result;
+          try {
+            result = await tools.run(call.name, call.arguments, {
+              chatId: event.chatId,
+              senderId: event.senderId,
+              platform: event.platform,
+              deadline,
+            });
+          } catch (error) {
+            // Every tool_call id needs a result, otherwise the stored transcript is
+            // invalid and every later request fails on the provider.
+            const reason = String(/** @type {any} */ (error)?.message ?? error);
+            logger.warn('tool call failed', {
+              chatId: event.chatId,
+              tool: call.name,
+              error: reason,
+              icon: '⚠️',
+            });
+            result = { ok: false, text: `Tool ${call.name} failed: ${reason}` };
+          }
           metrics.observe(`tool.${call.name}`, Date.now() - started);
           const text = truncate(result.text, 4000);
           messages.push({
@@ -473,7 +504,7 @@ export function createTurnRunner(deps) {
           const response = await llm.chat({
             record,
             messages: [
-              ...fallbackMessages(messages),
+              ...noToolsMessages(),
               { role: 'user', content: 'Answer the user now using the tool results above. Do not call any tools.' },
             ],
             reasoning: 'none',

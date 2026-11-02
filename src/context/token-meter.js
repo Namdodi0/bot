@@ -28,8 +28,8 @@ export function createCalibrator(options = {}) {
   let ratio = options.initial ?? 1;
 
   /**
-   * @param {number} estimated
-   * @param {number} actual
+   * @param {number} estimated RAW estimate (before calibration)
+   * @param {number} actual real prompt tokens reported by the provider
    */
   function observe(estimated, actual) {
     if (!Number.isFinite(estimated) || !Number.isFinite(actual) || estimated <= 0 || actual <= 0) return;
@@ -81,6 +81,8 @@ export function createTokenMeter(options = {}) {
     const window = Number(input.contextWindow ?? 0);
     return {
       promptTokens,
+      // Uncalibrated total: feed this to `observe`, never `promptTokens`.
+      rawPromptTokens: raw,
       systemTokens: calibrator.estimate(system),
       toolTokens: calibrator.estimate(tools),
       messageTokens: calibrator.estimate(messages),

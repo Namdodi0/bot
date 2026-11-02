@@ -60,6 +60,36 @@ function toNimMessage(message, maxChars = DEFAULT_MAX_MESSAGE_CHARS) {
 }
 
 /**
+ * Drop an assistant tool-call message unless every one of its calls is answered by the
+ * tool results immediately following it. A partial pair is invalid on the wire, so the
+ * call and its partial results are removed together.
+ * @param {import('./store.js').StoredMessage[]} messages
+ */
+function repairToolPairs(messages) {
+  /** @type {import('./store.js').StoredMessage[]} */
+  const out = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if ((message.kind ?? MESSAGE_KIND.TURN) !== MESSAGE_KIND.TOOL_CALL) {
+      out.push(message);
+      continue;
+    }
+    const ids = (message.toolCalls ?? []).map((call) => call.id);
+    /** @type {import('./store.js').StoredMessage[]} */
+    const results = [];
+    let cursor = index + 1;
+    while (cursor < messages.length && (messages[cursor].kind ?? MESSAGE_KIND.TURN) === MESSAGE_KIND.TOOL_RESULT) {
+      results.push(messages[cursor]);
+      cursor += 1;
+    }
+    const answered = new Set(results.map((result) => result.toolCallId));
+    if (ids.every((id) => answered.has(id))) out.push(message, ...results);
+    index = cursor - 1;
+  }
+  return out;
+}
+
+/**
  * @param {{systemPrompt: string, tools?: any[], record: any, maxTokens?: number, maxMessages?: number, maxCharsPerMessage?: number, contextWindow?: number, meter?: any}} input
  */
 export function assembleRequest(input) {
@@ -72,7 +102,9 @@ export function assembleRequest(input) {
   const budget = input.maxTokens > 0 ? input.maxTokens : Number.POSITIVE_INFINITY;
   const messageCap = input.maxMessages > 0 ? input.maxMessages : Number.POSITIVE_INFINITY;
 
-  let used = calibrate(estimateMessageTokens({ text: systemPrompt }));
+  const systemCost = estimateMessageTokens({ text: systemPrompt });
+  let used = calibrate(systemCost);
+  let rawUsed = systemCost;
   /** @type {number[]} */
   const keptIndexes = [];
   let dropped = 0;
@@ -85,7 +117,8 @@ export function assembleRequest(input) {
       dropped = index;
       break;
     }
-    const cost = calibrate(estimateMessageTokens(message));
+    const rawCost = estimateMessageTokens(message);
+    const cost = calibrate(rawCost);
     const overCount = keptIndexes.length >= messageCap;
     const overBudget = used + cost > budget && keptIndexes.length >= 4;
     if (overCount || overBudget) {
@@ -94,6 +127,7 @@ export function assembleRequest(input) {
     }
     keptIndexes.unshift(index);
     used += cost;
+    rawUsed += rawCost;
   }
 
   // Never start with an orphaned tool-result (its tool-call was cut).
@@ -114,7 +148,9 @@ export function assembleRequest(input) {
 
   /** @type {any[]} */
   const messages = [{ role: 'system', content: systemPrompt }];
-  for (const message of kept) {
+  // Trimming can cut a tool result while its call stays: never send an incomplete pair.
+  const repaired = repairToolPairs(kept);
+  for (const message of repaired) {
     messages.push(toNimMessage(message, maxChars));
   }
 
@@ -122,7 +158,7 @@ export function assembleRequest(input) {
     ? input.meter.request({
         systemPrompt,
         tools,
-        messages: kept,
+        messages: repaired,
         contextWindow: input.contextWindow ?? 0,
       })
     : null;
@@ -131,10 +167,12 @@ export function assembleRequest(input) {
     messages,
     tools,
     estimatedTokens: measured?.promptTokens ?? calibrate(used),
+    // Uncalibrated estimate: the token meter must observe this, never `estimatedTokens`.
+    rawEstimatedTokens: measured?.rawPromptTokens ?? rawUsed,
     pressure: measured?.pressure ?? null,
     contextWindow: measured?.contextWindow ?? 0,
     dropped,
-    keptMessages: kept.length,
+    keptMessages: repaired.length,
     needsSummary: dropped >= 6,
   };
 }
