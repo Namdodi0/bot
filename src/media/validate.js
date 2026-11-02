@@ -173,6 +173,178 @@ export function createImageValidator(options = {}) {
     });
   }
 
+  /**
+   * Download the body through the same pinned addresses as `pinnedRequest`, capped at maxBytes.
+   * @param {URL} url
+   * @param {string[]} addresses
+   * @returns {Promise<{ok: boolean, status: number, headers: {get: (name: string) => string|null}, body: {cancel: () => Promise<void>}, arrayBuffer: () => Promise<Buffer>}>}
+   */
+  function pinnedGet(url, addresses) {
+    return new Promise((resolve, reject) => {
+      const lib = url.protocol === 'https:' ? https : http;
+      let settled = false;
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+      const req = lib.request(
+        url,
+        {
+          method: 'GET',
+          lookup: (hostname, options_, callback) => {
+            const list = addresses.map((address) => ({ address, family: net.isIP(address) }));
+            const wantsAll = Boolean(/** @type {any} */ (options_)?.all);
+            if (wantsAll) callback(null, /** @type {any} */ (list));
+            else callback(null, list[0].address, list[0].family);
+          },
+        },
+        (response) => {
+          const status = response.statusCode ?? 0;
+          const headerMap = response.headers;
+          const headers = {
+            get: (name) => {
+              const value = headerMap[String(name).toLowerCase()];
+              return Array.isArray(value) ? value.join(', ') : (value ?? null);
+            },
+          };
+          response.on('error', fail);
+          if (REDIRECT_STATUS.has(status)) {
+            response.resume();
+            resolved({ ok: false, status, headers, body: { cancel: async () => {} }, arrayBuffer: async () => Buffer.alloc(0) });
+            return;
+          }
+          const chunks = [];
+          let total = 0;
+          response.on('data', (chunk) => {
+            total += chunk.length;
+            if (total > maxBytes) {
+              req.destroy(new Error(`image too large (over ${maxBytes} bytes)`));
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on('end', () => {
+            resolved({
+              ok: status >= 200 && status < 300,
+              status,
+              headers,
+              body: { cancel: async () => {} },
+              arrayBuffer: async () => Buffer.concat(chunks),
+            });
+          });
+        },
+      );
+      function resolved(value) {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      }
+      req.setTimeout(timeoutMs, () => req.destroy(new Error(`timeout after ${timeoutMs}ms`)));
+      req.on('error', fail);
+      req.end();
+    });
+  }
+
+  /**
+   * Download an image with the same address/redirect/type/size checks as `check`.
+   * Used by transports that upload bytes (Discord) instead of passing the URL to a server.
+   * @param {string} url
+   * @returns {Promise<{ok: boolean, reason?: string, data?: Buffer, contentType?: string}>}
+   */
+  async function download(url) {
+    let current;
+    try {
+      current = new URL(String(url ?? '').trim());
+    } catch {
+      return { ok: false, reason: 'invalid URL' };
+    }
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+      if (!/^https?:$/.test(current.protocol)) {
+        return { ok: false, reason: `unsupported protocol (${current.protocol})` };
+      }
+      let addresses;
+      try {
+        addresses = await resolvePublic(current);
+      } catch (error) {
+        return { ok: false, reason: String(/** @type {any} */ (error)?.message ?? error) };
+      }
+
+      /** @type {any} */
+      let response;
+      try {
+        response = customFetch
+          ? await customFetch(current.toString(), {
+              method: 'GET',
+              redirect: 'manual',
+              signal: AbortSignal.timeout(timeoutMs),
+            })
+          : await pinnedGet(current, addresses);
+      } catch (error) {
+        return { ok: false, reason: `failed to fetch image (${String(/** @type {any} */ (error)?.message ?? error)})` };
+      }
+
+      const location = response.headers.get('location');
+      if (REDIRECT_STATUS.has(response.status) && location) {
+        try {
+          await response.body?.cancel();
+        } catch {
+          // ignore
+        }
+        current = new URL(location, current);
+        continue;
+      }
+      if (!response.ok && response.status !== 206) {
+        try {
+          await response.body?.cancel();
+        } catch {
+          // ignore
+        }
+        return { ok: false, reason: `HTTP ${response.status}` };
+      }
+
+      const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+      if (contentType && !contentType.startsWith('image/')) {
+        try {
+          await response.body?.cancel();
+        } catch {
+          // ignore
+        }
+        return { ok: false, reason: `content-type is not an image (${contentType.split(';')[0]})` };
+      }
+      if (!contentType && !/\.(png|jpe?g|gif|webp|bmp)$/i.test(current.pathname)) {
+        try {
+          await response.body?.cancel();
+        } catch {
+          // ignore
+        }
+        return { ok: false, reason: 'could not determine the image format' };
+      }
+
+      const declared = Number(response.headers.get('content-length') ?? NaN);
+      if (Number.isFinite(declared) && declared > maxBytes) {
+        try {
+          await response.body?.cancel();
+        } catch {
+          // ignore
+        }
+        return { ok: false, reason: `image too large (${declared} bytes)` };
+      }
+
+      let data;
+      try {
+        data = Buffer.from(await response.arrayBuffer());
+      } catch (error) {
+        return { ok: false, reason: `failed to read image (${String(/** @type {any} */ (error)?.message ?? error)})` };
+      }
+      if (data.byteLength > maxBytes) {
+        return { ok: false, reason: `image too large (${data.byteLength} bytes)` };
+      }
+      return { ok: true, data, contentType: contentType || undefined };
+    }
+    return { ok: false, reason: 'too many redirects' };
+  }
+
   /** @type {Map<string, {ok: boolean, reason?: string, contentType?: string, bytes?: number, expires: number}>} */
   const cache = new Map();
 
@@ -319,5 +491,5 @@ export function createImageValidator(options = {}) {
     return result;
   }
 
-  return { validate, size: () => cache.size };
+  return { validate, download, size: () => cache.size };
 }

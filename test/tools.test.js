@@ -215,6 +215,63 @@ test('send_image sends the requested count', async () => {
   assert.match(result.text, /Sent 10 images/);
 });
 
+test('send_image on Discord downloads validated bytes instead of passing the URL', async () => {
+  /** @type {any} */
+  let photoOptions = null;
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png'] }) },
+    transport: {
+      sendPhoto: async (_chatId, _url, _caption, options) => {
+        photoOptions = options;
+        return { ok: true };
+      },
+      sendSticker: async () => ({ ok: true }),
+    },
+    validator: {
+      validate: async () => {
+        throw new Error('validate must not run on Discord');
+      },
+      download: async () => ({ ok: true, data: Buffer.from('png'), contentType: 'image/png' }),
+    },
+    stickers: fakeStickers,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+  });
+
+  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9', platform: 'discord' });
+  assert.equal(result.ok, true);
+  assert.deepEqual(photoOptions, { data: Buffer.from('png'), contentType: 'image/png' });
+});
+
+test('send_image on Discord skips URLs whose pinned download fails', async () => {
+  let sent = 0;
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: { search: async () => ({ results: [], images: ['https://img.example/private.png'] }) },
+    transport: {
+      sendPhoto: async () => {
+        sent += 1;
+        return { ok: true };
+      },
+      sendSticker: async () => ({ ok: true }),
+    },
+    validator: {
+      validate: async () => ({ ok: true }),
+      download: async () => ({ ok: false, reason: 'internal address blocked' }),
+    },
+    stickers: fakeStickers,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+  });
+
+  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9', platform: 'discord' });
+  assert.equal(result.ok, false);
+  assert.equal(sent, 0);
+});
+
 test('send_image reports a partial batch when there are not enough unique images', async () => {
   /** @type {string[]} */
   const sent = [];

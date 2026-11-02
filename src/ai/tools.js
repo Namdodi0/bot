@@ -265,14 +265,27 @@ export function createToolRuntime(options) {
     const sentUrls = [];
     for (const url of urls) {
       if (sent >= requested || remaining() <= 0) break;
-      const check = await validator.validate(url);
-      if (!check.ok) {
-        logger.debug('image rejected by validator', { url, reason: check.reason, icon: '🚫' });
-        continue;
+      // Discord uploads bytes: download them here through the pinned-address validator instead of
+      // letting discord.js fetch the URL on its own (which would bypass the SSRF checks).
+      /** @type {{data?: Buffer, contentType?: string}|null} */
+      let upload = null;
+      if (ctx.platform === 'discord') {
+        const file = await validator.download(url);
+        if (!file.ok) {
+          logger.debug('image rejected by validator', { url, reason: file.reason, icon: '🚫' });
+          continue;
+        }
+        upload = { data: file.data, contentType: file.contentType };
+      } else {
+        const check = await validator.validate(url);
+        if (!check.ok) {
+          logger.debug('image rejected by validator', { url, reason: check.reason, icon: '🚫' });
+          continue;
+        }
       }
       if (remaining() <= 0) break;
       try {
-        await transport.sendPhoto(ctx.chatId, url, caption);
+        await transport.sendPhoto(ctx.chatId, url, caption, upload ?? undefined);
         sent += 1;
         sentUrls.push(url);
         metrics?.inc('tool.sendImage.ok');

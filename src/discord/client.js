@@ -67,10 +67,11 @@ export function createDiscordTransport(options) {
    * @param {string} chatId
    * @param {string} url
    * @param {string} [caption]
+   * @param {{data?: Buffer, contentType?: string}} [options] pre-validated bytes; avoids a second fetch
    */
-  async function sendPhoto(chatId, url, caption = '') {
+  async function sendPhoto(chatId, url, caption = '', options = {}) {
     const channel = await channelOf(chatId);
-    const file = new AttachmentBuilder(String(url), { name: 'image' });
+    const file = new AttachmentBuilder(options?.data ? Buffer.from(options.data) : String(url), { name: 'image' });
     return channel.send({
       content: caption ? String(caption) : undefined,
       files: [file],

@@ -71,6 +71,52 @@ test('caches results by URL', async () => {
   assert.equal(calls, 1);
 });
 
+/** @param {Buffer|string} body @param {{status?: number, headers?: Record<string,string>}} [spec] */
+function bodyResponse(body, spec = {}) {
+  const status = spec.status ?? 200;
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers(spec.headers ?? {}),
+    body: { cancel: async () => {} },
+    arrayBuffer: async () => Buffer.from(body),
+  };
+}
+
+test('download returns validated bytes for transports that upload files', async () => {
+  const validator = makeValidator(async () =>
+    bodyResponse('png-bytes', { headers: { 'content-type': 'image/png' } }),
+  );
+  const result = await validator.download('https://example.com/a.png');
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data, Buffer.from('png-bytes'));
+  assert.equal(result.contentType, 'image/png');
+});
+
+test('download rejects non-images and bodies over maxBytes', async () => {
+  const notImage = makeValidator(async () => bodyResponse('html', { headers: { 'content-type': 'text/html' } }));
+  assert.equal((await notImage.download('https://example.com/a.png')).ok, false);
+
+  const huge = makeValidator(async () => bodyResponse('0123456789', { headers: { 'content-type': 'image/png' } }), {
+    maxBytes: 5,
+  });
+  const result = await huge.download('https://example.com/a.png');
+  assert.equal(result.ok, false);
+  assert.match(String(result.reason), /too large/);
+});
+
+test('download refuses a redirect to an internal address', async () => {
+  let calls = 0;
+  const validator = makeValidator(async () => {
+    calls += 1;
+    return bodyResponse('', { status: 302, headers: { location: 'https://127.0.0.1/a.png' } });
+  });
+  const result = await validator.download('https://example.com/a.png');
+  assert.equal(result.ok, false);
+  assert.match(String(result.reason), /internal address/);
+  assert.equal(calls, 1);
+});
+
 test('rejects images that are too large even when HEAD returns content-length', async () => {
   const validator = makeValidator(async () =>
     fakeResponse({ headers: { 'content-type': 'image/png', 'content-length': String(100 * 1024 * 1024) } }),
