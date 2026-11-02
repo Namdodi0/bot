@@ -250,23 +250,6 @@ test('an unknown command returns guidance', async () => {
   assert.match(result.text, /Unknown command/);
 });
 
-test('/remember stores a fact and /forget removes it', async () => {
-  const d = deps();
-  const commands = createCommands(d);
-  const context = ctx(d);
-
-  let result = await commands.run({ name: 'remember', args: 'Tên tôi là Nam' }, context);
-  assert.match(result.text, /Remembered/);
-  assert.equal(context.record.meta.facts.length, 1);
-
-  result = await commands.run({ name: 'remember', args: 'Tên tôi là Nam' }, context);
-  assert.match(result.text, /already remember/);
-
-  result = await commands.run({ name: 'forget', args: '1' }, context);
-  assert.match(result.text, /Forgot:/);
-  assert.equal(context.record.meta.facts.length, 0);
-});
-
 test('/remind parses the time and stores a reminder', async () => {
   const d = deps();
   /** @type {any[]} */

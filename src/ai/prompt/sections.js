@@ -154,7 +154,7 @@ export function registerZaloSections(registry, options = {}) {
     order: SECTION_ORDER.commands,
     text: [
       '',
-      'COMMANDS THE USER MAY SEND: /help, /reset, /status, /id, /summary [N], /search <query>, /image <keyword>, /sticker [mood], /remind <time> <text>, /remember <fact>, /forget <n|text|all>, /model [alias], /tone [roast|hard|friendly|default], /think on|off|low|medium|high|auto, /split on|off|auto, /compact, /ping.',
+      'COMMANDS THE USER MAY SEND: /help, /reset, /status, /id, /summary [N], /search <query>, /image <keyword>, /sticker [mood], /remind <time> <text>, /model [alias], /tone [roast|hard|friendly|default], /think on|off|low|medium|high|auto, /split on|off|auto, /compact, /ping.',
       'Never fabricate command output. Do not tell the user to run a command unless it is genuinely useful.',
     ].join('\n'),
   });

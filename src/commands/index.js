@@ -1,4 +1,4 @@
-import { addFact, clearFacts, latestSummary, MAX_FACTS, removeFact } from '../context/record.js';
+import { latestSummary } from '../context/record.js';
 import { createTokenMeter } from '../context/token-meter.js';
 import { SUMMARY_SYSTEM_PROMPT } from '../ai/prompt/index.js';
 import { formatDuration } from '../text/format.js';
@@ -50,7 +50,6 @@ export function createCommands(deps) {
       '• `/image <keywords>` — find and send an image',
       '• `/sticker [mood]` — send a sticker; `/sticker add <id> [name]` to add an ID',
       '• `/remind <time> <text>` — set a reminder (e.g. `/remind 20:00 tomorrow team meeting`)',
-      '• `/remember <fact>` — pin a fact the bot must not forget; `/forget <n|text|all>`',
       '• `/model` — view/change the model for this chat',
       '• `/tone` — view/change the tone (roast = snarky)',
       '• `/think on|off|low|medium|high|auto` — turn reasoning on/off for this chat',
@@ -72,7 +71,6 @@ export function createCommands(deps) {
     const replyLatency = snapshot.latency['agent.reply'];
     const count = (name) => snapshot.counters[name] ?? 0;
     const messages = record?.messages?.length ?? 0;
-    const factsCount = Array.isArray(record?.meta?.facts) ? record.meta.facts.length : 0;
     const thinking = record?.meta?.thinking ?? 'per config';
     const current = models.resolve(record);
     const contextBudget =
@@ -99,7 +97,7 @@ export function createCommands(deps) {
       `• Mode: ${config.mode} · Reasoning: ${config.ai.reasoning} (this chat: ${thinking})`,
       `• max_tokens: ${config.ai.maxTokens ?? 'unlimited'}`,
       `• Uptime: ${formatDuration(snapshot.uptimeSec * 1000)} · bot v${config.version ?? '?'}`,
-      `• Context: ${messages} msg · ${record?.turns ?? 0} turns · ${factsCount} facts · budget: ${contextBudget} · summary: ${latestSummary(record) ? 'yes' : 'no'}`,
+      `• Context: ${messages} msg · ${record?.turns ?? 0} turns · budget: ${contextBudget} · summary: ${latestSummary(record) ? 'yes' : 'no'}`,
       pressure,
       contextStore,
       `• Reply limit: ${replyLimit}`,
@@ -151,8 +149,6 @@ export function createCommands(deps) {
         }
         const full = args.trim().toLowerCase() === 'all';
         const turns = ctx.record?.turns ?? 0;
-        // Facts are memory, not settings: a normal /reset forgets them too.
-        if (!full && Array.isArray(ctx.record?.meta?.facts)) ctx.record.meta.facts = [];
         await store.reset(ctx.chatId, { keepMeta: !full });
         logger?.info('context reset', { chatId: ctx.chatId, turns, full });
         return {
@@ -417,62 +413,6 @@ export function createCommands(deps) {
           return { kind: 'text', text: 'Back to the reasoning mode from the config.' };
         }
         return { kind: 'text', text: 'Invalid value. Use `/think off|low|high|auto`.' };
-      }
-
-      case 'remember': {
-        if (!canManage(ctx)) {
-          return { kind: 'text', text: 'Only group admins can change what the bot remembers.' };
-        }
-        const text = args.trim();
-        if (!text) {
-          const facts = Array.isArray(ctx.record?.meta?.facts) ? ctx.record.meta.facts : [];
-          if (!facts.length) {
-            return { kind: 'text', text: 'No pinned facts yet. Use `/remember <fact>`.' };
-          }
-          return {
-            kind: 'text',
-            text: [
-              `**Pinned facts for this chat** (${facts.length}/${MAX_FACTS})`,
-              ...facts.map((fact, index) => `${index + 1}. ${fact.text}`),
-              '',
-              'Remove with `/forget <number|keyword>` or `/forget all`.',
-            ].join('\n'),
-          };
-        }
-        const result = addFact(ctx.record, text);
-        if (!result.added) {
-          const message =
-            result.reason === 'duplicate'
-              ? 'I already remember that.'
-              : result.reason === 'full'
-                ? `The ${MAX_FACTS}-fact limit is reached — remove one with \`/forget\`.`
-                : 'The fact is empty.';
-          return { kind: 'text', text: message };
-        }
-        store.touch?.(ctx.chatId);
-        return { kind: 'text', text: `Remembered: ${/** @type {any} */ (result.fact).text}` };
-      }
-
-      case 'forget': {
-        if (!canManage(ctx)) {
-          return { kind: 'text', text: 'Only group admins can change what the bot remembers.' };
-        }
-        const target = args.trim();
-        if (!target) {
-          return { kind: 'text', text: 'Use `/forget <number|keyword>` or `/forget all`.' };
-        }
-        if (target.toLowerCase() === 'all') {
-          const count = clearFacts(ctx.record);
-          if (!count) return { kind: 'text', text: 'There are no pinned facts to forget.' };
-          store.touch?.(ctx.chatId);
-          return { kind: 'text', text: `Forgot ${count} pinned fact${count === 1 ? '' : 's'}.` };
-        }
-        const removed = removeFact(ctx.record, target);
-        if (!removed) {
-          return { kind: 'text', text: `No pinned fact matches "${target}".` };
-        }
-        store.touch?.(ctx.chatId);
-        return { kind: 'text', text: `Forgot: ${removed.text}` };
       }
 
       case 'remind': {

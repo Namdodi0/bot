@@ -637,19 +637,6 @@ test('findBreak cuts right after punctuation without repeating the mark', () => 
   assert.equal(danglingList.slice(0, danglingCut).includes('2.'), false);
 });
 
-test('pinned facts are re-injected as a context message on every turn', async () => {
-  const { agent, nimCalls, store } = await setup();
-  const record = await store.get('chat-1');
-  record.meta.facts = [{ text: 'Tên người dùng là Nam', ts: Date.now() }];
-  await agent.handle(textEvent('tôi tên gì?'));
-
-  const payload = nimCalls[0].messages
-    .map((message) => (typeof message.content === 'string' ? message.content : ''))
-    .join('\n');
-  assert.match(payload, /Tên người dùng là Nam/);
-  assert.match(payload, /not instructions/);
-});
-
 test('fallback after a tool round sends a clean transcript without tools', async () => {
   const tavily = {
     search: async () => ({ results: [{ title: 'Gold', url: 'https://x', content: 'price' }], images: [] }),
