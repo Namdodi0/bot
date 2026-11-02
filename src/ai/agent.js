@@ -134,7 +134,7 @@ function findBreak(buffer) {
 }
 
 /**
- * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, zalo: ReturnType<typeof import('../zalo/client.js').createZaloClient>, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, commands: ReturnType<typeof import('../commands/index.js').createCommands>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
+ * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, zalo: any, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, commands: ReturnType<typeof import('../commands/index.js').createCommands>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
  */
 export function createAgent(deps) {
   const { config, logger, metrics, zalo, llm, store, tools, commands, stickers, compaction } = deps;
@@ -256,12 +256,14 @@ export function createAgent(deps) {
   /**
    * @param {string} chatId
    * @param {() => Promise<void>|void} [onFirstSend] called once right before the first message (stops typing)
+   * @param {{replyToMessageId?: string|null}} [options]
    * @returns {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number}}
    */
-  function makeSender(chatId, onFirstSend = async () => {}) {
+  function makeSender(chatId, onFirstSend = async () => {}, options = {}) {
     let chain = Promise.resolve();
     let sent = 0;
     let firstSendHandled = false;
+    const isDiscord = String(chatId).startsWith('discord:');
     const limit = config.maxMessagesPerReply > 0 ? config.maxMessagesPerReply : Number.POSITIVE_INFINITY;
 
     /** @param {string} text */
@@ -278,11 +280,16 @@ export function createAgent(deps) {
               // ignore
             }
           }
-          const payload = prepareOutgoing(text, {
-            parseMode: config.zalo.parseMode,
-          });
+          // Zalo needs its markdown subset; Discord keeps standard markdown (headings, links...).
+          const payload = isDiscord
+            ? normalizeWhitespace(String(text ?? ''))
+            : prepareOutgoing(text, { parseMode: config.zalo.parseMode });
           if (!payload) return;
-          await zalo.sendMessage(chatId, payload);
+          await zalo.sendMessage(chatId, payload, {
+            ...(sent === 0 && options.replyToMessageId
+              ? { replyToMessageId: String(options.replyToMessageId) }
+              : {}),
+          });
           sent += 1;
           logger.info(`🤖 bot: ${preview(payload)}`, {
             chatId,
@@ -351,7 +358,7 @@ export function createAgent(deps) {
     // config.responseTimeoutMs=0 means no deadline: wait for the model as long as it takes.
     const deadline =
       config.responseTimeoutMs > 0 ? startedAt + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
-    const sender = makeSender(event.chatId, stopTyping);
+    const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
 
     const rawText = normalizeWhitespace(event.text ?? '');
     // The model is text-only: images are only noted, image content is not sent to the API.
@@ -373,10 +380,11 @@ export function createAgent(deps) {
     });
 
     const tone = record?.meta?.tone ?? config.tone;
-    const toolDefs = tools.definitions();
+    const toolDefs = tools.definitions(event.platform);
     const promptRegistry = createZaloPrompt({
-      botName: zalo.displayName || 'AI assistant',
+      botName: event.botName || zalo.displayName || 'AI assistant',
       chatType: isGroup ? 'GROUP' : 'PRIVATE',
+      platform: event.platform,
       // Tool guidance only appears when the matching schema is actually sent to the model.
       tools: toolDefs,
       imageEnabled: config.image.enabled,
@@ -410,7 +418,7 @@ export function createAgent(deps) {
       const search = await tools.run(
         'web_search',
         { query: options.forceSearch },
-        { chatId: event.chatId, senderId: event.senderId, deadline },
+        { chatId: event.chatId, senderId: event.senderId, platform: event.platform, deadline },
       );
       record.messages.splice(
         record.messages.length - 1,
@@ -737,6 +745,7 @@ export function createAgent(deps) {
           const result = await tools.run(call.name, call.arguments, {
             chatId: event.chatId,
             senderId: event.senderId,
+            platform: event.platform,
             deadline,
           });
           metrics.observe(`tool.${call.name}`, Date.now() - started);
@@ -922,7 +931,7 @@ export function createAgent(deps) {
       }
 
       if (event.kind === 'voice') {
-        const sender = makeSender(event.chatId, stopTyping);
+        const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
         await sendText(sender, 'I cannot listen to voice messages yet — please send text instead.');
         return;
       }
@@ -946,12 +955,15 @@ export function createAgent(deps) {
           }
           return;
         }
-        const sender = makeSender(event.chatId, stopTyping);
+        const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
         await sendText(sender, 'I cannot view stickers yet — please send text instead.');
         return;
       }
 
-      const cleanedText = stripMention(event.text ?? '', [zalo.displayName]);
+      const cleanedText = stripMention(
+        event.text ?? '',
+        [event.botName || zalo.displayName].filter(Boolean),
+      );
       const command = commands.parseCommand(cleanedText);
       const normalizedEvent = cleanedText === (event.text ?? '') ? event : { ...event, text: cleanedText };
       if (command) {
@@ -960,6 +972,8 @@ export function createAgent(deps) {
           chatType: event.chatType,
           senderId: event.senderId,
           senderName: event.senderName,
+          platform: event.platform,
+          isAdmin: event.isAdmin,
           record,
         };
         const result = await commands.run(command, ctx);
@@ -978,6 +992,7 @@ export function createAgent(deps) {
             {
               chatId: event.chatId,
               senderId: event.senderId,
+              platform: event.platform,
               deadline:
                 config.responseTimeoutMs > 0
                   ? Date.now() + config.responseTimeoutMs
@@ -985,7 +1000,7 @@ export function createAgent(deps) {
             },
           );
           if (!imageResult.ok) {
-            const sender = makeSender(event.chatId, stopTyping);
+            const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
             await sendText(sender, imageResult.text);
           }
           return;
@@ -997,13 +1012,13 @@ export function createAgent(deps) {
             metrics.inc('sticker.command');
           } catch (error) {
             logger.warn('sticker command failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
-            const sender = makeSender(event.chatId, stopTyping);
+            const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
             await sendText(sender, 'Could not send the sticker, please try again.');
           }
           return;
         }
         if (result.kind === 'text' && result.text) {
-          const sender = makeSender(event.chatId, stopTyping);
+          const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
           await sendText(sender, result.text);
           return;
         }
@@ -1032,7 +1047,7 @@ export function createAgent(deps) {
       }
 
       try {
-        const sender = makeSender(event.chatId, stopTyping);
+        const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
         await sendText(sender, text);
       } catch (sendError) {
         logger.error('failed to send error message', { error: sendError });

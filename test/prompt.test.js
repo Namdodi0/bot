@@ -23,3 +23,11 @@ test('roast prompts carry the per-turn style seed; friendly prompts do not', () 
   const friendly = friendlyRegistry.render(friendlyRegistry.assemble({ text: 'hi' }));
   assert.equal(friendly.includes('STYLE SEED'), false);
 });
+
+test('discord prompts use Discord formatting and slash commands', () => {
+  const registry = createZaloPrompt({ platform: 'discord', chatType: 'GROUP', tone: 'friendly' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /Discord/);
+  assert.match(text, /slash commands/);
+  assert.equal(text.includes('Zalo does not render markdown headings'), false);
+});

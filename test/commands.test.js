@@ -321,3 +321,10 @@ test('/summary validates the count and the history', async () => {
   result = await commands.run({ name: 'summary', args: '' }, ctx(d));
   assert.match(result.text, /Not enough messages/);
 });
+
+test('/sticker is unsupported on Discord', async () => {
+  const d = deps();
+  const commands = createCommands(d);
+  const result = await commands.run({ name: 'sticker', args: '' }, ctx(d, { platform: 'discord' }));
+  assert.match(result.text, /not supported on Discord/);
+});

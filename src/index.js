@@ -18,6 +18,8 @@ import { createLogger, printBanner } from './logger.js';
 import { createImageValidator } from './media/validate.js';
 import { createMetrics } from './metrics.js';
 import { createTavilyClient } from './search/tavily.js';
+import { createDiscordTransport } from './discord/client.js';
+import { createTransportRouter } from './transport/router.js';
 import { createZaloClient } from './zalo/client.js';
 import { VERSION } from './version.js';
 import { startPolling } from './zalo/polling.js';
@@ -104,6 +106,20 @@ async function main() {
     typingIntervalMs: config.typingIntervalMs,
   });
 
+  // The Discord transport is created before the agent (it only needs a late-bound dispatcher).
+  /** @type {(event: any) => Promise<unknown>|void} */
+  let dispatchRemoteEvent = () => {};
+  const discord = config.discord.enabled
+    ? createDiscordTransport({
+        token: config.discord.token,
+        config: config.discord,
+        logger,
+        metrics,
+        onEvent: (event) => dispatchRemoteEvent(event),
+      })
+    : null;
+  const transport = createTransportRouter({ zalo, discord });
+
   /** @type {any[]} */
   const adapters = [];
   if (config.deepseek.apiKey) {
@@ -155,17 +171,17 @@ async function main() {
   await stickers.load();
   const reminders = createReminderStore({
     file: path.join(config.dataDir, 'reminders.json'),
-    send: (chatId, text) => zalo.sendMessage(chatId, text),
+    send: (chatId, text) => transport.sendMessage(chatId, text),
     logger,
   });
   const summarize = createSummarizer({ llm: models, logger });
   const compaction = createCompactionEngine({ config, logger, metrics, summarize });
-  const tools = createToolRuntime({ config, tavily, zalo, validator, stickers, reminders, logger, metrics });
+  const tools = createToolRuntime({ config, tavily, zalo: transport, validator, stickers, reminders, logger, metrics });
   const commands = createCommands({
     config,
     store,
     metrics,
-    zalo,
+    zalo: transport,
     http: httpClient,
     models,
     stickers,
@@ -177,7 +193,7 @@ async function main() {
     config,
     logger,
     metrics,
-    zalo,
+    zalo: transport,
     llm: models,
     store,
     tools,
@@ -261,12 +277,28 @@ async function main() {
     })();
   }
 
+  dispatchRemoteEvent = (event) => agent.enqueue(event);
+
   const controller = new AbortController();
   /** @type {Array<() => Promise<void>|void>} */
   const cleanups = [];
   await reminders.load();
   reminders.start();
   cleanups.push(() => reminders.stop());
+  if (discord && !config.dryRun) {
+    try {
+      await discord.start();
+      cleanups.push(() => discord.stop());
+      logger.info('discord transport started', {
+        guildId: config.discord.guildId || 'global',
+        icon: '🎮',
+      });
+    } catch (error) {
+      logger.error('discord transport failed to start', { error });
+    }
+  } else if (discord) {
+    logger.info('discord transport skipped in dry-run');
+  }
   /** @type {Promise<void>|null} */
   let shutdownPromise = null;
 
@@ -293,7 +325,7 @@ async function main() {
         logger.warn('drain on shutdown failed', { error });
       }
       try {
-        zalo.stopAllTyping();
+        transport.stopAllTyping();
         await store.flush();
       } catch (error) {
         logger.warn('flush on shutdown failed', { error });

@@ -12,6 +12,9 @@
  * @property {string} messageId
  * @property {number} date
  * @property {string} eventName
+ * @property {'zalo'|'discord'} [platform]
+ * @property {string} [botName]
+ * @property {boolean} [isAdmin]
  */
 
 const KIND_BY_EVENT = {
@@ -110,6 +113,7 @@ export function toEvent(item) {
     messageId: asString(message.message_id),
     date: Number(message.date) || 0,
     eventName,
+    platform: 'zalo',
   };
 }
 

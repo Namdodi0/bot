@@ -5,7 +5,8 @@ this file is for agents and maintainers.
 
 ## Project snapshot
 
-- Zalo group chatbot: Node.js >= 20.6, ESM, **zero runtime dependencies**.
+- Zalo group chatbot (optional Discord transport): Node.js >= 20.6, ESM. The only runtime
+  dependency is `discord.js` (Discord); everything else uses Node built-ins.
 - TypeScript is used only for typechecking (`checkJs`); there is no build step.
 - Runtime: `src/index.js` (composition root). Root `index.js` is only a shim for panels
   that require a root "main file".
@@ -59,6 +60,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/context/` — record schema v2, assembler, atomic JSON store, token meter, compaction
   (prune tool results then summarize balanced ranges).
 - `src/zalo/` — REST client, event normalization, polling, webhook.
+- `src/discord/` — discord.js client (slash commands, mention/reply gate, attachments) and pure event normalization.
+- `src/transport/router.js` — dispatch transport calls by chat id (`discord:` prefix → Discord, otherwise Zalo).
 - `src/commands/index.js` — command router and admin/manager checks.
 - `src/media/validate.js` — SSRF-safe image URL validation (pinned DNS, redirects, size).
 - `src/http.js` — fetch wrapper: timeout, retry, per-service breaker (only retryable
@@ -78,6 +81,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   and generated zips with secrets stay out of git.
 - **Image URLs** must pass `createImageValidator` before `sendPhoto`.
 - **Zalo mutating POSTs** are not retried (duplicate messages).
+- **Discord chat ids are prefixed `discord:`** and must never be passed to the Zalo client.
+  Discord admin checks use the Manage Server permission; `adminIds` is Zalo-only.
 - **Context store writes** are atomic (temp + rename); keep per-chat ordering.
 - **No new runtime dependencies** without explicit approval.
 
@@ -113,7 +118,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 ## Configuration and security notes
 
 - **`.env` contains API keys/tokens only**: `ZALO_BOT_TOKEN`, `NIM_API_KEY`, `DEEPSEEK_API_KEY`,
-  `TAVILY_API_KEY`. It is loaded in code (`src/env.js`); variables already in `process.env`
+  `TAVILY_API_KEY`, and `DISCORD_BOT_TOKEN` when the Discord transport is enabled. It is loaded in code (`src/env.js`); variables already in `process.env`
   win unless empty.
 - **`config.json` contains non-secret settings and is tracked** (see `config.example.json`).
   It must never contain API keys; leave `webhook.secret` empty so the secret stays in

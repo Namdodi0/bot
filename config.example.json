@@ -92,5 +92,10 @@
   "logThinking": true,
   "logFormat": "pretty",
   "logColor": "auto",
-  "opsPort": null
+  "opsPort": null,
+  "discord": {
+    "enabled": false,
+    "guildId": "",
+    "allowedChannelIds": []
+  }
 }

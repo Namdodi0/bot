@@ -106,13 +106,14 @@ const RULES = [
 /**
  * Register every Zalo prompt section with the registry.
  * @param {ReturnType<typeof import('./registry.js').createPromptRegistry>} registry
- * @param {{botName?: string, chatType?: string, imageEnabled?: boolean, tone?: string, styleSeed?: string}} [options]
+ * @param {{botName?: string, chatType?: string, platform?: 'zalo'|'discord', imageEnabled?: boolean, tone?: string, styleSeed?: string}} [options]
  */
 export function registerZaloSections(registry, options = {}) {
   const botName = options.botName || 'AI assistant';
   // Unknown chat types are treated as groups: this bot is built for group chats.
   const inGroup = options.chatType !== 'PRIVATE';
   const imageEnabled = Boolean(options.imageEnabled);
+  const isDiscord = options.platform === 'discord';
   const tone = options.tone ?? 'friendly';
   const toneRules = TONE_RULES[tone] ?? [];
   const styleSeed = tone.startsWith('roast') ? options.styleSeed : '';
@@ -120,9 +121,9 @@ export function registerZaloSections(registry, options = {}) {
   registry.section({
     name: 'core:identity',
     order: SECTION_ORDER.identity,
-    text: `You are "${botName}", an AI assistant chatting on Zalo (a Vietnamese messaging app) in ${
-      inGroup ? 'a group chat' : 'a private chat'
-    }.`,
+    text: `You are "${botName}", an AI assistant chatting on ${
+      isDiscord ? 'Discord (a chat platform)' : 'Zalo (a Vietnamese messaging app)'
+    } in ${inGroup ? (isDiscord ? 'a server channel' : 'a group chat') : 'a private chat'}.`,
   });
 
   registry.section({
@@ -135,17 +136,24 @@ export function registerZaloSections(registry, options = {}) {
     name: 'core:chat-shape',
     order: SECTION_ORDER.chatShape,
     text: inGroup
-      ? '- In groups people only reach you by @mentioning you or replying to your message. The sender name is prefixed to the text as "Name: message" — address that person by name when it matters.'
+      ? isDiscord
+        ? '- In servers people reach you by @mentioning you or replying to your message. The sender name is prefixed to the text as "Name: message" — address that person by name when it matters.'
+        : '- In groups people only reach you by @mentioning you or replying to your message. The sender name is prefixed to the text as "Name: message" — address that person by name when it matters.'
       : '- This is a private chat: answer directly and warmly.',
   });
 
   registry.section({
     name: 'core:formatting',
     order: SECTION_ORDER.formatting,
-    text: [
-      '- Allowed formatting: **bold**, *italic*, "- " bullets, "1. " lists, "> " quotes, `code`. Zalo does not render markdown headings, so never use "#" or "##" — use a bold line instead. No markdown tables and no [text](url) links — paste bare URLs.',
-      '- Never invent sources or numbers. If you are not sure, say so plainly.',
-    ].join('\n'),
+    text: isDiscord
+      ? [
+          '- Formatting: Discord markdown is supported (**bold**, *italic*, `code`, code blocks, headings, lists, quotes, links). Keep each message under 2000 characters. Never ping @everyone or @here, and mention users only when it is genuinely useful.',
+          '- Never invent sources or numbers. If you are not sure, say so plainly.',
+        ].join('\n')
+      : [
+          '- Allowed formatting: **bold**, *italic*, "- " bullets, "1. " lists, "> " quotes, `code`. Zalo does not render markdown headings, so never use "#" or "##" — use a bold line instead. No markdown tables and no [text](url) links — paste bare URLs.',
+          '- Never invent sources or numbers. If you are not sure, say so plainly.',
+        ].join('\n'),
   });
 
   registry.section({
@@ -188,10 +196,16 @@ export function registerZaloSections(registry, options = {}) {
   registry.section({
     name: 'core:commands',
     order: SECTION_ORDER.commands,
-    text: [
-      '',
-      'COMMANDS THE USER MAY SEND: /help, /reset, /status, /id, /summary [N], /search <query>, /image <keyword>, /sticker [mood], /remind <time> <text>, /model [alias], /tone [roast|hard|friendly|default], /think on|off|low|medium|high|auto, /split on|off|auto, /compact, /ping.',
-      'Never fabricate command output. Do not tell the user to run a command unless it is genuinely useful.',
-    ].join('\n'),
+    text: isDiscord
+      ? [
+          '',
+          'COMMANDS THE USER MAY RUN (slash commands): /help, /reset, /status, /id, /summary, /search, /image, /remind, /model, /tone, /think, /split, /compact, /ping.',
+          'Never fabricate command output. Do not tell the user to run a command unless it is genuinely useful.',
+        ].join('\n')
+      : [
+          '',
+          'COMMANDS THE USER MAY SEND: /help, /reset, /status, /id, /summary [N], /search <query>, /image <keyword>, /sticker [mood], /remind <time> <text>, /model [alias], /tone [roast|hard|friendly|default], /think on|off|low|medium|high|auto, /split on|off|auto, /compact, /ping.',
+          'Never fabricate command output. Do not tell the user to run a command unless it is genuinely useful.',
+        ].join('\n'),
   });
 }

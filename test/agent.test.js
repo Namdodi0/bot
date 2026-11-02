@@ -35,9 +35,9 @@ async function setup(options = {}) {
   const sentStickers = [];
   const zalo = {
     displayName: 'Bot deepseek',
-    sendMessage: async (chatId, text) => {
+    sendMessage: async (chatId, text, opts) => {
       events.push('send');
-      sent.push({ chatId, text });
+      sent.push({ chatId, text, opts });
       return { ok: true };
     },
     sendPhoto: async (chatId, url, caption) => {
@@ -707,4 +707,18 @@ test('the sender rate limit is scoped per chat', async () => {
   await agent.handle(textEvent('two', { messageId: 'rl-2', chatId: 'chat-1' }));
   await agent.handle(textEvent('three', { messageId: 'rl-3', chatId: 'chat-2' }));
   assert.equal(nimCalls.length, 2);
+});
+
+test('discord replies reference the triggering message', async () => {
+  const { agent, sent } = await setup();
+  await agent.handle(
+    textEvent('hello', {
+      platform: 'discord',
+      chatId: 'discord:chan-1',
+      botName: 'Bot',
+      messageId: 'm-1',
+    }),
+  );
+  assert.equal(sent[0].chatId, 'discord:chan-1');
+  assert.equal(sent[0].opts?.replyToMessageId, 'm-1');
 });

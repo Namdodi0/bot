@@ -22,7 +22,7 @@ export function parseCommand(text) {
 }
 
 /**
- * @param {{config: any, store: ReturnType<typeof import('../context/store.js').createContextStore>, metrics: ReturnType<typeof import('../metrics.js').createMetrics>, zalo: ReturnType<typeof import('../zalo/client.js').createZaloClient>, http: ReturnType<typeof import('../http.js').createHttp>, models: ReturnType<typeof import('../ai/router.js').createModelRouter>, stickers?: ReturnType<typeof import('../ai/stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('../ai/reminders.js').createReminderStore>, logger?: import('../logger.js').Logger, compaction?: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
+ * @param {{config: any, store: ReturnType<typeof import('../context/store.js').createContextStore>, metrics: ReturnType<typeof import('../metrics.js').createMetrics>, zalo: any, http: ReturnType<typeof import('../http.js').createHttp>, models: ReturnType<typeof import('../ai/router.js').createModelRouter>, stickers?: ReturnType<typeof import('../ai/stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('../ai/reminders.js').createReminderStore>, logger?: import('../logger.js').Logger, compaction?: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
  */
 export function createCommands(deps) {
   const { config, store, metrics, zalo, models, compaction } = deps;
@@ -32,6 +32,7 @@ export function createCommands(deps) {
   const logger = deps.logger;
 
   function canManage(ctx) {
+    if (typeof ctx.isAdmin === 'boolean') return ctx.isAdmin;
     if (!config.adminIds.length) return true;
     if (ctx.chatType !== 'GROUP') return true;
     return config.adminIds.includes(ctx.senderId);
@@ -127,7 +128,7 @@ export function createCommands(deps) {
 
   /**
    * @param {{name: string, args: string}} command
-   * @param {{chatId: string, chatType: string, senderId: string, senderName: string, record: any}} ctx
+   * @param {{chatId: string, chatType: string, senderId: string, senderName: string, platform?: string, isAdmin?: boolean, record: any}} ctx
    */
   async function run(command, ctx) {
     const name = command.name;
@@ -254,6 +255,9 @@ export function createCommands(deps) {
       }
 
       case 'sticker': {
+        if (ctx.platform === 'discord') {
+          return { kind: 'text', text: 'Zalo stickers are not supported on Discord.' };
+        }
         if (!config.sticker.enabled) {
           return { kind: 'text', text: 'The sticker feature is disabled in the config.' };
         }
@@ -586,8 +590,8 @@ export function createCommands(deps) {
 
       case 'ping': {
         try {
-          const ms = await zalo.ping();
-          return { kind: 'text', text: `Pong! The Zalo API replied in ${ms}ms.` };
+          const ms = await zalo.ping(ctx.chatId);
+          return { kind: 'text', text: `Pong! The platform API replied in ${ms}ms.` };
         } catch (error) {
           return { kind: 'text', text: `Ping failed: ${String(/** @type {any} */ (error)?.message ?? error)}` };
         }

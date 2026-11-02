@@ -5,7 +5,7 @@ import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from './remind
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, zalo: ReturnType<typeof import('../zalo/client.js').createZaloClient>, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number}} options
+ * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, zalo: any, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number}} options
  */
 export function createToolRuntime(options) {
   const config = options.config;
@@ -18,7 +18,8 @@ export function createToolRuntime(options) {
   const metrics = options.metrics;
   const sendDelayMs = options.sendDelayMs ?? 400;
 
-  function definitions() {
+  /** @param {string} [platform] */
+  function definitions(platform = 'zalo') {
     /** @type {any[]} */
     const tools = [];
     // SEARCH_AUTO=off → the model does not search the web on its own, but /search still works.
@@ -64,7 +65,7 @@ export function createToolRuntime(options) {
         },
       });
     }
-    if (config.sticker.enabled) {
+    if (config.sticker.enabled && platform !== 'discord') {
       tools.push({
         type: 'function',
         function: {
@@ -111,7 +112,7 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, senderId?: string, deadline?: number}} ctx
+   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number}} ctx
    * @returns {Promise<{ok: boolean, text: string}>}
    */
   async function setReminder(args, ctx) {
@@ -159,7 +160,7 @@ export function createToolRuntime(options) {
   /**
    * @param {string} name
    * @param {any} args
-   * @param {{chatId: string, senderId?: string, deadline?: number}} ctx
+   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number}} ctx
    * @returns {Promise<{ok: boolean, text: string, data?: any}>}
    */
   async function run(name, args, ctx) {
@@ -172,7 +173,7 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, deadline?: number}} [ctx]
+   * @param {{chatId: string, platform?: string, deadline?: number}} [ctx]
    */
   async function webSearch(args, ctx = { chatId: '' }) {
     if (!config.search.enabled || !tavily) {
@@ -207,7 +208,7 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, deadline?: number}} ctx
+   * @param {{chatId: string, platform?: string, deadline?: number}} ctx
    */
   async function sendImage(args, ctx) {
     if (!config.image.enabled) return { ok: false, text: 'Image sending is disabled.' };
@@ -301,9 +302,12 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, deadline?: number}} ctx
+   * @param {{chatId: string, platform?: string, deadline?: number}} ctx
    */
   async function sendSticker(args, ctx) {
+    if (ctx?.platform === 'discord') {
+      return { ok: false, text: 'Zalo stickers are not available on Discord.' };
+    }
     if (!config.sticker.enabled) return { ok: false, text: 'Stickers are disabled.' };
     if (!stickers) return { ok: false, text: 'No sticker catalog yet.' };
     if (ctx.deadline && Date.now() > ctx.deadline) {

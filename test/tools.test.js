@@ -240,3 +240,14 @@ test('send_image reports a partial batch when there are not enough unique images
   assert.equal(sent.length, 2);
   assert.match(result.text, /2 of 5/);
 });
+
+test('discord excludes Zalo stickers and the tool refuses', async () => {
+  const { tools } = runtime(baseConfig(), fakeStickers);
+  assert.equal(
+    tools.definitions('discord').some((tool) => tool.function.name === 'send_sticker'),
+    false,
+  );
+  const result = await tools.run('send_sticker', { emotion: 'hi' }, { chatId: 'discord:c1', platform: 'discord' });
+  assert.equal(result.ok, false);
+  assert.match(result.text, /not available on Discord/);
+});

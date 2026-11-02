@@ -245,6 +245,7 @@ export function collectSecrets(config) {
     config.nim.apiKey,
     config.deepseek.apiKey,
     config.search.apiKey,
+    config.discord?.token,
     config.webhook.secret,
   ].filter(Boolean);
 }
@@ -382,12 +383,18 @@ export function loadConfig(input = {}) {
   const searchSection = section(root, 'search');
   const imageSection = section(root, 'image');
   const stickerSection = section(root, 'sticker');
+  const discordSection = section(root, 'discord');
 
   const token = asString(env.ZALO_BOT_TOKEN, 'ZALO_BOT_TOKEN');
   if (!token) throw new ConfigError('Missing ZALO_BOT_TOKEN (see .env.example)');
   const nimKey = asString(env.NIM_API_KEY, 'NIM_API_KEY');
   const deepseekKey = asString(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY');
   const tavilyKey = asString(env.TAVILY_API_KEY, 'TAVILY_API_KEY');
+  const discordToken = asString(env.DISCORD_BOT_TOKEN, 'DISCORD_BOT_TOKEN');
+  const discordEnabled = asBool(discordSection.enabled, 'config.discord.enabled', false);
+  if (discordEnabled && !discordToken) {
+    throw new ConfigError('Missing DISCORD_BOT_TOKEN (required when config.discord.enabled is true)');
+  }
 
   const mode = String(cli.mode ?? asString(root.mode, 'config.mode', 'polling')).toLowerCase();
   if (mode !== 'polling' && mode !== 'webhook') {
@@ -539,6 +546,12 @@ export function loadConfig(input = {}) {
     },
     allowedChatIds: asStringList(root.allowedChatIds, 'config.allowedChatIds'),
     adminIds: asStringList(root.adminIds, 'config.adminIds'),
+    discord: {
+      enabled: discordEnabled,
+      token: discordToken,
+      guildId: asString(discordSection.guildId, 'config.discord.guildId'),
+      allowedChannelIds: asStringList(discordSection.allowedChannelIds, 'config.discord.allowedChannelIds'),
+    },
     mode: /** @type {TransportMode} */ (mode),
     webhook: {
       port: /** @type {number} */ (asInt(webhookSection.port, 'config.webhook.port', 8787, { min: 1, max: 65535 })),
@@ -667,6 +680,7 @@ export function describeConfig(config) {
     version: config.version,
     mode: config.mode,
     configFile: config.configFile ? path.basename(config.configFile) : 'inline/defaults',
+    discord: config.discord?.enabled ? 'on' : 'off',
     model: `${config.model.defaultAlias} (${primaryModel})`,
     fallbackModel: fallback
       ? `${config.model.fallbackAlias} (${fallbackReady ? fallbackModel || 'off' : 'no key — skipped'})`

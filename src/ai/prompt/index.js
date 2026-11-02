@@ -6,7 +6,7 @@ export { createPromptRegistry } from './registry.js';
 
 /**
  * Build the prompt registry for one turn: static sections + tool guidance + runtime context.
- * @param {{botName?: string, chatType?: string, searchEnabled?: boolean, imageEnabled?: boolean, stickerEnabled?: boolean, tone?: string, styleSeed?: string, tools?: any[]}} [options]
+ * @param {{botName?: string, chatType?: string, platform?: 'zalo'|'discord', searchEnabled?: boolean, imageEnabled?: boolean, stickerEnabled?: boolean, tone?: string, styleSeed?: string, tools?: any[]}} [options]
  */
 export function createZaloPrompt(options = {}) {
   const registry = createPromptRegistry();

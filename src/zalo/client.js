@@ -118,7 +118,7 @@ export function createZaloClient(options) {
   /**
    * @param {string} chatId
    * @param {string} text
-   * @param {{parseMode?: 'markdown'|'none'}} [opts]
+   * @param {{parseMode?: 'markdown'|'none', replyToMessageId?: string}} [opts]
    */
   async function sendMessage(chatId, text, opts = {}) {
     const mode = opts.parseMode ?? parseMode;

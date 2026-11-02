@@ -258,12 +258,26 @@ test('legacy non-secret .env settings are reported as ignored', () => {
   assert.deepEqual(config.ignoredEnvKeys, ['DATA_DIR', 'MODE', 'NIM_TEMPERATURE']);
 });
 
+test('discord is optional and requires a token only when enabled', () => {
+  assert.equal(load().discord.enabled, false);
+  assert.throws(() => load({ discord: { enabled: true } }), /DISCORD_BOT_TOKEN/);
+  const config = load(
+    { discord: { enabled: true, guildId: 'g1', allowedChannelIds: ['c1', 'c2'] } },
+    baseEnv({ DISCORD_BOT_TOKEN: 'discord-token' }),
+  );
+  assert.equal(config.discord.enabled, true);
+  assert.equal(config.discord.token, 'discord-token');
+  assert.deepEqual(config.discord.allowedChannelIds, ['c1', 'c2']);
+});
+
 test('collectSecrets includes every configured key', () => {
   const config = load();
   const secrets = collectSecrets(config);
   for (const value of ['123:abc', 'nvapi-test', 'sk-test', 'tvly-test']) {
     assert.ok(secrets.includes(value), value);
   }
+  const withDiscord = collectSecrets(load({}, baseEnv({ DISCORD_BOT_TOKEN: 'discord-token' })));
+  assert.ok(withDiscord.includes('discord-token'));
 });
 
 test('--help short-circuits before reading config or keys', () => {
