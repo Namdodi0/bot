@@ -62,6 +62,8 @@ export function createAgent(deps) {
     const stopTyping = config.typing ? transport.startTyping(event.chatId) : async () => {};
 
     try {
+      // Keep the record in memory while the turn runs: eviction would silently lose it.
+      store.pin?.(event.chatId);
       const record = await store.get(event.chatId, { chatType: event.chatType });
 
       // Durable dedupe: `seen` in RAM is lost on restart, the record is not.
@@ -211,6 +213,7 @@ export function createAgent(deps) {
         logger.error('failed to send error message', { error: sendError });
       }
     } finally {
+      store.unpin?.(event.chatId);
       try {
         await stopTyping();
       } catch {

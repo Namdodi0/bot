@@ -115,6 +115,38 @@ test('prune drops old in-memory records too, not just files', async () => {
   assert.equal(store.has('stale-chat'), false, 'records past TTL must be dropped from memory');
 });
 
+test('a pinned chat is not evicted when maxChats is exceeded', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const store = createContextStore({ dir, logger: silentLogger, maxChats: 1, debounceMs: 2 });
+  await store.init();
+
+  const pinnedRecord = await store.get('chat-A');
+  pinnedRecord.messages.push({ role: 'user', text: 'in flight', ts: 1 });
+  store.pin('chat-A');
+  await store.get('chat-B');
+  assert.equal(store.has('chat-A'), true, 'a pinned chat must stay in memory');
+  assert.equal(store.has('chat-B'), true);
+
+  store.unpin('chat-A');
+  await store.get('chat-C');
+  assert.equal(store.has('chat-C'), true);
+  assert.equal(store.has('chat-B'), false);
+});
+
+test('eviction stops instead of looping when every loaded chat is pinned', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const store = createContextStore({ dir, logger: silentLogger, maxChats: 1, debounceMs: 2 });
+  await store.init();
+
+  await store.get('chat-A');
+  store.pin('chat-A');
+  await store.get('chat-B');
+  store.pin('chat-B');
+  // Both candidates are pinned: keep both in memory instead of evicting one (or looping).
+  await store.get('chat-A');
+  assert.equal(store.loadedChats(), 2);
+});
+
 test('CONTEXT_TTL_HOURS=0: prune deletes no context', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 0, debounceMs: 2 });

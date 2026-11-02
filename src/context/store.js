@@ -46,6 +46,8 @@ export function createContextStore(options) {
   const timers = new Map();
   /** @type {Set<string>} */
   const dirty = new Set();
+  /** @type {Map<string, number>} */
+  const pinned = new Map();
 
   /** @param {string} chatId */
   function fileFor(chatId) {
@@ -146,15 +148,32 @@ export function createContextStore(options) {
 
   function evictIfNeeded() {
     while (memory.size > maxChats) {
-      const oldestKey = memory.keys().next().value;
-      if (oldestKey === undefined) break;
-      const record = memory.get(oldestKey);
-      memory.delete(oldestKey);
-      if (record && dirty.has(oldestKey)) {
-        dirty.delete(oldestKey);
+      // A chat with a turn in flight (pinned) or the record just loaded/refreshed must
+      // never be dropped from memory: the turn would keep writing to an orphaned record.
+      const keys = [...memory.keys()];
+      const active = keys.at(-1);
+      const victim = keys.find((key) => key !== active && !pinned.has(key));
+      // Everything left is pinned: keep memory above maxChats rather than lose a turn.
+      if (victim === undefined) return;
+      const record = memory.get(victim);
+      memory.delete(victim);
+      if (record && dirty.has(victim)) {
+        dirty.delete(victim);
         persist(record).catch((error) => logger?.warn('evict save context failed', { error }));
       }
     }
+  }
+
+  /** @param {string} chatId */
+  function pin(chatId) {
+    pinned.set(chatId, (pinned.get(chatId) ?? 0) + 1);
+  }
+
+  /** @param {string} chatId */
+  function unpin(chatId) {
+    const count = (pinned.get(chatId) ?? 0) - 1;
+    if (count > 0) pinned.set(chatId, count);
+    else pinned.delete(chatId);
   }
 
   /** @param {string} chatId */
@@ -292,5 +311,5 @@ export function createContextStore(options) {
     return entries.filter((name) => name.endsWith('.json')).length;
   }
 
-  return { init, get, reset, touch, flush, prune, has, loadedChats, count, scheduleSave, fileFor };
+  return { init, get, reset, touch, flush, prune, has, loadedChats, count, scheduleSave, fileFor, pin, unpin };
 }
