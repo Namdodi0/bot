@@ -1,0 +1,86 @@
+{
+  "platform": "discord",
+  "dataDir": "./data/discord",
+  "discord": {
+    "guildId": "",
+    "allowedChannelIds": []
+  },
+  "nim": {
+    "baseUrl": "https://integrate.api.nvidia.com/v1",
+    "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+    "ultraModel": "nvidia/nemotron-3-ultra-550b-a55b",
+    "fallbackModel": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "temperature": 0.5,
+    "timeoutMs": 0,
+    "topP": 0.9,
+    "topK": null,
+    "minP": null,
+    "repetitionPenalty": null,
+    "frequencyPenalty": 0.3,
+    "presencePenalty": 0.3,
+    "seed": null
+  },
+  "deepseek": {
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "proModel": "deepseek-v4-pro",
+    "temperature": 0.5,
+    "timeoutMs": 0,
+    "topP": 0.9,
+    "frequencyPenalty": 0.3,
+    "presencePenalty": 0.3,
+    "seed": null
+  },
+  "model": {
+    "defaultAlias": "deepseek",
+    "fallbackAlias": "nim-light"
+  },
+  "ai": {
+    "reasoning": "none",
+    "maxTokens": null,
+    "maxToolRounds": 3
+  },
+  "responseTimeoutMs": 0,
+  "context": {
+    "maxTokens": 0,
+    "maxMessages": 0,
+    "maxCharsPerMessage": 12000,
+    "ttlHours": 72,
+    "summary": true,
+    "modelWindow": 0,
+    "compactThreshold": 0.8,
+    "keepRecent": 8,
+    "summaryMaxChars": 1200,
+    "toolResultKeepChars": 600
+  },
+  "search": {
+    "enabled": true,
+    "auto": true,
+    "baseUrl": "https://api.tavily.com",
+    "depth": "fast",
+    "maxResults": 4,
+    "country": "vietnam",
+    "cacheTtlMs": 600000
+  },
+  "image": {
+    "enabled": true
+  },
+  "tone": "roast-hard",
+  "typing": true,
+  "typingIntervalMs": 4000,
+  "progressive": "auto",
+  "progressiveAfterMs": 3000,
+  "maxMessagesPerReply": 0,
+  "maxQueueDepth": 50,
+  "userRateLimitPerMinute": 12,
+  "logLevel": "info",
+  "logThinking": true,
+  "logFormat": "pretty",
+  "logColor": "auto",
+  "opsPort": null,
+  "sticker": {
+    "enabled": false,
+    "echo": false,
+    "ids": ""
+  }
+}

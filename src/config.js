@@ -385,15 +385,21 @@ export function loadConfig(input = {}) {
   const stickerSection = section(root, 'sticker');
   const discordSection = section(root, 'discord');
 
+  const platform = asString(root.platform, 'config.platform', 'zalo').toLowerCase();
+  if (!['zalo', 'discord'].includes(platform)) {
+    throw new ConfigError(`config.platform must be "zalo" or "discord" (got: "${platform}")`);
+  }
+
   const token = asString(env.ZALO_BOT_TOKEN, 'ZALO_BOT_TOKEN');
-  if (!token) throw new ConfigError('Missing ZALO_BOT_TOKEN (see .env.example)');
+  if (platform === 'zalo' && !token) {
+    throw new ConfigError('Missing ZALO_BOT_TOKEN (see .env.example)');
+  }
   const nimKey = asString(env.NIM_API_KEY, 'NIM_API_KEY');
   const deepseekKey = asString(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY');
   const tavilyKey = asString(env.TAVILY_API_KEY, 'TAVILY_API_KEY');
   const discordToken = asString(env.DISCORD_BOT_TOKEN, 'DISCORD_BOT_TOKEN');
-  const discordEnabled = asBool(discordSection.enabled, 'config.discord.enabled', false);
-  if (discordEnabled && !discordToken) {
-    throw new ConfigError('Missing DISCORD_BOT_TOKEN (required when config.discord.enabled is true)');
+  if (platform === 'discord' && !discordToken) {
+    throw new ConfigError('Missing DISCORD_BOT_TOKEN (required when config.platform is "discord")');
   }
 
   const mode = String(cli.mode ?? asString(root.mode, 'config.mode', 'polling')).toLowerCase();
@@ -533,6 +539,7 @@ export function loadConfig(input = {}) {
   const config = {
     help: false,
     version: VERSION,
+    platform,
     configFile: input.config !== undefined ? null : configPath,
     configFileFound,
     ignoredEnvKeys: legacyEnvKeys,
@@ -547,7 +554,6 @@ export function loadConfig(input = {}) {
     allowedChatIds: asStringList(root.allowedChatIds, 'config.allowedChatIds'),
     adminIds: asStringList(root.adminIds, 'config.adminIds'),
     discord: {
-      enabled: discordEnabled,
       token: discordToken,
       guildId: asString(discordSection.guildId, 'config.discord.guildId'),
       allowedChannelIds: asStringList(discordSection.allowedChannelIds, 'config.discord.allowedChannelIds'),
@@ -680,7 +686,7 @@ export function describeConfig(config) {
     version: config.version,
     mode: config.mode,
     configFile: config.configFile ? path.basename(config.configFile) : 'inline/defaults',
-    discord: config.discord?.enabled ? 'on' : 'off',
+    platform: config.platform,
     model: `${config.model.defaultAlias} (${primaryModel})`,
     fallbackModel: fallback
       ? `${config.model.fallbackAlias} (${fallbackReady ? fallbackModel || 'off' : 'no key — skipped'})`

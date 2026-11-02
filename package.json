@@ -15,7 +15,9 @@
     "simulate": "node scripts/simulate.js",
     "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack.ps1",
     "test": "node --test",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "start:discord": "node src/discord.js",
+    "dev:discord": "node --watch src/discord.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

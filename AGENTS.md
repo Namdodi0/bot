@@ -8,8 +8,9 @@ this file is for agents and maintainers.
 - Zalo group chatbot (optional Discord transport): Node.js >= 20.6, ESM. The only runtime
   dependency is `discord.js` (Discord); everything else uses Node built-ins.
 - TypeScript is used only for typechecking (`checkJs`); there is no build step.
-- Runtime: `src/index.js` (composition root). Root `index.js` is only a shim for panels
-  that require a root "main file".
+- Runtime: two entry points share `src/runtime.js` (engine + lifecycle): `src/index.js`
+  (Zalo) and `src/discord.js` (Discord). Each has its own config and data directory.
+  Root `index.js` is only a shim that starts the Zalo entry point.
 - The bot calls OpenAI-compatible providers (DeepSeek primary, NVIDIA NIM fallback),
   Tavily for search, and the Zalo Bot API for messaging.
 
@@ -46,8 +47,10 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 
 ## Architecture map
 
-- `src/index.js` — wires config, logger, HTTP, Zalo client, LLM adapters, tools, commands,
-  agent, reminders, webhook/polling, shutdown.
+- `src/runtime.js` — shared engine: store, LLM adapters, tools, commands, agent, reminders,
+  warmup, ops/prune, shutdown.
+- `src/index.js` — Zalo entry: Zalo client, getMe/banner, polling or webhook.
+- `src/discord.js` — Discord entry: gateway client and slash commands.
 - `src/ai/agent.js` — per-chat FIFO queue, global concurrency cap, tool rounds, progressive
   sending, retry/fallback, dedupe, rate limit.
 - `src/ai/prompt/` — prompt registry (`section`, `context`, `variable`, `tools`), static
@@ -61,7 +64,6 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   (prune tool results then summarize balanced ranges).
 - `src/zalo/` — REST client, event normalization, polling, webhook.
 - `src/discord/` — discord.js client (slash commands, mention/reply gate, attachments) and pure event normalization.
-- `src/transport/router.js` — dispatch transport calls by chat id (`discord:` prefix → Discord, otherwise Zalo).
 - `src/commands/index.js` — command router and admin/manager checks.
 - `src/media/validate.js` — SSRF-safe image URL validation (pinned DNS, redirects, size).
 - `src/http.js` — fetch wrapper: timeout, retry, per-service breaker (only retryable

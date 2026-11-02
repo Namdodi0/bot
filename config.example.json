@@ -1,4 +1,5 @@
 {
+  "platform": "zalo",
   "mode": "polling",
   "dataDir": "./data",
   "zalo": {
@@ -92,10 +93,5 @@
   "logThinking": true,
   "logFormat": "pretty",
   "logColor": "auto",
-  "opsPort": null,
-  "discord": {
-    "enabled": false,
-    "guildId": "",
-    "allowedChannelIds": []
-  }
+  "opsPort": null
 }

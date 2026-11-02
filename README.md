@@ -1,6 +1,6 @@
 # zalo-group-bot
 
-A chat bot for **Zalo group chats** (and optionally **Discord**), powered by **DeepSeek Flash** (primary) with **NVIDIA NIM** as fallback, and **Tavily** for web search. Written in plain Node.js (ESM) using the built-in `fetch`, `node:http` and `node:test`; the only runtime dependency is `discord.js`, for the optional Discord transport.
+A chat bot for **Zalo group chats** and **Discord**, powered by **DeepSeek Flash** (primary) with **NVIDIA NIM** as fallback, and **Tavily** for web search. Two independent processes (`src/index.js` for Zalo, `src/discord.js` for Discord) share the same engine (agent, LLM, tools, commands, context) and prompt, but each has its own config, token, data directory and lifecycle. Written in plain Node.js (ESM); the only runtime dependency is `discord.js`, used by the Discord process.
 
 ## Features
 
@@ -12,7 +12,7 @@ A chat bot for **Zalo group chats** (and optionally **Discord**), powered by **D
 - **Sticker sending** (`sendSticker`) via `/sticker`, the `send_sticker` tool, and echoing the sticker back when someone sends one to the bot (needs an official sticker ID — see below).
 - **Text-only model**: images sent by users are only noted in the context (a bracketed note saying the user attached an image the bot cannot view), image content is never sent to the API. The bot can still **send images** through `send_image`.
 - Zalo markdown formatting, long messages split into ≤ 1900 characters (Zalo's safe limit).
-- **Discord transport (optional, parallel to Zalo)**: slash commands, mention/reply triggering, native replies, attachments and per-platform context; both platforms can run at the same time.
+- **Discord bot (separate process)**: slash commands, mention/reply triggering, native replies and attachments. It shares the engine/prompt with the Zalo bot but keeps its own `config.discord.json` and `data/discord/`; run both if you want both platforms.
 - **Low latency**: no `max_tokens` cap, `reasoning_effort: none` by default (~0 thinking tokens), typing indicator, model warm-up, streaming + partial sends for slow answers, search/image cache, retry + circuit breaker.
 - **Concise by default**: about 1–3 sentences (roughly under 500 characters) for simple chat, 3–5 sentences or a short list for normal questions; answers expand only when the user asks for detail, steps, a comparison, or a specific length.
 - **Reminders** (`/remind 20:00 tomorrow team meeting`, or the model's `set_reminder` tool) persisted to `data/reminders.json`.
@@ -46,16 +46,18 @@ npm run smoke        # checks token + DeepSeek + NIM + Tavily + image validation
 ## Run
 
 ```powershell
-npm start                        # polling (default, no tunnel needed)
+npm start                        # Zalo bot: polling (default, no tunnel needed)
 node index.js                    # equivalent — .env loads itself, no env-file flag needed
-npm run dev                      # polling + watch
+npm run start:discord            # Discord bot (separate process, config.discord.json)
+npm run dev                      # Zalo polling + watch
+npm run dev:discord              # Discord + watch
 node --env-file-if-exists=.env src/index.js --once   # take one update then exit
 npm test                         # unit tests (node --test)
 npm run typecheck                # tsc checkJs over src/
 npm run simulate -- "gold price today?"   # run the real agent (DeepSeek/NIM/Tavily) but do NOT send to Zalo
 ```
 
-Environment precedence for **API keys**: variables already in `process.env` (hosting panel, pm2, terminal) **win** over the `.env` file; if a declared variable is **empty**, the `.env` value is filled in. If the token is missing, the error log also prints the working directory and which `.env` file was not found. Non-secret settings are read only from `config.json` (`--config <path>` to use another file); old non-secret variables left in `.env` are ignored with a startup warning, and the bot refuses to start until they are moved if `config.json` is missing.
+Environment precedence for **API keys**: variables already in `process.env` (hosting panel, pm2, terminal) **win** over the `.env` file; if a declared variable is **empty**, the `.env` value is filled in. If the token is missing, the error log also prints the working directory and which `.env` file was not found. Non-secret settings are read only from `config.json` (Zalo) or `config.discord.json` (Discord); `--config <path>` selects another file; old non-secret variables left in `.env` are ignored with a startup warning, and the bot refuses to start until they are moved if `config.json` is missing.
 
 `simulate` prints the answer as if the bot were in the group, using its own context in `data/simulate/` — handy for trying out tool calling, memory, `/status` and `/reset` before letting the bot loose in a real group.
 
@@ -144,26 +146,25 @@ Steps to add the bot (following the [Zalo docs](https://docs.zaloplatforms.com/d
 
 After the first run the log prints the `chatId` (or type `/id` in the group) — put it in `allowedChatIds` in `config.json` so the bot only works in that group.
 
-## Discord (optional, parallel to Zalo)
+## Discord (separate process)
 
-The bot can run on **both Zalo and Discord at the same time**. Each platform keeps its own
-context (`discord:<channelId>` vs the raw Zalo chat id), so histories and reminders never mix.
+The Discord bot is a **separate process** that shares the engine and prompt with the Zalo
+bot, but has its own config (`config.discord.json`) and data directory (`data/discord`).
+Run both processes if you want both platforms; their histories and reminders never mix.
 
 1. Create an application at <https://discord.com/developers/applications> → **Bot** → reset/copy the token.
 2. In **Bot → Privileged Gateway Intents**, enable **Message Content** (needed to read mentions/replies; slash commands work without it).
 3. Invite the bot with the `bot` + `applications.commands` scopes and Send Messages / Attach Files / Read Message History permissions:
    `https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=100352&scope=bot%20applications.commands`
 4. Put the token in `.env`: `DISCORD_BOT_TOKEN=...`
-5. In `config.json`:
+5. Use `config.discord.json` (tracked; copy `config.discord.example.json` if it is missing):
    ```json
-   "discord": {
-     "enabled": true,
-     "guildId": "",
-     "allowedChannelIds": []
-   }
+   "platform": "discord",
+   "dataDir": "./data/discord",
+   "discord": { "guildId": "", "allowedChannelIds": [] }
    ```
-   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). `allowedChannelIds` empty = every channel and DM.
-6. Restart. The log shows `discord bot ready` and the slash-command registration.
+   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). `allowedChannelIds` empty = every channel and DM. The engine settings (model, AI, search, context, tone) are in the same file, independent from the Zalo config.
+6. Start it with `npm run start:discord` (or pm2 `discord-bot`). The log shows `discord bot ready` and the slash-command registration.
 
 In a server the bot answers when it is **@mentioned** or someone **replies** to its message; DMs work directly. Slash commands mirror `/help`, `/status`, `/id`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, `/model`, `/tone`, `/think`, `/split`, `/ping` (Zalo-only `/sticker` is absent). The first reply is a native Discord reply to the triggering message, and images are uploaded as attachments. Discord admins are members with **Manage Server**; `adminIds` in `config.json` applies to Zalo only.
 
@@ -210,7 +211,8 @@ the ignored names.
 Main `config.json` groups:
 
 - **Zalo / transport**: `mode` (`polling|webhook`), `zalo.botId`, `zalo.baseUrl`, `zalo.parseMode`, `allowedChatIds`, `adminIds`, `webhook.port`, `webhook.host`, `webhook.path`, `webhook.secret` (optional, ≥ 8 chars; empty = auto-generated), `webhook.publicUrl`.
-- **Discord (optional)**: `discord.enabled`, `discord.guildId` (instant slash-command registration for one server; empty = global), `discord.allowedChannelIds` (empty = all channels/DMs). The token is secret: `DISCORD_BOT_TOKEN` in `.env`.
+- **Two configs**: `config.json` (Zalo, `platform: "zalo"` by default) and `config.discord.json` (Discord, `platform: "discord"`). The engine settings (model, ai, search, context, tone, limits) are per file so each bot can be tuned and deployed independently.
+- **Discord**: `discord.guildId` (instant slash-command registration for one server; empty = global), `discord.allowedChannelIds` (empty = all channels/DMs), `dataDir` (default `./data/discord`). The token is secret: `DISCORD_BOT_TOKEN` in `.env`. `allowedChatIds`/`adminIds` in the Zalo config do not apply to Discord (admin = Manage Server).
 - **Models**: `model.defaultAlias` (`deepseek|pro|nim|ultra|nim-light`), `model.fallbackAlias`, `ai.reasoning` (`none|low|medium|high|auto`), `ai.maxTokens` (`null`/`0` = unlimited), `ai.maxToolRounds` (`0` = unlimited tool rounds; default `3`), `responseTimeoutMs` (`0` = no deadline).
 - **DeepSeek**: `deepseek.baseUrl`, `deepseek.model`, `deepseek.proModel`, `deepseek.temperature` (0–2), `deepseek.timeoutMs` (`0` = no limit), `deepseek.topP`, `deepseek.frequencyPenalty`, `deepseek.presencePenalty`, `deepseek.seed`.
 - **NIM**: `nim.baseUrl`, `nim.model`, `nim.ultraModel`, `nim.fallbackModel`, `nim.temperature` (0–2), `nim.timeoutMs` (`0` = no limit), `nim.topP`, `nim.topK`, `nim.minP`, `nim.repetitionPenalty`, `nim.frequencyPenalty`, `nim.presencePenalty`, `nim.seed` (only non-null values are sent).
@@ -286,7 +288,9 @@ src/
   metrics.js       counters + p50/p95
   zalo/            REST client, event normalize, polling, webhook
   discord/         discord.js client, slash commands, event normalization
-  transport/       router: dispatch by chatId prefix (discord:...)
+  runtime.js       shared engine: store, models, tools, commands, agent, lifecycle
+  index.js         Zalo entry point (polling/webhook)
+  discord.js       Discord entry point (gateway + slash commands)
   ai/
     prompt/        registry section/context/variable + sections + entries
     llm/           service, adapter OpenAI-compatible, catalog, retry, errors
@@ -315,6 +319,8 @@ test-utils/          shared test helpers
 |---|---|
 | Bot doesn't answer in the group | Zalo only sends events when the bot is **@mentioned** or someone **replies** to its message. Check for `chat_type=GROUP` in the log and check `allowedChatIds` in `config.json`. |
 | Discord bot doesn't answer in a server | It only answers when **@mentioned** or **replied to** (or in DMs). Enable the **Message Content** intent and check `discord.allowedChannelIds`. |
+| Discord bot isn't running | It is a separate process: `npm start` only starts Zalo. Run `npm run start:discord` (or pm2 `discord-bot`) as well. |
+| Discord bot uses the wrong settings | It always loads `config.discord.json` (not `config.json`); check `platform: "discord"` there. |
 | Discord slash commands are missing | Invite with the `applications.commands` scope; global commands can take up to an hour — set `discord.guildId` for instant registration. |
 | Discord image upload fails | Discord's default attachment limit is 8MB; the validator rejects larger images. |
 | Log `zalo.getUpdates.empty` / `error_code 408` | Normal: the long-poll timed out with no new messages. The client treats it as "no messages" and does not back off. |
@@ -352,4 +358,4 @@ test-utils/          shared test helpers
 - You can't "cancel" the typing indicator on Zalo's side: the bot stops sending typing before replying, and the rest expires on Zalo's client (~a few seconds).
 - NIM reports `cached_tokens = 0` even for an identical request → there is no real prefix cache; the system prompt is still kept static so nothing breaks if NVIDIA enables caching later.
 - DeepSeek only accepts `reasoning_effort` as `none|low|high|max` (`off` returns 422) — the bot maps it for you. The API model names are `deepseek-flash` (V4.1 Flash) and `deepseek-v4-pro`.
-- Discord: Zalo stickers are unavailable (`/sticker` is absent) and Discord's own stickers are ignored; messages are still split at 1900 characters (Discord's limit is 2000).
+- Discord: Zalo stickers are unavailable (`/sticker` is absent) and Discord's own stickers are ignored; messages are still split at 1900 characters (Discord's limit is 2000). Zalo and Discord are separate processes with separate configs/data; they do not share chat history.

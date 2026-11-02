@@ -258,14 +258,17 @@ test('legacy non-secret .env settings are reported as ignored', () => {
   assert.deepEqual(config.ignoredEnvKeys, ['DATA_DIR', 'MODE', 'NIM_TEMPERATURE']);
 });
 
-test('discord is optional and requires a token only when enabled', () => {
-  assert.equal(load().discord.enabled, false);
-  assert.throws(() => load({ discord: { enabled: true } }), /DISCORD_BOT_TOKEN/);
+test('platform selects the bot and its required token', () => {
+  assert.equal(load().platform, 'zalo');
+  assert.throws(() => load({ platform: 'nope' }), /config\.platform/);
+  assert.throws(() => load({}, baseEnv({ ZALO_BOT_TOKEN: '' })), /ZALO_BOT_TOKEN/);
+  assert.throws(() => load({ platform: 'discord' }), /DISCORD_BOT_TOKEN/);
+
   const config = load(
-    { discord: { enabled: true, guildId: 'g1', allowedChannelIds: ['c1', 'c2'] } },
+    { platform: 'discord', discord: { guildId: 'g1', allowedChannelIds: ['c1', 'c2'] } },
     baseEnv({ DISCORD_BOT_TOKEN: 'discord-token' }),
   );
-  assert.equal(config.discord.enabled, true);
+  assert.equal(config.platform, 'discord');
   assert.equal(config.discord.token, 'discord-token');
   assert.deepEqual(config.discord.allowedChannelIds, ['c1', 'c2']);
 });
