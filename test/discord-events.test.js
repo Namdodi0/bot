@@ -51,6 +51,22 @@ test('stripBotMention removes only the bot mention', () => {
   assert.equal(stripBotMention('<@!bot1> hi <@other>', 'bot1'), 'hi <@other>');
 });
 
+test('stripBotMention also removes the bot managed role mention', () => {
+  assert.equal(stripBotMention('<@&role1> hi', 'bot1', 'role1'), 'hi');
+  assert.equal(stripBotMention('<@&other> hi', 'bot1', 'role1'), '<@&other> hi');
+});
+
+test('discord message: the managed role mention is stripped from the text', () => {
+  const event = toDiscordEvent(
+    message({
+      content: '<@&role1> hello there',
+      mentions: { users: { has: () => false }, roles: { values: () => [{ id: 'role1', tags: { botId: 'bot1' } }] } },
+    }),
+    client,
+  );
+  assert.equal(event.text, 'hello there');
+});
+
 test('isBotAddressed covers mention, role, reply, DM and respond-to-all channels', () => {
   assert.equal(isBotAddressed({}), false);
   assert.equal(isBotAddressed({ mentioned: true }), true);

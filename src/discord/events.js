@@ -6,15 +6,32 @@
 export const DISCORD_CHAT_PREFIX = 'discord:';
 
 /**
- * Remove <@id> / <@!id> mentions of the bot and collapse the leftover spaces.
+ * Remove <@id> / <@!id> mentions of the bot, its managed role mention (<@&id>), and
+ * collapse the leftover spaces.
  * @param {string} text
  * @param {string} botId
+ * @param {string} [roleId] the bot's managed role id, when it was mentioned
  */
-export function stripBotMention(text, botId) {
+export function stripBotMention(text, botId, roleId = '') {
   const id = String(botId ?? '').trim();
+  const role = String(roleId ?? '').trim();
   let out = String(text ?? '');
   if (id) out = out.replace(new RegExp(`<@!?${id}>`, 'g'), ' ');
+  if (role) out = out.replace(new RegExp(`<@&${role}>`, 'g'), ' ');
   return out.replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+/**
+ * The id of the bot's managed role when that role was mentioned, else an empty string.
+ * @param {any} message
+ * @param {string} botId
+ */
+export function botRoleId(message, botId) {
+  const id = String(botId ?? '');
+  if (!id) return '';
+  const roles = [...(message?.mentions?.roles?.values?.() ?? [])];
+  const role = roles.find((item) => String(item?.tags?.botId ?? '') === id);
+  return String(role?.id ?? '');
 }
 
 /** @param {any} member */
@@ -39,7 +56,7 @@ export function toDiscordEvent(message, client) {
   const image = attachments.find(
     (item) => typeof item?.contentType === 'string' && item.contentType.startsWith('image/'),
   ) ?? attachments.find((item) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(item?.url ?? '')));
-  const text = stripBotMention(message.content, client?.user?.id);
+  const text = stripBotMention(message.content, client?.user?.id, botRoleId(message, client?.user?.id));
   if (!text && !image) return null;
   const kind = text ? 'text' : 'image';
   return {
@@ -70,10 +87,7 @@ export function toDiscordEvent(message, client) {
  * @param {string} botId
  */
 export function isBotRoleMentioned(message, botId) {
-  const id = String(botId ?? '');
-  if (!id) return false;
-  const roles = [...(message?.mentions?.roles?.values?.() ?? [])];
-  return roles.some((role) => String(role?.tags?.botId ?? '') === id);
+  return Boolean(botRoleId(message, botId));
 }
 
 /**
