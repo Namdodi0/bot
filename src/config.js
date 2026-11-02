@@ -557,6 +557,10 @@ export function loadConfig(input = {}) {
       token: discordToken,
       guildId: asString(discordSection.guildId, 'config.discord.guildId'),
       allowedChannelIds: asStringList(discordSection.allowedChannelIds, 'config.discord.allowedChannelIds'),
+      respondToAllChannelIds: asStringList(
+        discordSection.respondToAllChannelIds,
+        'config.discord.respondToAllChannelIds',
+      ),
     },
     mode: /** @type {TransportMode} */ (mode),
     webhook: {

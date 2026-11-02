@@ -67,6 +67,11 @@ async function main() {
     if (!config.discord.allowedChannelIds.length) {
       logger.warn('config.discord.allowedChannelIds is empty: the bot answers in every channel where it is mentioned/replied to, and in DMs.');
     }
+    if (config.discord.respondToAllChannelIds.length) {
+      logger.info('discord respond-to-all channels', {
+        channels: config.discord.respondToAllChannelIds,
+      });
+    }
   } catch (error) {
     logger.error('discord failed to start — check DISCORD_BOT_TOKEN', { error });
     await shutdown('discord start failed');

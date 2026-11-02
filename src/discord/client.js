@@ -1,5 +1,5 @@
 import { AttachmentBuilder, Client, GatewayIntentBits, Partials } from 'discord.js';
-import { DISCORD_CHAT_PREFIX, isBotRoleMentioned, toDiscordEvent, toDiscordInteractionEvent } from './events.js';
+import { DISCORD_CHAT_PREFIX, isBotAddressed, isBotRoleMentioned, toDiscordEvent, toDiscordInteractionEvent } from './events.js';
 
 const TYPING_REFRESH_MS = 8_000;
 
@@ -62,7 +62,7 @@ const SLASH_COMMANDS = [
 
 /**
  * Discord transport backed by discord.js.
- * @param {{token: string, config?: {guildId?: string, allowedChannelIds?: string[]}, logger?: import('../logger.js').Logger, metrics?: any, onEvent: (event: any) => Promise<unknown>|void}} options
+ * @param {{token: string, config?: {guildId?: string, allowedChannelIds?: string[], respondToAllChannelIds?: string[]}, logger?: import('../logger.js').Logger, metrics?: any, onEvent: (event: any) => Promise<unknown>|void}} options
  */
 export function createDiscordTransport(options) {
   const token = options.token;
@@ -207,7 +207,9 @@ export function createDiscordTransport(options) {
       const referenced = await message.fetchReference().catch(() => null);
       repliedToBot = Boolean(referenced && referenced.author?.id === client.user?.id);
     }
-    if (!mentioned && !roleMentioned && !repliedToBot && !isDm) return;
+    // Channels listed in respondToAllChannelIds get a reply to every message, no mention needed.
+    const listensHere = config.respondToAllChannelIds?.includes(message.channelId) === true;
+    if (!isBotAddressed({ mentioned, roleMentioned, repliedToBot, isDm, listensHere })) return;
     const event = toDiscordEvent(message, client);
     if (!event) return;
     metrics?.inc('discord.messages.in');

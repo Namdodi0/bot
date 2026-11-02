@@ -38,7 +38,9 @@ export function createCommands(deps) {
     return config.adminIds.includes(ctx.senderId);
   }
 
-  function helpText() {
+  /** @param {string} [platform] */
+  function helpText(platform = config.platform) {
+    const isDiscord = platform === 'discord';
     const lines = [
       '**Bot commands**',
       '• `/help` — list of commands',
@@ -49,24 +51,31 @@ export function createCommands(deps) {
       '• `/summary [N]` — summarize the last N messages (default 30)',
       '• `/search <question>` — force a web search for the question',
       '• `/image <keywords>` — find and send an image',
-      '• `/sticker [mood]` — send a sticker; `/sticker add <id> [name]` to add an ID',
+      ...(isDiscord
+        ? []
+        : ['• `/sticker [mood]` — send a sticker; `/sticker add <id> [name]` to add an ID']),
       '• `/remind <time> <text>` — set a reminder (e.g. `/remind 20:00 tomorrow team meeting`)',
       '• `/model` — view/change the model for this chat',
       '• `/tone` — view/change the tone (roast = snarky)',
       '• `/think on|off|low|medium|high|auto` — turn reasoning on/off for this chat',
       '• `/split on|off|auto` — disable/enable splitting replies into multiple messages',
-      '• `/ping` — check the connection to Zalo',
+      isDiscord ? '• `/ping` — check the Discord connection' : '• `/ping` — check the connection to Zalo',
       '',
-      config.mode === 'polling'
-        ? 'The bot is running in polling mode (local).'
-        : 'The bot is running in webhook mode.',
-      'In groups, **@mention the bot** or **reply** to one of its messages so it answers.',
+      isDiscord
+        ? 'The bot runs on the Discord gateway; slash commands are registered in the configured server.'
+        : config.mode === 'polling'
+          ? 'The bot is running in polling mode (local).'
+          : 'The bot is running in webhook mode.',
+      isDiscord
+        ? 'In servers, **@mention the bot** (or its role) or **reply** to one of its messages; DMs work without a mention.'
+        : 'In groups, **@mention the bot** or **reply** to one of its messages so it answers.',
     ];
     return lines.join('\n');
   }
 
-  /** @param {{chatId: string, chatType: string, senderId: string}} ctx @param {any} record */
+  /** @param {{chatId: string, chatType: string, senderId: string, platform?: string}} ctx @param {any} record */
   async function statusText(ctx, record) {
+    const isDiscord = ctx.platform === 'discord';
     const snapshot = metrics.snapshot();
     const nimLatency = snapshot.latency['llm.latency'];
     const replyLatency = snapshot.latency['agent.reply'];
@@ -95,7 +104,7 @@ export function createCommands(deps) {
     const lines = [
       '**Bot status**',
       `• Model: \`${current.alias}\` — ${current.label} (\`${current.model}\`, ${current.provider})`,
-      `• Mode: ${config.mode} · Reasoning: ${config.ai.reasoning} (this chat: ${thinking})`,
+      `• Mode: ${isDiscord ? 'gateway' : config.mode} · Reasoning: ${config.ai.reasoning} (this chat: ${thinking})`,
       `• max_tokens: ${config.ai.maxTokens ?? 'unlimited'}`,
       `• Uptime: ${formatDuration(snapshot.uptimeSec * 1000)} · bot v${config.version ?? '?'}`,
       `• Context: ${messages} msg · ${record?.turns ?? 0} turns · budget: ${contextBudget} · summary: ${latestSummary(record) ? 'yes' : 'no'}`,
@@ -114,7 +123,7 @@ export function createCommands(deps) {
       /** @type {Map<string, {service: string, failures: number, open: boolean}>} */
       const states = new Map();
       for (const state of http.listStates()) states.set(state.service, state);
-      for (const name of ['zalo', 'tavily']) {
+      for (const name of isDiscord ? ['tavily'] : ['zalo', 'tavily']) {
         if (!states.has(name)) states.set(name, { service: name, failures: 0, open: false });
       }
       const parts = [...states.values()].map(
@@ -136,7 +145,7 @@ export function createCommands(deps) {
 
     switch (name) {
       case 'help':
-        return { kind: 'text', text: helpText() };
+        return { kind: 'text', text: helpText(ctx.platform) };
 
       case 'id':
         return {

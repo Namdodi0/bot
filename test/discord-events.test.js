@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stripBotMention, toDiscordEvent, toDiscordInteractionEvent } from '../src/discord/events.js';
+import { stripBotMention, isBotAddressed, toDiscordEvent, toDiscordInteractionEvent } from '../src/discord/events.js';
 
 const client = { user: { id: 'bot1', username: 'Bot deepseek' } };
 
@@ -49,6 +49,15 @@ test('discord message: DMs are private and empty messages are ignored', () => {
 
 test('stripBotMention removes only the bot mention', () => {
   assert.equal(stripBotMention('<@!bot1> hi <@other>', 'bot1'), 'hi <@other>');
+});
+
+test('isBotAddressed covers mention, role, reply, DM and respond-to-all channels', () => {
+  assert.equal(isBotAddressed({}), false);
+  assert.equal(isBotAddressed({ mentioned: true }), true);
+  assert.equal(isBotAddressed({ roleMentioned: true }), true);
+  assert.equal(isBotAddressed({ repliedToBot: true }), true);
+  assert.equal(isBotAddressed({ isDm: true }), true);
+  assert.equal(isBotAddressed({ listensHere: true }), true);
 });
 
 test('slash interaction becomes a synthetic text command', () => {

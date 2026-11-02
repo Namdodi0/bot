@@ -265,12 +265,16 @@ test('platform selects the bot and its required token', () => {
   assert.throws(() => load({ platform: 'discord' }), /DISCORD_BOT_TOKEN/);
 
   const config = load(
-    { platform: 'discord', discord: { guildId: 'g1', allowedChannelIds: ['c1', 'c2'] } },
+    {
+      platform: 'discord',
+      discord: { guildId: 'g1', allowedChannelIds: ['c1', 'c2'], respondToAllChannelIds: ['c3'] },
+    },
     baseEnv({ DISCORD_BOT_TOKEN: 'discord-token' }),
   );
   assert.equal(config.platform, 'discord');
   assert.equal(config.discord.token, 'discord-token');
   assert.deepEqual(config.discord.allowedChannelIds, ['c1', 'c2']);
+  assert.deepEqual(config.discord.respondToAllChannelIds, ['c3']);
 });
 
 test('collectSecrets includes every configured key', () => {

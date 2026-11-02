@@ -3,7 +3,8 @@
   "dataDir": "./data/discord",
   "discord": {
     "guildId": "",
-    "allowedChannelIds": []
+    "allowedChannelIds": [],
+    "respondToAllChannelIds": []
   },
   "nim": {
     "baseUrl": "https://integrate.api.nvidia.com/v1",

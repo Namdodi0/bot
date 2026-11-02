@@ -89,6 +89,23 @@ test('/help returns the list of commands', async () => {
   assert.match(result.text, /@mention/);
 });
 
+test('/help on Discord lists slash commands without Zalo-only features', async () => {
+  const d = deps();
+  const commands = createCommands(d);
+  const result = await commands.run({ name: 'help', args: '' }, ctx(d, { platform: 'discord' }));
+  assert.match(result.text, /Discord gateway/);
+  assert.doesNotMatch(result.text, /\/sticker/);
+  assert.doesNotMatch(result.text, /polling|webhook/);
+});
+
+test('/status on Discord reports the gateway transport', async () => {
+  const d = deps();
+  const commands = createCommands(d);
+  const result = await commands.run({ name: 'status', args: '' }, ctx(d, { platform: 'discord' }));
+  assert.match(result.text, /Mode: gateway/);
+  assert.doesNotMatch(result.text, /zalo:/);
+});
+
 test('/compact runs compaction and reports the result', async () => {
   const d = deps();
   d.compaction = {

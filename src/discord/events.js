@@ -77,6 +77,15 @@ export function isBotRoleMentioned(message, botId) {
 }
 
 /**
+ * Whether an incoming message is addressed to the bot: a direct mention, the bot's managed
+ * role, a reply to one of its messages, a DM, or a channel opted into respondToAllChannelIds.
+ * @param {{mentioned?: boolean, roleMentioned?: boolean, repliedToBot?: boolean, isDm?: boolean, listensHere?: boolean}} flags
+ */
+export function isBotAddressed(flags = {}) {
+  return Boolean(flags.mentioned || flags.roleMentioned || flags.repliedToBot || flags.isDm || flags.listensHere);
+}
+
+/**
  * Turn a slash command interaction into the same synthetic text event the command router
  * already understands (`/name arg1 arg2`). Boolean options named "all" become the word "all".
  * @param {any} interaction discord.js ChatInputCommandInteraction-like
