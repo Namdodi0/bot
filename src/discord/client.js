@@ -245,7 +245,7 @@ export function createDiscordTransport(options) {
         }),
       );
     });
-    client.once('ready', () => {
+    client.once('clientReady', () => {
       logger?.info('discord bot ready', {
         id: client.user?.id,
         name: client.user?.username,
