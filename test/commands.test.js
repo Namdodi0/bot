@@ -41,10 +41,10 @@ function deps(overrides = {}) {
     add: async ({ id, name }) => ({ item: { id, name: name ?? 'New' }, added: true }),
     remove: async (value) => (String(value) === 'hello' ? { id: 'd8fa8021bc64553a0c75', name: 'Anh Tre Say Hi' } : null),
   };
-  const zalo = {
+  const transport = {
     sendChatAction: async () => ({ ok: true }),
     sendSticker: async (chatId, stickerId) => {
-      zalo.lastSticker = { chatId, stickerId };
+      transport.lastSticker = { chatId, stickerId };
       return { ok: true };
     },
     lastSticker: null,
@@ -59,7 +59,7 @@ function deps(overrides = {}) {
       reset: async () => {},
       touch: () => {},
     },
-    zalo,
+    transport,
     http: {
       stateOf: () => ({ failures: 0, open: false, openedUntil: 0 }),
       listStates: () => [],
@@ -160,7 +160,7 @@ test('/sticker add test-sends then saves, remove deletes', async () => {
 
   const added = await commands.run({ name: 'sticker', args: 'add 0e078a2fb66a5f34067b Hello there' }, context);
   assert.match(added.text, /Added and test-sent/);
-  assert.equal(d.zalo.lastSticker.stickerId, '0e078a2fb66a5f34067b');
+  assert.equal(d.transport.lastSticker.stickerId, '0e078a2fb66a5f34067b');
 
   const removed = await commands.run({ name: 'sticker', args: 'remove hello' }, context);
   assert.match(removed.text, /Removed the sticker/);

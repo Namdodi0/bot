@@ -56,7 +56,7 @@ const store = createContextStore({
 await store.init();
 
 /** @type {any} */
-const zalo = {
+const transport = {
   displayName: 'Bot deepseek',
   sendMessage: async (chatId, body) => {
     console.log(`\n[BOT → ${chatId}]\n${body}`);
@@ -129,12 +129,12 @@ const reminders = createReminderStore({
 ${text}`),
   logger,
 });
-const tools = createToolRuntime({ config, tavily, zalo, validator, stickers, reminders, logger, metrics });
+const tools = createToolRuntime({ config, tavily, transport, validator, stickers, reminders, logger, metrics });
 const commands = createCommands({
   config,
   store,
   metrics,
-  zalo,
+  transport,
   http: httpClient,
   models,
   stickers,
@@ -146,7 +146,7 @@ const agent = createAgent({
   config,
   logger,
   metrics,
-  zalo,
+  transport,
   llm: models,
   store,
   tools,

@@ -33,7 +33,7 @@ async function setup(options = {}) {
   const events = [];
   /** @type {any[]} */
   const sentStickers = [];
-  const zalo = {
+  const transport = {
     displayName: 'Bot deepseek',
     sendMessage: async (chatId, text, opts) => {
       events.push('send');
@@ -131,7 +131,7 @@ async function setup(options = {}) {
   const tools = createToolRuntime({
     config,
     tavily: options.tavily ?? null,
-    zalo,
+    transport,
     validator: { validate: async () => ({ ok: true }) },
     stickers,
     logger,
@@ -147,7 +147,7 @@ async function setup(options = {}) {
     config,
     store,
     metrics,
-    zalo,
+    transport,
     http: {
       stateOf: () => ({ failures: 0, open: false, openedUntil: 0 }),
       listStates: () => [],
@@ -157,7 +157,7 @@ async function setup(options = {}) {
     logger,
     compaction,
   });
-  const agent = createAgent({ config, logger, metrics, zalo, llm, store, tools, commands, stickers, compaction });
+  const agent = createAgent({ config, logger, metrics, transport, llm, store, tools, commands, stickers, compaction });
 
   return { agent, sent, sentStickers, events, nimCalls, store, config, metrics, dir };
 }

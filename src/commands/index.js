@@ -22,10 +22,10 @@ export function parseCommand(text) {
 }
 
 /**
- * @param {{config: any, store: ReturnType<typeof import('../context/store.js').createContextStore>, metrics: ReturnType<typeof import('../metrics.js').createMetrics>, zalo: any, http: ReturnType<typeof import('../http.js').createHttp>, models: ReturnType<typeof import('../ai/router.js').createModelRouter>, stickers?: ReturnType<typeof import('../ai/stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('../ai/reminders.js').createReminderStore>, logger?: import('../logger.js').Logger, compaction?: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
+ * @param {{config: any, store: ReturnType<typeof import('../context/store.js').createContextStore>, metrics: ReturnType<typeof import('../metrics.js').createMetrics>, transport: any, http: ReturnType<typeof import('../http.js').createHttp>, models: ReturnType<typeof import('../ai/router.js').createModelRouter>, stickers?: ReturnType<typeof import('../ai/stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('../ai/reminders.js').createReminderStore>, logger?: import('../logger.js').Logger, compaction?: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
  */
 export function createCommands(deps) {
-  const { config, store, metrics, zalo, models, compaction } = deps;
+  const { config, store, metrics, transport, models, compaction } = deps;
   const http = deps.http;
   const stickers = deps.stickers;
   const reminders = deps.reminders;
@@ -308,7 +308,7 @@ export function createCommands(deps) {
           }
           try {
             // send once so Zalo confirms the ID is valid
-            await zalo.sendSticker(ctx.chatId, idPart);
+            await transport.sendSticker(ctx.chatId, idPart);
           } catch (error) {
             return {
               kind: 'text',
@@ -599,7 +599,7 @@ export function createCommands(deps) {
 
       case 'ping': {
         try {
-          const ms = await zalo.ping(ctx.chatId);
+          const ms = await transport.ping(ctx.chatId);
           return { kind: 'text', text: `Pong! The platform API replied in ${ms}ms.` };
         } catch (error) {
           return { kind: 'text', text: `Ping failed: ${String(/** @type {any} */ (error)?.message ?? error)}` };

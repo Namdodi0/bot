@@ -5,12 +5,12 @@ import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from './remind
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, zalo: any, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number}} options
+ * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, transport: any, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number}} options
  */
 export function createToolRuntime(options) {
   const config = options.config;
   const tavily = options.tavily;
-  const zalo = options.zalo;
+  const transport = options.transport;
   const validator = options.validator;
   const stickers = options.stickers;
   const reminders = options.reminders;
@@ -272,7 +272,7 @@ export function createToolRuntime(options) {
       }
       if (remaining() <= 0) break;
       try {
-        await zalo.sendPhoto(ctx.chatId, url, caption);
+        await transport.sendPhoto(ctx.chatId, url, caption);
         sent += 1;
         sentUrls.push(url);
         metrics?.inc('tool.sendImage.ok');
@@ -318,7 +318,7 @@ export function createToolRuntime(options) {
     if (!item) return { ok: false, text: 'Could not find a matching sticker.' };
 
     try {
-      await zalo.sendSticker(ctx.chatId, item.id);
+      await transport.sendSticker(ctx.chatId, item.id);
       metrics?.inc('tool.sendSticker.ok');
       logger.info('sticker sent', { name: item.name, id: item.id, icon: '🧩' });
       return { ok: true, text: `Sent the sticker "${item.name}".` };

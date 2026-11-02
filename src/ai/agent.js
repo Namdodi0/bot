@@ -134,10 +134,10 @@ function findBreak(buffer) {
 }
 
 /**
- * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, zalo: any, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, commands: ReturnType<typeof import('../commands/index.js').createCommands>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
+ * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, transport: any, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, commands: ReturnType<typeof import('../commands/index.js').createCommands>, stickers?: ReturnType<typeof import('./stickers.js').createStickerStore>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
  */
 export function createAgent(deps) {
-  const { config, logger, metrics, zalo, llm, store, tools, commands, stickers, compaction } = deps;
+  const { config, logger, metrics, transport, llm, store, tools, commands, stickers, compaction } = deps;
   const meter = createTokenMeter();
   const retryExecutor = createRetryExecutor({ shouldRetry: isRetryableLlmError, sleep });
 
@@ -285,7 +285,7 @@ export function createAgent(deps) {
             ? normalizeWhitespace(String(text ?? ''))
             : prepareOutgoing(text, { parseMode: config.zalo.parseMode });
           if (!payload) return;
-          await zalo.sendMessage(chatId, payload, {
+          await transport.sendMessage(chatId, payload, {
             ...(sent === 0 && options.replyToMessageId
               ? { replyToMessageId: String(options.replyToMessageId) }
               : {}),
@@ -382,7 +382,7 @@ export function createAgent(deps) {
     const tone = record?.meta?.tone ?? config.tone;
     const toolDefs = tools.definitions(event.platform);
     const promptRegistry = createZaloPrompt({
-      botName: event.botName || zalo.displayName || 'AI assistant',
+      botName: event.botName || transport.displayName || 'AI assistant',
       chatType: isGroup ? 'GROUP' : 'PRIVATE',
       platform: event.platform,
       // Tool guidance only appears when the matching schema is actually sent to the model.
@@ -901,7 +901,7 @@ export function createAgent(deps) {
       kind: event.kind,
       len: (event.text ?? '').length,
     });
-    const stopTyping = config.typing ? zalo.startTyping(event.chatId) : async () => {};
+    const stopTyping = config.typing ? transport.startTyping(event.chatId) : async () => {};
 
     try {
       const record = await store.get(event.chatId, { chatType: event.chatType });
@@ -947,7 +947,7 @@ export function createAgent(deps) {
           await stopTyping();
           if (stickerId) {
             try {
-              await zalo.sendSticker(event.chatId, stickerId);
+              await transport.sendSticker(event.chatId, stickerId);
               metrics.inc('sticker.reply');
             } catch (error) {
               logger.warn('sticker reply failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
@@ -962,7 +962,7 @@ export function createAgent(deps) {
 
       const cleanedText = stripMention(
         event.text ?? '',
-        [event.botName || zalo.displayName].filter(Boolean),
+        [event.botName || transport.displayName].filter(Boolean),
       );
       const command = commands.parseCommand(cleanedText);
       const normalizedEvent = cleanedText === (event.text ?? '') ? event : { ...event, text: cleanedText };
@@ -1008,7 +1008,7 @@ export function createAgent(deps) {
         if (result.kind === 'sticker') {
           await stopTyping();
           try {
-            await zalo.sendSticker(event.chatId, result.stickerId);
+            await transport.sendSticker(event.chatId, result.stickerId);
             metrics.inc('sticker.command');
           } catch (error) {
             logger.warn('sticker command failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
@@ -1079,7 +1079,7 @@ export function createAgent(deps) {
       // notify the user briefly without putting it in the queue
       const chatAllowed = !config.allowedChatIds.length || config.allowedChatIds.includes(chatId);
       if (chatAllowed) {
-        zalo
+        transport
           .sendMessage(chatId, 'I am handling too many messages right now, please try again in a few seconds.')
           .catch((error) => logger.debug('busy notice failed', { error: String(error?.message ?? error) }));
       }
