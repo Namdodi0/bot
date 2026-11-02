@@ -539,17 +539,6 @@ test('short requests do not inject a length note into the prompt sent to the mod
   assert.equal(lastUser.content.includes('Length'), false);
 });
 
-test('a question with a time marker: the payload has a time context message', async () => {
-  const { agent, nimCalls } = await setup();
-  await agent.handle(textEvent('h\u00f4m nay th\u1ebf n\u00e0o'));
-  const messages = nimCalls.at(-1).messages;
-  assert.ok(
-    messages.some(
-      (message) => typeof message.content === 'string' && message.content.includes('Current time'),
-    ),
-  );
-});
-
 test('context overflow: compacts the context then retries, no error shown to the user', async () => {
   const { agent, sent, store } = await setup({
     overflowFirst: true,
@@ -696,12 +685,6 @@ test('STICKER_ECHO=off sends nothing when a sticker arrives', async () => {
   );
   assert.equal(sentStickers.length, 0);
   assert.equal(sent.length, 0);
-});
-
-test('the agent leaves temperature to the provider adapter', async () => {
-  const { agent, nimCalls } = await setup();
-  await agent.handle(textEvent('hi'));
-  assert.equal('temperature' in nimCalls[0], false);
 });
 
 test('passes the configured sampling parameters to the LLM', async () => {

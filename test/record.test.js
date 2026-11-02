@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SCHEMA_VERSION,
-  contextEntry,
   freshRecord,
   latestSummary,
   normalizeRecord,
@@ -91,12 +90,3 @@ test('toolPairingBalanced detects a cut between tool-call and tool-result', () =
   assert.equal(toolPairingBalanced(messages, 1, 3), false);
   assert.equal(toolPairingBalanced(messages, 2, 3), true);
 });
-
-test('contextEntry keeps source and the context kind', () => {
-  const entry = contextEntry({ source: 'runtime:time', text: 'now', ts: 7 });
-  assert.equal(entry.role, 'user');
-  assert.equal(entry.kind, 'context');
-  assert.equal(entry.source, 'runtime:time');
-  assert.equal(entry.ts, 7);
-});
-

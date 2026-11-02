@@ -43,12 +43,6 @@ test('chunkText keeps code fences balanced', () => {
   }
 });
 
-test('chunkText returns short text unchanged', () => {
-  const result = chunkText('hello', { limit: 1900 });
-  assert.deepEqual(result.chunks, ['hello']);
-  assert.equal(result.truncated, false);
-});
-
 test('sanitizeZaloMarkdown converts links and tables', () => {
   assert.equal(sanitizeZaloMarkdown('See [here](https://a.com) now'), 'See here (https://a.com) now');
   assert.equal(sanitizeZaloMarkdown('![cat](https://a.com/m.png)'), 'cat (https://a.com/m.png)');

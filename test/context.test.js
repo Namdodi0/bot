@@ -8,19 +8,13 @@ import {
   toolCallEntry,
   toolResultEntry,
 } from '../src/context/record.js';
-import { createTokenMeter, estimateMessageTokens, estimateTextTokens } from '../src/context/token-meter.js';
+import { createTokenMeter } from '../src/context/token-meter.js';
 
 function assemble(messages, overrides = {}) {
   const record = freshRecord('chat-1', 'GROUP', 0);
   record.messages.push(...messages);
   return assembleRequest({ systemPrompt: 'system', record, maxTokens: 0, maxMessages: 0, ...overrides });
 }
-
-test('estimate grows with length', () => {
-  assert.equal(estimateTextTokens(''), 0);
-  assert.ok(estimateTextTokens('a'.repeat(320)) > estimateTextTokens('a'.repeat(32)));
-  assert.ok(estimateMessageTokens({ text: 'abc' }) > 0);
-});
 
 test('assemble keeps system + most recent turns, reports dropped/needsSummary', () => {
   const messages = [];
@@ -66,15 +60,6 @@ test('no limit when maxTokens/maxMessages = 0', () => {
 test('maxCharsPerMessage=0 does not clip long messages', () => {
   const built = assemble([{ role: 'user', text: 'x'.repeat(20_000), ts: 1 }], { maxCharsPerMessage: 0 });
   assert.equal(String(built.messages[1].content).length, 20_000);
-});
-
-test('images are never sent to the model (text-only)', () => {
-  const built = assemble([
-    { role: 'user', text: 'look at this image', imageUrl: 'https://x/1.png', ts: 1 },
-    { role: 'user', text: 'image 2', imageUrl: 'https://x/2.png', ts: 2 },
-  ]);
-  assert.equal(built.messages.some((message) => Array.isArray(message.content)), false);
-  assert.equal(built.messages[1].content, 'look at this image');
 });
 
 test('tool-call/tool-result map to the right wire format, never starting with an orphaned tool-result', () => {

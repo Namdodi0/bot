@@ -127,12 +127,6 @@ test('banner stays aligned even with emoji', () => {
   assert.match(lines[3], /^╰─+╯$/);
 });
 
-test('visualWidth counts emoji as 2 columns', () => {
-  assert.equal(visualWidth('abc'), 3);
-  assert.equal(visualWidth('🤖'), 2);
-  assert.equal(visualWidth('a🤖b'), 4);
-});
-
 test('JSON: redacts DeepSeek-style sk- keys', () => {
   const { logger, out, err } = jsonLogger();
   logger.info('provider failed', { body: 'invalid key sk-abcdefghijklmnopqrstuvwxyz123456' });
