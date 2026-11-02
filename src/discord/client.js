@@ -171,8 +171,14 @@ export function createDiscordTransport(options) {
   async function registerCommands() {
     const application = client.application;
     if (!application) return;
-    if (config.guildId) await application.commands.set(SLASH_COMMANDS, config.guildId);
-    else await application.commands.set(SLASH_COMMANDS);
+    if (config.guildId) {
+      await application.commands.set(SLASH_COMMANDS, config.guildId);
+      // Guild commands are instant; clear the previous global registration so clients
+      // do not show duplicate command names.
+      await application.commands.set([]);
+    } else {
+      await application.commands.set(SLASH_COMMANDS);
+    }
     logger?.info('discord slash commands registered', {
       scope: config.guildId ? `guild ${config.guildId}` : 'global',
       count: SLASH_COMMANDS.length,

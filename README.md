@@ -155,7 +155,7 @@ Run both processes if you want both platforms; their histories and reminders nev
 1. Create an application at <https://discord.com/developers/applications> → **Bot** → reset/copy the token.
 2. In **Bot → Privileged Gateway Intents**, enable **Message Content** (needed to read mentions/replies; slash commands work without it).
 3. Invite the bot with the `bot` + `applications.commands` scopes and Send Messages / Attach Files / Read Message History permissions:
-   `https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=100352&scope=bot%20applications.commands`
+   `https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=274878008320&scope=bot%20applications.commands`
 4. Put the token in `.env`: `DISCORD_BOT_TOKEN=...`
 5. Use `config.discord.json` (tracked; copy `config.discord.example.json` if it is missing):
    ```json
@@ -163,7 +163,7 @@ Run both processes if you want both platforms; their histories and reminders nev
    "dataDir": "./data/discord",
    "discord": { "guildId": "", "allowedChannelIds": [] }
    ```
-   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). `allowedChannelIds` empty = every channel and DM. The engine settings (model, AI, search, context, tone) are in the same file, independent from the Zalo config.
+   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). When `guildId` is set the bot clears its global commands so the client does not show duplicates. `allowedChannelIds` empty = every channel and DM. The engine settings (model, AI, search, context, tone) are in the same file, independent from the Zalo config.
 6. Start it with `npm run start:discord` (or pm2 `discord-bot`). The log shows `discord bot ready` and the slash-command registration.
 
 In a server the bot answers when it is **@mentioned** or someone **replies** to its message; DMs work directly. Slash commands mirror `/help`, `/status`, `/id`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, `/model`, `/tone`, `/think`, `/split`, `/ping` (Zalo-only `/sticker` is absent). The first reply is a native Discord reply to the triggering message, and images are uploaded as attachments. Discord admins are members with **Manage Server**; `adminIds` in `config.json` applies to Zalo only.

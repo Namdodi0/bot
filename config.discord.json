@@ -2,7 +2,7 @@
   "platform": "discord",
   "dataDir": "./data/discord",
   "discord": {
-    "guildId": "",
+    "guildId": "1545374195540693004",
     "allowedChannelIds": []
   },
   "nim": {
