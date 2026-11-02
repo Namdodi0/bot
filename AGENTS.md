@@ -51,8 +51,11 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   warmup, ops/prune, shutdown.
 - `src/index.js` — Zalo entry: Zalo client, getMe/banner, polling or webhook.
 - `src/discord.js` — Discord entry: gateway client and slash commands.
-- `src/ai/agent.js` — per-chat FIFO queue, global concurrency cap, tool rounds, progressive
-  sending, retry/fallback, dedupe, rate limit.
+- `src/ai/agent.js` — agent composition: event routing (commands, dedupe, rate limit) and
+  queue wiring.
+- `src/ai/agent/` — `helpers.js` (budget/prompt helpers), `sending.js` (sender + chunking),
+  `turn.js` (LLM round loop, tools, streaming, fallback), `queue.js` (FIFO, concurrency,
+  dedupe, rate limit, drain).
 - `src/ai/prompt/` — prompt registry (`section`, `context`, `variable`, `tools`), static
   sections and tone rules (`sections.js`), runtime context (`entries.js`).
 - `src/ai/llm/` — provider-neutral service, OpenAI-compatible adapter, model catalog,
@@ -65,6 +68,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/zalo/` — REST client, event normalization, polling, webhook.
 - `src/discord/` — discord.js client (slash commands, mention/reply gate, attachments) and pure event normalization.
 - `src/commands/index.js` — command router and admin/manager checks.
+- `src/commands/registry.js` — single source for command metadata: `/help` bullets and
+  Discord slash definitions (platform-filtered).
 - `src/media/validate.js` — SSRF-safe image URL validation (pinned DNS, redirects, size).
 - `src/http.js` — fetch wrapper: timeout, retry, per-service breaker (only retryable
   failures count), SSE opening.
@@ -103,7 +108,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `node:test` + `node:assert/strict`; one behavior per test.
 - Use `test-utils/helpers.js` (`makeConfig`, `textEvent`, `silentLogger`) and temp dirs
   from `fs.mkdtemp`.
-- Inject `zalo`, `llm`, `tavily`, `validator`, and `fetch`; unit tests must not hit the
+- Inject `transport`, `llm`, `tavily`, `validator`, and `fetch`; unit tests must not hit the
   network or send messages.
 - Add a regression test for every bug fix, especially around retries, context compaction,
   reminders, and message dedupe.
