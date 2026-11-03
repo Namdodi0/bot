@@ -80,6 +80,7 @@ function ctx(d, overrides = {}) {
     chatType: 'GROUP',
     senderId: 'u1',
     senderName: 'Nam',
+    isAdmin: true,
     record: { messages: [], turns: 3, meta: { thinking: null } },
     ...overrides,
   };
@@ -192,6 +193,13 @@ test('/model is blocked for non-admins', async () => {
   const d = deps({ config: { adminIds: ['admin-1'] } });
   const commands = createCommands(d);
   const result = await commands.run({ name: 'model', args: 'deepseek' }, ctx(d, { isAdmin: false }));
+  assert.match(result.text, /Only group admins/);
+});
+
+test('a group chat with no platform admin decision is treated as non-admin', async () => {
+  const d = deps();
+  const commands = createCommands(d);
+  const result = await commands.run({ name: 'model', args: 'deepseek' }, ctx(d, { isAdmin: undefined }));
   assert.match(result.text, /Only group admins/);
 });
 

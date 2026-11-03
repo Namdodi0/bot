@@ -34,9 +34,9 @@ export function createCommands(deps) {
 
   function canManage(ctx) {
     // Private chats are per-chat settings, so the manager check is a group concern only.
+    // The platform owns the admin policy and always supplies a boolean in group chats.
     if (ctx.chatType !== 'GROUP') return true;
-    if (typeof ctx.isAdmin === 'boolean') return ctx.isAdmin;
-    return true;
+    return ctx.isAdmin === true;
   }
 
   function helpText() {

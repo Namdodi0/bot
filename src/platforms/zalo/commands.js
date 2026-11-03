@@ -26,8 +26,7 @@ export function zaloHelpNote(config) {
 /** @param {{chatType?: string, isAdmin?: boolean}} ctx */
 function canManage(ctx) {
   if (ctx.chatType !== 'GROUP') return true;
-  if (typeof ctx.isAdmin === 'boolean') return ctx.isAdmin;
-  return true;
+  return ctx.isAdmin === true;
 }
 
 /**
