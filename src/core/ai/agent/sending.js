@@ -85,21 +85,40 @@ export function createSenderFactory({ config, logger, metrics, platform }) {  co
  * Sink that collects a turn's output instead of sending it. Used by native UIs (Discord
  * slash commands) that render the answer themselves. Implements the same surface as the
  * sender returned by `makeSender`, plus `sendPhoto`.
+ *
+ * `live: true` streams deltas through `onDelta` and stores the final text (instead of
+ * accumulating progressive chunks), for UIs that edit one message as tokens arrive.
+ * @param {{live?: boolean, onDelta?: (delta: string) => void}} [options]
  */
-export function createCollectorSink() {
+export function createCollectorSink(options = {}) {
+  const live = options.live === true;
+  const onDelta = options.onDelta;
   /** @type {string[]} */
   const texts = [];
   /** @type {Array<{url: string, caption: string, data?: Buffer, contentType?: string}>} */
   const photos = [];
+  let streamed = '';
+  let finalText = '';
   return {
+    live,
+    onDelta: live
+      ? (/** @type {string} */ delta) => {
+          streamed += delta;
+          onDelta?.(delta);
+        }
+      : undefined,
     /** @param {string} text */
     async enqueue(text) {
       const value = String(text ?? '');
+      if (live) {
+        finalText = value;
+        return;
+      }
       if (value.trim()) texts.push(value);
     },
     async wait() {},
     sent() {
-      return texts.length;
+      return live ? (finalText ? 1 : 0) : texts.length;
     },
     /**
      * @param {string} url
@@ -115,7 +134,7 @@ export function createCollectorSink() {
       });
     },
     result() {
-      return { text: texts.join('\n').trim(), photos };
+      return { text: live ? finalText || streamed.trim() : texts.join('\n').trim(), photos };
     },
   };
 }

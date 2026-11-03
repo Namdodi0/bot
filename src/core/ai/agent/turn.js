@@ -33,7 +33,7 @@ export function createTurnRunner(deps) {
    * @param {any} record
    * @param {{forceSearch?: string}} [options]
    * @param {() => Promise<void>|void} [stopTyping]
-   * @param {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number, sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>}} [sink]
+   * @param {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number, sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>, live?: boolean, onDelta?: (delta: string) => void}} [sink]
    */
   async function run(event, record, options = {}, stopTyping = async () => {}, sink = null) {
     const startedAt = Date.now();
@@ -93,12 +93,25 @@ export function createTurnRunner(deps) {
     );
 
     const reasoning = effectiveReasoning(config, record, effectiveText);
-    const target = llm.resolve(record);
+    const selectedTarget = llm.resolve(record);
+    const image = event.imageData?.data ? event.imageData : null;
+    // Image turns use a vision-capable alias (config.model.visionAlias) when the selected
+    // model cannot see images. If none is configured, the turn stays text-only.
+    const visionTarget = image && !selectedTarget.vision ? llm.find(config.model?.visionAlias ?? 'nim') : null;
+    const target = image && selectedTarget.vision ? selectedTarget : visionTarget ?? selectedTarget;
+    const useImage = Boolean(image && target?.vision);
+    if (image && !useImage) {
+      logger.debug('image attached but the selected model is text-only', {
+        chatId: event.chatId,
+        model: target.model,
+        icon: '🖼️',
+      });
+    }
     // `/split` is per chat and takes priority over config.progressive.
     const splitMode = ['auto', 'on', 'off'].includes(record?.meta?.split)
       ? record.meta.split
       : config.progressive;
-    const streaming = splitMode !== 'off';
+    const streaming = responseSink.live === true || splitMode !== 'off';
     // `on` = send split segments early (once a sentence is complete); `auto` = only when the wait is long.
     const flushAfterMs = splitMode === 'on' ? 0 : config.progressiveAfterMs;
     const minHeadChars = splitMode === 'on' ? 80 : 160;
@@ -165,12 +178,43 @@ export function createTurnRunner(deps) {
     }
 
     const messages = built.messages;
+    const imageContent =
+      useImage && image
+        ? {
+            type: 'image_url',
+            image_url: {
+              url: `data:${image.contentType || 'image/png'};base64,${Buffer.from(image.data).toString('base64')}`,
+            },
+          }
+        : null;
+    // The image belongs to the current turn only; the durable record keeps the text note.
+    // Re-apply after an overflow rebuild, which replaces the message array.
+    const applyImage = () => {
+      if (!imageContent) return;
+      const index = messages.findLastIndex((message) => message.role === 'user');
+      if (index < 0 || Array.isArray(messages[index].content)) return;
+      messages[index] = {
+        ...messages[index],
+        content: [{ type: 'text', text: String(messages[index].content ?? '') }, imageContent],
+      };
+    };
+    applyImage();
     // Tool history must not go to a call without tool schemas, and that call must not
-    // advertise tools in its system prompt either.
+    // advertise tools in its system prompt either. No-tools calls are text-only.
     const noToolsMessages = () => {
       const list = fallbackMessages(messages);
       if (list[0]?.role === 'system') list[0] = { role: 'system', content: noToolsSystemPrompt };
-      return list;
+      return list.map((message) =>
+        Array.isArray(message.content)
+          ? {
+              ...message,
+              content: message.content
+                .filter((part) => part?.type === 'text')
+                .map((part) => part.text)
+                .join('\n'),
+            }
+          : message,
+      );
     };
 
     // Proof that context reaches the API: with config.logLevel=debug you see the message count
@@ -198,6 +242,11 @@ export function createTurnRunner(deps) {
     let flushLocked = false;
 
     const onDelta = (delta) => {
+      // Live sinks (Discord message edits) render the raw stream themselves.
+      if (responseSink.live) {
+        responseSink.onDelta?.(delta);
+        return;
+      }
       if (!streaming || flushed || flushLocked || !flushAllowed) return;
       streamBuffer += delta;
       const elapsed = Date.now() - startedAt;
@@ -327,6 +376,7 @@ export function createTurnRunner(deps) {
             if (result?.changed) {
               built = buildAll();
               messages.splice(0, messages.length, ...built.messages);
+              applyImage();
               metrics.inc('llm.contextOverflow');
               logger.warn('context overflow: compacted and retried', {
                 chatId: event.chatId,

@@ -29,6 +29,7 @@ test('defaults: DeepSeek primary, reasoning off, unlimited context', () => {
   const config = load();
   assert.equal(config.model.defaultAlias, 'deepseek');
   assert.equal(config.model.fallbackAlias, 'nim-light');
+  assert.equal(config.model.visionAlias, 'nim');
   assert.equal(config.ai.reasoning, 'none');
   assert.equal(config.ai.maxTokens, null);
   assert.equal(config.context.maxTokens, 0);
@@ -131,6 +132,7 @@ test('invalid enum values are rejected', () => {
   assert.throws(() => load({ mode: 'carrier-pigeon' }), /config\.mode/);
   assert.throws(() => load({ progressive: 'sometimes' }), /config\.progressive/);
   assert.throws(() => load({ model: { defaultAlias: 'gpt-9' } }), /config\.model\.defaultAlias/);
+  assert.throws(() => load({ model: { visionAlias: 'gpt-9' } }), /config\.model\.visionAlias/);
   assert.throws(() => load({ tone: 'shouty' }), /config\.tone/);
 });
 

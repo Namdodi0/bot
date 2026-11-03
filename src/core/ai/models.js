@@ -17,6 +17,7 @@ export const MODEL_ALIASES = {
     provider: 'nim',
     modelKey: 'model',
     label: 'Nemotron 3.5 Super VL',
+    vision: true,
   },
   ultra: {
     provider: 'nim',

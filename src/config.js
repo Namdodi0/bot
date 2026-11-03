@@ -216,7 +216,7 @@ const KNOWN_SECTION_KEYS = {
     'presencePenalty',
     'seed',
   ]),
-  model: new Set(['defaultAlias', 'fallbackAlias']),
+  model: new Set(['defaultAlias', 'fallbackAlias', 'visionAlias']),
   ai: new Set(['reasoning', 'maxTokens', 'maxToolRounds']),
   context: new Set([
     'maxTokens',
@@ -431,6 +431,12 @@ export function loadConfig(input = {}) {
       `config.model.fallbackAlias is invalid (got: "${fallbackAlias}"). Choose: ${Object.keys(MODEL_ALIASES).join(', ')}`,
     );
   }
+  const visionAlias = asString(modelSection.visionAlias, 'config.model.visionAlias', 'nim').toLowerCase();
+  if (!isKnownAlias(visionAlias)) {
+    throw new ConfigError(
+      `config.model.visionAlias is invalid (got: "${visionAlias}"). Choose: ${Object.keys(MODEL_ALIASES).join(', ')}`,
+    );
+  }
   if (fallbackAlias === defaultAlias) {
     fallbackAlias = defaultAlias === 'nim-light' ? 'deepseek' : 'nim-light';
   }
@@ -560,6 +566,7 @@ export function loadConfig(input = {}) {
     model: {
       defaultAlias,
       fallbackAlias,
+      visionAlias,
     },
     ai: {
       reasoning: /** @type {ReasoningMode} */ (reasoning),

@@ -67,6 +67,7 @@ async function setup(options = {}) {
     provider: 'deepseek',
     model: 'deepseek-flash',
     label: 'DeepSeek V4.1 Flash',
+    vision: true,
   };
   async function reply(input, viaFallback = false) {
     nimCalls.push(input);
@@ -189,6 +190,38 @@ test('collect runs a turn without sending and returns the answer', async () => {
   assert.equal(sent.length, 0);
   const record = await store.get('chat-1');
   assert.match(String(record.messages.at(-1)?.text), /Collected answer/);
+});
+
+test('stream emits deltas and returns the final text without sending', async () => {
+  const { agent, sent } = await setup({
+    replies: [{ content: 'Hello world' }],
+    deltaText: 'Hello',
+  });
+  /** @type {string[]} */
+  const deltas = [];
+  const result = await agent.stream(textEvent('hi', { messageId: 'stream-1' }), {
+    onDelta: (delta) => deltas.push(delta),
+  });
+  assert.deepEqual(deltas, ['Hello']);
+  assert.equal(result.text, 'Hello world');
+  assert.equal(sent.length, 0);
+});
+
+test('vision turns send the image as an image_url block', async () => {
+  const { agent, nimCalls, store } = await setup({ replies: [{ content: 'I see a cat' }] });
+  await agent.handle(
+    textEvent('what is this', {
+      imageUrl: 'https://cdn.example/cat.png',
+      imageData: { data: Buffer.from('png-bytes'), contentType: 'image/png' },
+      messageId: 'vision-1',
+    }),
+  );
+  const lastUser = [...nimCalls[0].messages].reverse().find((message) => message.role === 'user');
+  assert.ok(Array.isArray(lastUser.content));
+  const image = lastUser.content.find((part) => part.type === 'image_url');
+  assert.match(image.image_url.url, /^data:image\/png;base64,/);
+  const record = await store.get('chat-1');
+  assert.match(String(record.messages[0].text), /attached an image/);
 });
 
 test('dedupes by message_id', async () => {

@@ -34,7 +34,8 @@
   },
   "model": {
     "defaultAlias": "ultra",
-    "fallbackAlias": "nim"
+    "fallbackAlias": "nim",
+    "visionAlias": "nim"
   },
   "ai": {
     "reasoning": "none",

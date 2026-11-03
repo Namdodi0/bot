@@ -50,6 +50,22 @@ test('DeepSeek maps medium to high, none stays none', async () => {
   assert.equal(http.calls[1].payload.model, 'deepseek-flash');
 });
 
+test('passes multimodal content blocks through unchanged', async () => {
+  const http = fakeHttp([], standardResponse);
+  const nim = makeClient(http);
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what is this?' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,cG5n' } },
+      ],
+    },
+  ];
+  await nim.chat({ messages, reasoning: 'none' });
+  assert.deepEqual(http.calls[0].payload.messages, messages);
+});
+
 test('max_tokens is sent only when configured', async () => {
   const http = fakeHttp([], standardResponse);
   const nim = makeClient(http);

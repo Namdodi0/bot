@@ -44,7 +44,8 @@
   },
   "model": {
     "defaultAlias": "deepseek",
-    "fallbackAlias": "nim-light"
+    "fallbackAlias": "nim-light",
+    "visionAlias": "nim"
   },
   "ai": {
     "reasoning": "none",

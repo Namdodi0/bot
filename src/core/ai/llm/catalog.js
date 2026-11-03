@@ -11,14 +11,21 @@ export function createModelCatalog(options) {
   const available = new Set(options.availableProviders ?? []);
   const contextWindow = Math.max(0, Number(config.context?.modelWindow ?? 0) || 0);
 
-  /** @type {Record<string, {alias: string, provider: string, model: string, label: string, contextWindow: number}>} */
+  /** @type {Record<string, {alias: string, provider: string, model: string, label: string, contextWindow: number, vision: boolean}>} */
   const entries = {};
   for (const [alias, meta] of Object.entries(MODEL_ALIASES)) {
     if (filter && !available.has(meta.provider)) continue;
     const providerConfig = config[meta.provider] ?? {};
     const model = providerConfig[meta.modelKey];
     if (!model) continue;
-    entries[alias] = { alias, provider: meta.provider, model, label: meta.label, contextWindow };
+    entries[alias] = {
+      alias,
+      provider: meta.provider,
+      model,
+      label: meta.label,
+      contextWindow,
+      vision: meta.vision === true,
+    };
   }
 
   const wantedDefault = config.model?.defaultAlias ?? DEFAULT_ALIAS;

@@ -56,6 +56,32 @@ export function createChatServices({ config, store, models, compaction }) {
   }
 
   /**
+   * Summarize an arbitrary transcript through the configured model.
+   * @param {string} transcript
+   * @returns {Promise<{ok: true, text: string}|{ok: false, reason: 'empty'}>}
+   */
+  async function summarizeText(transcript) {
+    const timeoutMs =
+      config.responseTimeoutMs > 0
+        ? Math.max(1500, Math.min(SUMMARY_TIMEOUT_MS, config.responseTimeoutMs - 300))
+        : 0;
+    const response = await models.chat({
+      messages: [
+        { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+        { role: 'user', content: String(transcript ?? '').slice(0, SUMMARY_MAX_TRANSCRIPT) },
+      ],
+      reasoning: 'none',
+      temperature: 0.3,
+      maxTokens: 300,
+      stream: false,
+      timeoutMs,
+      ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+    });
+    const text = String(response?.content ?? '').trim();
+    return text ? { ok: true, text } : { ok: false, reason: 'empty' };
+  }
+
+  /**
    * @param {string} chatId
    * @param {string} [chatType]
    * @param {number} [count]
@@ -74,27 +100,20 @@ export function createChatServices({ config, store, models, compaction }) {
       .map((message) => `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${String(message.text).trim()}`)
       .join('\n')
       .slice(0, SUMMARY_MAX_TRANSCRIPT);
-    const timeoutMs =
-      config.responseTimeoutMs > 0
-        ? Math.max(1500, Math.min(SUMMARY_TIMEOUT_MS, config.responseTimeoutMs - 300))
-        : 0;
-    const response = await models.chat({
-      record: target,
-      messages: [
-        { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-        { role: 'user', content: transcript },
-      ],
-      reasoning: 'none',
-      temperature: 0.3,
-      maxTokens: 300,
-      stream: false,
-      timeoutMs,
-      ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
-    });
-    const text = String(response?.content ?? '').trim();
-    if (!text) return { ok: false, reason: 'empty' };
-    return { ok: true, count: history.length, text };
+    const result = await summarizeText(transcript);
+    if (!result.ok) return { ok: false, reason: /** @type {any} */ (result).reason };
+    return { ok: true, count: history.length, text: result.text };
   }
 
-  return { getRecord, currentModel, listModels, findModel, setModel, reset, compact, summarize };
+  return {
+    getRecord,
+    currentModel,
+    listModels,
+    findModel,
+    setModel,
+    reset,
+    compact,
+    summarize,
+    summarizeText,
+  };
 }

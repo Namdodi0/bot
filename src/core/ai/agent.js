@@ -218,17 +218,14 @@ export function createAgent(deps) {
   const collectQueues = new Map();
 
   /**
-   * Run one turn and collect its output instead of sending it (native slash commands).
-   * Turns are serialized per chat so they cannot interleave writes to the same record.
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean}} [options]
-   * @returns {Promise<{text: string, photos: any[]}>}
+   * @param {{skipCommands?: boolean}} options
+   * @param {ReturnType<typeof import('./agent/sending.js').createCollectorSink>} collector
    */
-  function collect(event, options = {}) {
+  function runCollected(event, options, collector) {
     const chatId = String(event?.chatId ?? '');
     const previous = collectQueues.get(chatId) ?? Promise.resolve();
     const task = previous.then(async () => {
-      const collector = createCollectorSink();
       await handle(event, { collector, skipCommands: options.skipCommands !== false });
       return collector.result();
     });
@@ -240,7 +237,32 @@ export function createAgent(deps) {
     return task;
   }
 
-  return { handle, collect, enqueue, pending, drain, seenSize: () => seen.size() };
+  /**
+   * Run one turn and collect its output instead of sending it (native slash commands).
+   * Turns are serialized per chat so they cannot interleave writes to the same record.
+   * @param {import('../../platforms/contract.js').BotEvent} event
+   * @param {{skipCommands?: boolean}} [options]
+   * @returns {Promise<{text: string, photos: any[]}>}
+   */
+  function collect(event, options = {}) {
+    return runCollected(event, options, createCollectorSink());
+  }
+
+  /**
+   * Same as `collect`, but streams content deltas to `onDelta` for live message edits.
+   * @param {import('../../platforms/contract.js').BotEvent} event
+   * @param {{skipCommands?: boolean, onDelta?: (delta: string) => void}} [options]
+   * @returns {Promise<{text: string, photos: any[]}>}
+   */
+  function stream(event, options = {}) {
+    return runCollected(
+      event,
+      options,
+      createCollectorSink({ live: true, onDelta: options.onDelta }),
+    );
+  }
+
+  return { handle, collect, stream, enqueue, pending, drain, seenSize: () => seen.size() };
 }
 
 export const __test__ = { findBreak, planAttemptBudget };

@@ -14,6 +14,7 @@
  * @property {boolean} isBot
  * @property {string} text
  * @property {string|null} imageUrl
+ * @property {{data: Buffer, contentType?: string}|null} [imageData] validated bytes for vision models
  * @property {string|null} sticker
  * @property {string} messageId
  * @property {number} date
