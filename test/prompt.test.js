@@ -37,7 +37,7 @@ test('discord prompts use Discord formatting and slash commands', () => {
   });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /Discord/);
-  assert.match(text, /slash commands/);
+  assert.match(text, /SLASH COMMANDS/);
   assert.equal(text.includes('Zalo does not render markdown headings'), false);
 });
 

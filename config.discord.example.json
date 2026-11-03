@@ -78,10 +78,5 @@
   "logThinking": true,
   "logFormat": "pretty",
   "logColor": "auto",
-  "opsPort": null,
-  "sticker": {
-    "enabled": false,
-    "echo": false,
-    "ids": ""
-  }
+  "opsPort": null
 }

@@ -1,13 +1,8 @@
 import { createSilentLogger } from '../src/core/logger.js';
 import { normalizeWhitespace } from '../src/core/text/format.js';
 import { prepareOutgoing } from '../src/platforms/zalo/format.js';
-import {
-  createDiscordCommandRunner,
-  DISCORD_COMMAND_SPECS,
-  DISCORD_HELP_NOTE,
-  DISCORD_HELP_OVERRIDES,
-} from '../src/platforms/discord/commands.js';
 import { registerDiscordPrompt } from '../src/platforms/discord/prompt.js';
+import { COMMANDS as DISCORD_COMMANDS, HELP_NOTE as DISCORD_HELP_NOTE } from '../src/platforms/discord/specs.js';
 import {
   createZaloCommandRunner,
   zaloHelpNote,
@@ -205,11 +200,9 @@ export function makeDiscordPlatform(input = {}) {
     isAdmin: (event) => event?.isAdmin === true,
     prompt: { register: registerDiscordPrompt },
     commands: {
-      specs: DISCORD_COMMAND_SPECS,
-      helpOverrides: DISCORD_HELP_OVERRIDES,
+      specs: DISCORD_COMMANDS,
       helpNote: DISCORD_HELP_NOTE,
-      run: createDiscordCommandRunner(),
-      native: {},
+      run: async () => undefined,
     },
     tools: {
       run: async (name) =>

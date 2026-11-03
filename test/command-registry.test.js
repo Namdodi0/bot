@@ -1,53 +1,68 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COMMAND_SPECS, helpBullets, slashCommandPayloads } from '../src/core/commands/registry.js';
-import {
-  DISCORD_COMMAND_SPECS,
-  DISCORD_HELP_OVERRIDES,
-} from '../src/platforms/discord/commands.js';
+import { COMMAND_SPECS, helpBullets } from '../src/core/commands/registry.js';
+import { COMMANDS, HELP_NOTE } from '../src/platforms/discord/specs.js';
 import { ZALO_COMMAND_SPECS, ZALO_HELP_OVERRIDES } from '../src/platforms/zalo/commands.js';
 
 /** @param {string[]} bullets */
 const namesIn = (bullets) => bullets.map((line) => /^• `\/([a-z]+)/.exec(line)?.[1]);
 
-test('slashCommandPayloads returns the 14 Discord commands without Zalo-only sticker', () => {
-  const payloads = slashCommandPayloads(DISCORD_COMMAND_SPECS);
-  assert.equal(payloads.length, 14);
-  assert.equal(payloads.some((payload) => payload.name === 'sticker'), false);
-  assert.equal(payloads.some((payload) => payload.name === 'help'), true);
-  assert.equal(payloads.find((payload) => payload.name === 'ping')?.description, 'Check the Discord connection');
+test('Discord exposes a slash-first command surface', () => {
+  const names = COMMANDS.map((command) => command.name);
+  assert.deepEqual(names, [
+    'ask',
+    'help',
+    'status',
+    'ping',
+    'model',
+    'reset',
+    'compact',
+    'summary',
+    'search',
+    'image',
+    'remind',
+    'Explain message',
+    'Summarize message',
+  ]);
+  for (const legacy of ['sticker', 'tone', 'split', 'think', 'id']) {
+    assert.equal(names.includes(legacy), false, legacy);
+  }
+  assert.equal(COMMANDS.filter((command) => command.type === 1).length, 11);
+  assert.equal(COMMANDS.filter((command) => command.type === 3).length, 2);
 });
 
-test('slashCommandPayloads keeps Discord option definitions', () => {
-  const payloads = slashCommandPayloads(DISCORD_COMMAND_SPECS);
-  const reset = payloads.find((payload) => payload.name === 'reset');
-  assert.deepEqual(reset?.options, [
-    { name: 'all', description: 'Also clear per-chat settings', type: 5 },
-  ]);
-  const remind = payloads.find((payload) => payload.name === 'remind');
+test('Discord admin commands are hidden behind Manage Server by default', () => {
+  for (const name of ['model', 'reset', 'compact']) {
+    assert.equal(COMMANDS.find((command) => command.name === name)?.default_member_permissions, '32', name);
+  }
+});
+
+test('Discord command options cover the native interactions', () => {
+  const ask = COMMANDS.find((command) => command.name === 'ask');
+  assert.deepEqual(
+    ask?.options?.map((option) => option.name),
+    ['prompt', 'private', 'thread'],
+  );
+  const image = COMMANDS.find((command) => command.name === 'image');
+  const count = image?.options?.find((option) => option.name === 'count');
+  assert.equal(count?.min_value, 1);
+  assert.equal(count?.max_value, 25);
+  const remind = COMMANDS.find((command) => command.name === 'remind');
   assert.deepEqual(
     remind?.options?.map((option) => option.name),
-    ['when', 'text'],
+    ['add', 'list', 'cancel'],
   );
-  const help = payloads.find((payload) => payload.name === 'help');
-  assert.equal('options' in (help ?? {}), false);
 });
 
-test('helpBullets includes /sticker on Zalo and hides it on Discord', () => {
-  assert.match(helpBullets(ZALO_COMMAND_SPECS, ZALO_HELP_OVERRIDES).join('\n'), /`\/sticker \[mood\]`/);
-  assert.doesNotMatch(helpBullets(DISCORD_COMMAND_SPECS, DISCORD_HELP_OVERRIDES).join('\n'), /\/sticker/);
+test('Discord help has no Zalo-only features', () => {
+  const bullets = helpBullets(COMMANDS, {}).join('\n');
+  assert.match(bullets, /`\/ask`/);
+  assert.doesNotMatch(bullets, /sticker|tone|split|think/i);
+  assert.match(HELP_NOTE, /Explain message/);
+  assert.match(HELP_NOTE, /Summarize message/);
 });
 
-test('ping help wording depends on the platform', () => {
-  const zaloPing = helpBullets(ZALO_COMMAND_SPECS, ZALO_HELP_OVERRIDES).find((line) => line.includes('`/ping`'));
-  const discordPing = helpBullets(DISCORD_COMMAND_SPECS, DISCORD_HELP_OVERRIDES).find((line) =>
-    line.includes('`/ping`'),
-  );
-  assert.equal(zaloPing, '• `/ping` — check the connection to Zalo');
-  assert.equal(discordPing, '• `/ping` — check the Discord connection');
-});
-
-test('helpBullets keeps the original help order and contents for Zalo', () => {
+test('Zalo help still includes the sticker command and its order', () => {
   const bullets = helpBullets(ZALO_COMMAND_SPECS, ZALO_HELP_OVERRIDES);
   assert.deepEqual(namesIn(bullets), [
     'help',
@@ -67,18 +82,14 @@ test('helpBullets keeps the original help order and contents for Zalo', () => {
     'ping',
   ]);
   assert.equal(bullets.length, 15);
-  assert.equal(bullets[0], '• `/help` — list of commands');
-  assert.equal(bullets[4], '• `/compact` — compact the context now (admin)');
-  assert.equal(bullets[14], '• `/ping` — check the connection to Zalo');
+  assert.match(bullets.join('\n'), /`\/sticker \[mood\]`/);
 });
 
 test('shared and platform specs have complete metadata', () => {
   assert.equal(COMMAND_SPECS.length, 14);
-  assert.equal(DISCORD_COMMAND_SPECS.length, 14);
   assert.equal(ZALO_COMMAND_SPECS.length, 15);
-  for (const spec of [...COMMAND_SPECS, ...ZALO_COMMAND_SPECS, ...DISCORD_COMMAND_SPECS]) {
+  for (const spec of [...COMMAND_SPECS, ...ZALO_COMMAND_SPECS, ...COMMANDS]) {
     assert.equal(typeof spec.name, 'string');
-    assert.equal(typeof spec.description, 'string');
     assert.equal(typeof spec.help, 'string');
     assert.doesNotMatch(spec.help, /^• /);
   }

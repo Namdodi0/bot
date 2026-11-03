@@ -95,13 +95,13 @@ test('/help returns the list of commands', async () => {
   assert.match(result.text, /@mention/);
 });
 
-test('/help on Discord lists slash commands without Zalo-only features', async () => {
+test('/help on Discord lists the native slash commands', async () => {
   const d = deps({ platformName: 'discord' });
   const commands = createCommands(d);
   const result = await commands.run({ name: 'help', args: '' }, ctx(d));
-  assert.match(result.text, /Discord gateway/);
-  assert.doesNotMatch(result.text, /\/sticker/);
-  assert.doesNotMatch(result.text, /polling|webhook/);
+  assert.match(result.text, /`\/ask`/);
+  assert.match(result.text, /Slash commands only/);
+  assert.doesNotMatch(result.text, /\/sticker|tone|split/);
 });
 
 test('/status on Discord reports the gateway transport', async () => {
@@ -361,9 +361,3 @@ test('/summary validates the count and the history', async () => {
   assert.match(result.text, /Not enough messages/);
 });
 
-test('/sticker is unsupported on Discord', async () => {
-  const d = deps({ platformName: 'discord' });
-  const commands = createCommands(d);
-  const result = await commands.run({ name: 'sticker', args: '' }, ctx(d));
-  assert.match(result.text, /not supported on Discord/);
-});

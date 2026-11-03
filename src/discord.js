@@ -4,11 +4,12 @@ import { describeEnvHints, loadEnvFiles, PROJECT_ROOT } from './core/env.js';
 import { printBanner } from './core/logger.js';
 import { createBoot, createRuntime } from './core/runtime.js';
 import { VERSION } from './core/version.js';
+import { createDiscordBot } from './platforms/discord/bot.js';
 import { createDiscordPlatform } from './platforms/discord/index.js';
+import { COMMANDS } from './platforms/discord/specs.js';
 
 const DISCORD_CONFIG_PATH = path.join(PROJECT_ROOT, 'config.discord.json');
 
-// Same .env, different config file: the Discord process is independent from the Zalo one.
 const envReport = loadEnvFiles({ extraRoots: [PROJECT_ROOT] });
 
 async function main() {
@@ -25,8 +26,7 @@ async function main() {
   const { logger } = boot;
   const platform = createDiscordPlatform({ config, boot });
   const runtime = await createRuntime({ config, platform, boot });
-  const { agent, primary, fallback, contextFiles, controller, addCleanup, shutdown } = runtime;
-  addCleanup(() => platform.stop());
+  const { primary, fallback, contextFiles, shutdown, addCleanup, waitForShutdown } = runtime;
 
   if (config.dryRun) {
     logger.info('dry-run: Discord transport not started');
@@ -34,30 +34,25 @@ async function main() {
     return;
   }
 
+  const bot = createDiscordBot({ config, boot, platform, runtime });
+  addCleanup(() => bot.stop());
+
   try {
-    const { done } = await platform.start({
-      onEvent: (event) => agent.enqueue(event),
-      signal: controller.signal,
-    });
+    await bot.start();
     if (config.logFormat === 'pretty') {
       printBanner(
         process.stdout,
         [
           `🤖 ${platform.transport.displayName || 'Bot Discord'}  ·  v${config.version}  ·  Discord bot`,
           `🧠 ${primary.label} · ${primary.provider}/${primary.model}  (fallback: ${fallback.alias})`,
-          `⚙️  discord · reasoning=${config.ai.reasoning} · max_tokens=${config.ai.maxTokens ?? 'unlimited'}`,
-          `🔎 search=${config.search.enabled ? `${config.search.depth}/${config.search.maxResults}` : 'off'} · typing=${config.typing ? 'on' : 'off'} · progressive=${config.progressive}`,
+          `⚙️  gateway · ${COMMANDS.length} commands · reasoning=${config.ai.reasoning} · max_tokens=${config.ai.maxTokens ?? 'unlimited'}`,
+          `🔎 search=${config.search.enabled ? `${config.search.depth}/${config.search.maxResults}` : 'off'} · typing=${config.typing ? 'on' : 'off'}`,
           `💾 data ${config.dataDir} · ${contextFiles} file context`,
         ],
         { color: config.logColor },
       );
     }
-    logger.info('discord bot ready', {
-      name: platform.transport.displayName,
-      guildId: config.discord.guildId || 'global commands',
-      icon: '🎮',
-    });
-    await done;
+    await waitForShutdown();
   } catch (error) {
     logger.error('discord failed to start — check DISCORD_BOT_TOKEN', { error });
     await shutdown('discord start failed');
@@ -65,7 +60,7 @@ async function main() {
     return;
   }
 
-  await shutdown('discord transport ended');
+  await shutdown('discord gateway ended');
 }
 
 main().catch((error) => {

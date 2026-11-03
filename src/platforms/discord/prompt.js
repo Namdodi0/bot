@@ -1,7 +1,8 @@
 import { SECTION_ORDER } from '../../core/ai/prompt/sections.js';
 
 /**
- * Discord-specific prompt sections: identity, chat shape, formatting and command list.
+ * Discord-specific prompt sections. Slash-command UI and embeds are native, so answers
+ * should read like normal Discord messages — no Zalo-style multi-message splitting advice.
  * @param {ReturnType<typeof import('../../core/ai/prompt/registry.js').createPromptRegistry>} registry
  * @param {{botName?: string, chatType?: string}} [options]
  */
@@ -12,8 +13,8 @@ export function registerDiscordPrompt(registry, options = {}) {
   registry.section({
     name: 'platform:identity',
     order: SECTION_ORDER.identity,
-    text: `You are "${botName}", an AI assistant chatting on Discord (a chat platform) in ${
-      inGroup ? 'a server channel' : 'a private chat'
+    text: `You are "${botName}", an AI assistant living on Discord. You answer in ${
+      inGroup ? 'server channels and threads' : 'direct messages'
     }.`,
   });
 
@@ -21,15 +22,20 @@ export function registerDiscordPrompt(registry, options = {}) {
     name: 'platform:chat-shape',
     order: SECTION_ORDER.chatShape,
     text: inGroup
-      ? '- In servers people reach you by @mentioning you or replying to your message. The sender name is prefixed to the text as "Name: message" — address that person by name when it matters.'
-      : '- This is a private chat: answer directly and warmly.',
+      ? [
+          '- People reach you by @mentioning you, replying to your message, or using `/ask`. The sender name is prefixed as "Name: message" — address that person by name when it matters.',
+          '- Keep the channel clean: one answer per question, no running commentary.',
+        ].join('\n')
+      : '- This is a direct message: answer directly and concisely.',
   });
 
   registry.section({
     name: 'platform:formatting',
     order: SECTION_ORDER.formatting,
     text: [
-      '- Formatting: Discord markdown is supported (**bold**, *italic*, `code`, code blocks, headings, lists, quotes, links). Keep each message under 2000 characters. Never ping @everyone or @here, and mention users only when it is genuinely useful.',
+      '- Discord markdown works: **bold**, *italic*, `inline code`, ``` code blocks ```, headings, lists, quotes, links, spoilers.',
+      '- Keep one message under 2000 characters; prefer short paragraphs or a tight bullet list. Do not split an answer into several messages unless it is genuinely long.',
+      '- Never ping @everyone or @here. Mention a user only when it is genuinely useful.',
       '- Never invent sources or numbers. If you are not sure, say so plainly.',
     ].join('\n'),
   });
@@ -39,8 +45,9 @@ export function registerDiscordPrompt(registry, options = {}) {
     order: SECTION_ORDER.commands,
     text: [
       '',
-      'COMMANDS THE USER MAY RUN (slash commands): /help, /reset, /status, /id, /summary, /search, /image, /remind, /model, /tone, /think, /split, /compact, /ping.',
-      'Never fabricate command output. Do not tell the user to run a command unless it is genuinely useful.',
+      'SLASH COMMANDS: /ask, /help, /status, /ping, /model, /reset, /compact, /summary, /search, /image, /remind.',
+      'Message menus: Explain message, Summarize message.',
+      'Never fabricate command output. Do not tell someone to run a command unless it is genuinely useful.',
     ].join('\n'),
   });
 }

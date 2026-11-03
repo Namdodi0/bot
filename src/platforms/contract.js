@@ -26,6 +26,9 @@
  *
  * @typedef {Object} PlatformTransport
  * @property {string} [displayName]
+ * @property {any} [client] underlying platform SDK client, when the entry needs to wire events
+ * @property {() => Promise<void>} [start] connect the transport (optional; the entry may own this)
+ * @property {() => Promise<void>} [stop] disconnect the transport
  * @property {(chatId: string, text: string, options?: {replyToMessageId?: string}) => Promise<any>} sendMessage
  * @property {(chatId: string, url: string, caption?: string, options?: {data?: Buffer, contentType?: string}) => Promise<any>} sendPhoto
  * @property {(chatId: string, stickerId: string) => Promise<any>} [sendSticker]
