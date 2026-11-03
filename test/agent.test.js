@@ -299,6 +299,22 @@ test('an incoming sticker is echoed back unchanged', async () => {
   assert.equal(sent.length, 0);
 });
 
+test('an incoming sticker with the feature disabled gets the normal text reply', async () => {
+  const { agent, sent } = await setup({
+    configOverrides: { sticker: { enabled: false, echo: true, file: './data/test/stickers.json' } },
+  });
+  await agent.handle(
+    textEvent('', {
+      kind: 'sticker',
+      sticker: '0e078a2fb66a5f34067b',
+      eventName: 'message.sticker.received',
+      messageId: 'sticker-disabled',
+    }),
+  );
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /cannot view stickers/);
+});
+
 test('/sticker sends a sticker for the given mood', async () => {
   const { agent, sentStickers } = await setup();
   await agent.handle(textEvent('/sticker greeting'));

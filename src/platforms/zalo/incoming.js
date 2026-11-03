@@ -21,11 +21,9 @@ export function createZaloIncomingHandler(deps) {
   return async function handleIncoming(event, helpers) {
     if (event.kind !== 'sticker') return false;
     if (!config.sticker.enabled || !stickers) {
-      await helpers.stopTyping();
-      await transport.sendMessage(event.chatId, 'I cannot view stickers yet — please send text instead.', {
-        replyToMessageId: event.messageId,
-      });
-      return true;
+      // Let the shared agent answer through the normal sender (platform formatting,
+      // reply limits and chunking), instead of sending directly from the platform.
+      return false;
     }
     // STICKER_ECHO=off means "do not react to incoming stickers" — not "send a random one".
     if (!config.sticker.echo) {
