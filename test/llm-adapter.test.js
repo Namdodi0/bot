@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEEPSEEK_REASONING_MAP, createOpenAiCompatAdapter } from '../src/core/ai/llm/adapter-openai.js';
+import { LLM_ERROR, LlmError } from '../src/core/ai/llm/errors.js';
 import { planAttemptBudget } from '../src/core/ai/agent/helpers.js';
 import { HttpError, createHttp } from '../src/core/http.js';
 import { createSilentLogger } from '../src/core/logger.js';
@@ -367,4 +368,127 @@ test('stream: a caller abort is not recorded as a breaker failure', async () => 
     (error) => error.name === 'AbortError',
   );
   assert.equal(http.stateOf(service).failures, 0);
+});
+
+/** @param {string[]} frames */
+function streamFrom(frames, { failWith } = {}) {
+  const encoder = new TextEncoder();
+  return {
+    async openStream() {
+      const body = new ReadableStream({
+        start(controller) {
+          for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        },
+        // Terminal step runs once the queued frames have been read.
+        pull(controller) {
+          if (failWith) controller.error(failWith);
+          else controller.close();
+        },
+      });
+      return new Response(body, { status: 200 });
+    },
+    recordStreamFailure() {},
+    recordStreamSuccess() {},
+  };
+}
+
+const TOOL_DELTA =
+  'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"web_search","arguments":"{\\"que"}}]}}]}\n\n';
+
+test('stream: a tool-call delta then a stream error rejects as retryable', async () => {
+  const client = makeClient(streamFrom([TOOL_DELTA], { failWith: new TypeError('terminated') }));
+  await assert.rejects(
+    () =>
+      client.chat({
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning: 'none',
+        stream: true,
+        ttftMs: 0,
+        timeoutMs: 5000,
+      }),
+    (error) => {
+      assert.equal(error instanceof HttpError, true);
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
+test('stream: content plus a partial tool-call delta returns no tool calls and is aborted', async () => {
+  const client = makeClient(
+    streamFrom(['data: {"choices":[{"index":0,"delta":{"content":"Partial answer"}}]}\n\n', TOOL_DELTA], {
+      failWith: new TypeError('terminated'),
+    }),
+  );
+  const result = await client.chat({
+    messages: [{ role: 'user', content: 'hi' }],
+    reasoning: 'none',
+    stream: true,
+    ttftMs: 0,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.content, 'Partial answer');
+  assert.deepEqual(result.toolCalls, []);
+  assert.equal(result.aborted, true);
+});
+
+test('non-stream: an empty completion throws a retryable provider error', async () => {
+  const http = fakeHttp([], {
+    choices: [{ message: { content: '', role: 'assistant' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 10, completion_tokens: 0 },
+  });
+  const client = makeClient(http);
+  await assert.rejects(
+    () => client.chat({ messages: [{ role: 'user', content: 'hi' }], reasoning: 'none' }),
+    (error) => {
+      assert.equal(error instanceof LlmError, true);
+      assert.equal(error.code, LLM_ERROR.PROVIDER_ERROR);
+      assert.equal(error.retryable, true);
+      assert.equal(error.status, 200);
+      assert.match(error.message, /empty completion/);
+      return true;
+    },
+  );
+});
+
+test('stream: a stream that ends with no content and no tool calls is retryable', async () => {
+  const client = makeClient(
+    streamFrom(['data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}\n\n', 'data: [DONE]\n\n']),
+  );
+  await assert.rejects(
+    () =>
+      client.chat({
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning: 'none',
+        stream: true,
+        ttftMs: 0,
+        timeoutMs: 5000,
+      }),
+    (error) => {
+      assert.equal(error instanceof LlmError, true);
+      assert.equal(error.code, LLM_ERROR.PROVIDER_ERROR);
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
+test('non-stream: object tool arguments are accepted as already parsed', async () => {
+  const http = fakeHttp([], {
+    choices: [
+      {
+        message: {
+          content: null,
+          tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'web_search', arguments: { query: 'gold' } } }],
+        },
+        finish_reason: 'tool_calls',
+      },
+    ],
+    usage: { prompt_tokens: 1, completion_tokens: 1 },
+  });
+  const client = makeClient(http);
+  const result = await client.chat({ messages: [{ role: 'user', content: 'gold?' }], reasoning: 'none' });
+  assert.equal(result.toolCalls.length, 1);
+  assert.deepEqual(result.toolCalls[0].arguments, { query: 'gold' });
+  assert.equal(result.toolCalls[0].rawArguments, '{"query":"gold"}');
 });

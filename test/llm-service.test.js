@@ -170,3 +170,66 @@ test('retry: stops when the deadline runs out', async () => {
   );
   assert.equal(attempts, 0);
 });
+
+test('retry: a huge retryAfterMs is capped at 30s without a deadline', async () => {
+  /** @type {number[]} */
+  const delays = [];
+  let attempts = 0;
+  const executor = createRetryExecutor({
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+    shouldRetry: () => true,
+  });
+  await executor.execute(async () => {
+    attempts += 1;
+    if (attempts < 2) throw new LlmError(LLM_ERROR.RATE_LIMIT, 'slow down', { retryable: true, retryAfterMs: 600_000 });
+    return 'ok';
+  });
+  assert.deepEqual(delays, [30_000]);
+});
+
+test('retry: a finite deadline keeps the fallback reserve untouched', async () => {
+  /** @type {number[]} */
+  const delays = [];
+  let attempts = 0;
+  const executor = createRetryExecutor({
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+    backoffMs: () => 10,
+    shouldRetry: () => true,
+    reserveMs: 4000,
+  });
+  await executor.execute(
+    async () => {
+      attempts += 1;
+      if (attempts < 2) throw new LlmError(LLM_ERROR.RATE_LIMIT, 'slow down', { retryable: true, retryAfterMs: 30_000 });
+      return 'ok';
+    },
+    { deadline: Date.now() + 10_000 },
+  );
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] <= 6000, `delay ${delays[0]} exceeded remaining minus reserve`);
+  assert.ok(delays[0] >= 5000, `delay ${delays[0]} did not use the available budget`);
+});
+
+test('retry: plain backoff is unchanged when no retryAfterMs hint is present', async () => {
+  /** @type {number[]} */
+  const delays = [];
+  let attempts = 0;
+  const executor = createRetryExecutor({
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+    backoffMs: (attempt) => 500 * attempt,
+    shouldRetry: () => true,
+    maxAttempts: 3,
+  });
+  await executor.execute(async () => {
+    attempts += 1;
+    if (attempts < 3) throw new LlmError(LLM_ERROR.TIMEOUT, 'timeout', { retryable: true });
+    return 'ok';
+  });
+  assert.deepEqual(delays, [500, 1000]);
+});

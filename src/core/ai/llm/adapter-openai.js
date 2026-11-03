@@ -1,4 +1,5 @@
 import { HttpError } from '../../http.js';
+import { LLM_ERROR, LlmError } from './errors.js';
 
 /**
  * @typedef {object} NimToolCall
@@ -9,6 +10,31 @@ import { HttpError } from '../../http.js';
  */
 
 /**
+ * Some providers send `function.arguments` already parsed instead of as a JSON string.
+ * Both shapes are accepted; the raw form handed to callers is always a JSON string.
+ * @param {any} raw
+ * @returns {{arguments: any, rawArguments: string}}
+ */
+function parseToolArguments(raw) {
+  if (typeof raw === 'string') {
+    if (!raw) return { arguments: {}, rawArguments: raw };
+    try {
+      return { arguments: JSON.parse(raw), rawArguments: raw };
+    } catch {
+      return { arguments: {}, rawArguments: raw };
+    }
+  }
+  if (raw && typeof raw === 'object') {
+    try {
+      return { arguments: raw, rawArguments: JSON.stringify(raw) };
+    } catch {
+      return { arguments: raw, rawArguments: '{}' };
+    }
+  }
+  return { arguments: {}, rawArguments: '{}' };
+}
+
+/**
  * @param {any} choice
  * @returns {{content: string, toolCalls: NimToolCall[], reasoning: string, finishReason: string, usage: any}}
  */
@@ -17,18 +43,12 @@ function parseChoice(choice) {
   const rawCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
   /** @type {NimToolCall[]} */
   const toolCalls = rawCalls.map((call, index) => {
-    const raw = call?.function?.arguments ?? '{}';
-    let parsed = {};
-    try {
-      parsed = raw ? JSON.parse(raw) : {};
-    } catch {
-      parsed = {};
-    }
+    const { arguments: parsed, rawArguments } = parseToolArguments(call?.function?.arguments ?? '{}');
     return {
       id: String(call?.id ?? `call_${index}`),
       name: String(call?.function?.name ?? ''),
       arguments: parsed,
-      rawArguments: typeof raw === 'string' ? raw : JSON.stringify(raw ?? {}),
+      rawArguments,
     };
   });
   return {
@@ -115,6 +135,21 @@ export function createOpenAiCompatAdapter(options) {
   const routeKey = (modelId) => `${provider}:${String(modelId ?? model)}`;
 
   /**
+   * A 200 with neither text nor tool calls is a failed attempt, not a reply: the turn must
+   * be able to retry or fall back instead of reporting an empty success.
+   * @param {string} service
+   * @param {string|undefined} modelId
+   */
+  function emptyCompletionError(service, modelId) {
+    return new LlmError(LLM_ERROR.PROVIDER_ERROR, `${service} returned an empty completion`, {
+      provider,
+      model: modelId,
+      status: 200,
+      retryable: true,
+    });
+  }
+
+  /**
    * @param {Record<string, any>} payload
    * @param {{signal?: AbortSignal|null, timeoutMs?: number}} [opts]
    */
@@ -164,6 +199,9 @@ export function createOpenAiCompatAdapter(options) {
       const data = /** @type {any} */ (response.data);
       const choice = data?.choices?.[0];
       const parsed = parseChoice(choice);
+      if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
+        throw emptyCompletionError(routeKey(payload.model), payload.model);
+      }
       const usage = data?.usage ?? null;
       metrics?.inc('llm.calls');
       metrics?.inc('llm.promptTokens', usage?.prompt_tokens ?? 0);
@@ -338,7 +376,8 @@ export function createOpenAiCompatAdapter(options) {
       http.recordStreamSuccess?.(service);
     }
 
-    if (streamError && !content && callMap.size === 0) {
+    if (streamError && !content) {
+      // No usable text arrived, so any tool-call deltas are partial and get dropped here.
       // Guard fired (provider stalled before the first token) → retryable.
       if (ttftController?.signal.aborted && !input.signal?.aborted) {
         throw new HttpError(`${service} first token timeout`, {
@@ -358,24 +397,26 @@ export function createOpenAiCompatAdapter(options) {
       });
     }
 
+    // An interrupted stream can leave a half-built tool call; only its text is usable.
     /** @type {NimToolCall[]} */
-    const toolCalls = [...callMap.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([index, value]) => {
-        let parsed = {};
-        try {
-          parsed = value.args ? JSON.parse(value.args) : {};
-        } catch {
-          parsed = {};
-        }
-        return {
-          id: value.id || `call_${index}`,
-          name: value.name,
-          arguments: parsed,
-          rawArguments: value.args,
-        };
-      })
-      .filter((call) => call.name);
+    const toolCalls = streamError
+      ? []
+      : [...callMap.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([index, value]) => {
+            const { arguments: parsed, rawArguments } = parseToolArguments(value.args);
+            return {
+              id: value.id || `call_${index}`,
+              name: value.name,
+              arguments: parsed,
+              rawArguments,
+            };
+          })
+          .filter((call) => call.name);
+
+    if (!streamError && !content.trim() && toolCalls.length === 0) {
+      throw emptyCompletionError(service, payload.model);
+    }
 
     metrics?.inc('llm.calls');
     metrics?.inc('llm.streamCalls');
