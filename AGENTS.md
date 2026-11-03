@@ -115,8 +115,10 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - **Zalo mutating POSTs** are not retried (duplicate messages).
 - **Discord is slash-first.** Chat input is `/ask` (plus `/help`, `/status`, `/ping`,
   `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`,
-  `/remind`), message context menus are `Explain message`/`Summarize message`, and native
-  handlers own the interaction lifecycle (embeds, buttons, selects, ephemeral replies).
+  `/sticker`, `/remind`), message context menus are `Explain message`/`Summarize message`,
+  and native handlers own the interaction lifecycle (embeds, buttons, selects, modals,
+  ephemeral replies). `/ask` can open a prompt modal; `discord.stickers` enables server
+  stickers (command + tool); `discord.presence` sets the bot activity on startup.
   Model-generated replies stream through `agent.stream()` into one edited message (`/ask`,
   mention/reply chat, context menus, Regenerate/Continue, `/summary`, `/catchup`); tool-only
   outputs use `agent.collect()` or are sent when ready. Typed text commands are ignored.

@@ -22,6 +22,10 @@ Nothing in the Discord code imports the Zalo integration.
 - **Live answers** — every model-generated reply streams into one edited message: `/ask`,
   @mention/reply chat, Explain/Summarize menus, Regenerate/Continue, `/summary` and
   `/catchup`. Tool-only outputs (`/search`, `/image`) are sent when ready.
+- **Prompt form** — run `/ask` with no prompt (or `form:true`) to get a multi-line modal.
+- **Server stickers** — `/sticker [name]` and the model's `send_sticker` tool send guild
+  stickers; optional configured ids when the bot cannot list them.
+- **Presence** — configurable activity/status (`WATCHING /ask` by default).
 - **Vision** — attach an image to `/ask`, or @mention the bot with an image; the turn switches
   to the configured vision model and sends the image as an OpenAI `image_url` block.
 - **Channel settings** — `/settings` (admin) controls model, tone, default privacy and
@@ -74,8 +78,10 @@ copy .env.example .env
    Send Messages in Threads, Create Public Threads:
 
    ```
-   https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=292057893888&scope=bot%20applications.commands
+   https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=293131635712&scope=bot%20applications.commands
    ```
+   This adds **Manage Expressions** so the bot can list server stickers; without it, add
+   sticker ids manually in `config.discord.stickers.ids`.
 
 4. Edit `config.discord.json` (tracked; `config.discord.example.json` is a reference):
 
@@ -115,7 +121,7 @@ still works.
 
 | Command | What it does |
 |---|---|
-| `/ask <prompt> [image] [private] [thread]` | Ask the AI; attach an image for vision, answer in the channel, ephemeral, or a new thread. Streams into one message, then adds Regenerate / Continue / Delete buttons. |
+| `/ask <prompt> [form] [image] [private] [thread]` | Ask the AI; omit the prompt (or set `form:true`) for a multi-line modal. Attach an image for vision, answer publicly/ephemerally/in a thread. Streams into one message with Regenerate / Continue / Delete buttons. |
 | `/help` | Ephemeral command list. |
 | `/status` | Model, transport, uptime, context size, latency, traffic. |
 | `/ping` | Gateway and interaction round-trip latency. |
@@ -127,6 +133,7 @@ still works.
 | `/catchup [hours]` | Summarize what happened in this channel in the last N hours (default 24, max 168). |
 | `/search <query> [private]` | Web search, answered with an embed. |
 | `/image <query> [count] [private]` | Find and upload images (default 1, max 25). |
+| `/sticker [name]` | Send a server sticker by name/tag/id; omit to list. Uses the model's `send_sticker` tool too. |
 | `/remind add <when> <text>` | Set a reminder (`20:00`, `20:00 tomorrow`, `20:00 25/12`, `+10m`, `+2h`, `+1d`; Vietnam time input). |
 | `/remind list` | List this channel's reminders. |
 | `/remind cancel <id>` | Cancel a reminder. |
@@ -180,6 +187,8 @@ Important settings:
 | `discord.guildId` | Instant guild command registration; empty = global. |
 | `discord.allowedChannelIds` | Empty = all channels; DMs always allowed; threads inherit the parent. |
 | `discord.respondToAllChannelIds` | Answer every message in these channels. |
+| `discord.stickers` | `enabled` + optional `ids` (`"123456789012345678:wave,..."`) when the bot cannot list guild stickers. |
+| `discord.presence` | `status` (`online/idle/dnd/invisible`), `type` (`PLAYING/STREAMING/LISTENING/WATCHING/COMPETING`), `text`, optional `url`. |
 | `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`. |
 | `model.visionAlias` | Vision-capable alias used when an image is attached (default `nim`, the Super VL model). |
 | `ai.reasoning` | `none`, `low`, `medium`, `high`, `auto`. |
@@ -307,7 +316,7 @@ npm test          # node --test, no network
 npm run typecheck # tsc checkJs over src/ and scripts/
 ```
 
-- 317 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
+- 324 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
 - `scripts/smoke.js` and `scripts/simulate.js` belong to the Zalo process and use real APIs.
 - Keep platform behavior in `src/platforms/*`; `src/core` must not branch on platform names.
 - No new runtime dependencies without approval.
@@ -327,7 +336,9 @@ config, tokens, context or reminders.
 
 ## Known limitations
 
-- No voice messages and no Discord stickers.
+- No voice messages. Discord stickers are limited to **guild stickers**: listing needs Manage
+  Expressions, otherwise configure ids manually; standard/Nitro stickers are not used.
+- Presence is static config; it is set on startup and not updated dynamically.
 - `read_url` fetches public HTML/text/JSON/XML only (no JavaScript rendering or PDF parsing),
   caps pages at 1 MB and passes only the first part of long pages to the model.
 - Vision sees the image attached to the current turn; the durable context keeps a text note,
