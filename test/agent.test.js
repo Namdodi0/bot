@@ -182,6 +182,15 @@ test('replies in a group, strips the mention, stores context', async () => {
   assert.equal(record.messages[1].role, 'assistant');
 });
 
+test('collect runs a turn without sending and returns the answer', async () => {
+  const { agent, sent, store } = await setup({ replies: [{ content: 'Collected answer' }] });
+  const result = await agent.collect(textEvent('hello', { messageId: 'collect-1' }));
+  assert.equal(result.text, 'Collected answer');
+  assert.equal(sent.length, 0);
+  const record = await store.get('chat-1');
+  assert.match(String(record.messages.at(-1)?.text), /Collected answer/);
+});
+
 test('dedupes by message_id', async () => {
   const { agent, sent } = await setup();
   const event = textEvent('hi', { messageId: 'same-id' });

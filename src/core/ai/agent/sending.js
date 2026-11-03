@@ -4,8 +4,7 @@ import { preview, sleep } from './helpers.js';
 /**
  * @param {{config: any, logger: import('../../logger.js').Logger, metrics: any, platform: import('../../../platforms/contract.js').Platform}} deps
  */
-export function createSenderFactory({ config, logger, metrics, platform }) {
-  const transport = platform.transport;
+export function createSenderFactory({ config, logger, metrics, platform }) {  const transport = platform.transport;
   /**
    * @param {string} chatId
    * @param {() => Promise<void>|void} [onFirstSend] called once right before the first message (stops typing)
@@ -80,4 +79,43 @@ export function createSenderFactory({ config, logger, metrics, platform }) {
   }
 
   return { makeSender, sendText };
+}
+
+/**
+ * Sink that collects a turn's output instead of sending it. Used by native UIs (Discord
+ * slash commands) that render the answer themselves. Implements the same surface as the
+ * sender returned by `makeSender`, plus `sendPhoto`.
+ */
+export function createCollectorSink() {
+  /** @type {string[]} */
+  const texts = [];
+  /** @type {Array<{url: string, caption: string, data?: Buffer, contentType?: string}>} */
+  const photos = [];
+  return {
+    /** @param {string} text */
+    async enqueue(text) {
+      const value = String(text ?? '');
+      if (value.trim()) texts.push(value);
+    },
+    async wait() {},
+    sent() {
+      return texts.length;
+    },
+    /**
+     * @param {string} url
+     * @param {string} [caption]
+     * @param {{data?: Buffer, contentType?: string}} [asset]
+     */
+    async sendPhoto(url, caption = '', asset = {}) {
+      photos.push({
+        url: String(url ?? ''),
+        caption: String(caption ?? ''),
+        data: asset?.data ? Buffer.from(asset.data) : undefined,
+        contentType: asset?.contentType,
+      });
+    },
+    result() {
+      return { text: texts.join('\n').trim(), photos };
+    },
+  };
 }

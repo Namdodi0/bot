@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import { EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
-import { SUMMARY_SYSTEM_PROMPT } from '../../core/ai/prompt/index.js';
-import { REMINDER_LIMITS, parseReminderArgs } from '../../core/ai/reminders.js';
+import { REMINDER_LIMITS } from '../../core/ai/reminders.js';
+import { createChatServices } from '../../core/services/chat.js';
+import { createReminderService } from '../../core/services/reminders.js';
 import { eventFromInteraction } from './events.js';
 import { COMMANDS, HELP_NOTE } from './specs.js';
 import {
@@ -22,11 +23,18 @@ const TOKEN_TTL_MS = 15 * 60_000;
 /**
  * Native Discord command handlers. Slash commands do not go through the shared text-command
  * router: they use Discord options, ephemeral replies, embeds, buttons and a select menu.
- * @param {{config: any, logger: import('../../core/logger.js').Logger, metrics: any, platform: import('../contract.js').Platform, runtime: any, ask: ReturnType<typeof import('./ask.js').createAskRunner>}} deps
+ * @param {{config: any, logger: import('../../core/logger.js').Logger, metrics: any, platform: import('../contract.js').Platform, runtime: any}} deps
  */
 export function createCommandRuntime(deps) {
-  const { config, logger, metrics, platform, runtime, ask } = deps;
+  const { config, logger, metrics, platform, runtime } = deps;
   const client = platform.transport.client;
+  const chat = runtime.chatServices ?? createChatServices({
+    config,
+    store: runtime.store,
+    models: runtime.models,
+    compaction: runtime.compaction,
+  });
+  const reminderService = runtime.reminderService ?? createReminderService({ reminders: runtime.reminders });
 
   /** @type {Map<string, {prompt: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, at: number}>} */
   const tokens = new Map();
@@ -129,7 +137,33 @@ export function createCommandRuntime(deps) {
 
   /** @param {any} interaction @param {string} prompt @param {string} [chatId] */
   async function runAsk(interaction, prompt, chatId) {
-    return ask.run(askEvent(interaction, prompt, chatId ? { chatId, chatType: 'GROUP' } : undefined));
+    return runtime.agent.collect(
+      askEvent(interaction, prompt, chatId ? { chatId, chatType: 'GROUP' } : undefined),
+      { skipCommands: true },
+    );
+  }
+
+  /**
+   * Run the image tool with a capture sink so the command can render the attachments itself.
+   * @param {any} args
+   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number}} ctx
+   */
+  async function runImage(args, ctx) {
+    /** @type {Array<{url: string, caption: string, data?: Buffer, contentType?: string}>} */
+    const photos = [];
+    const result = await runtime.tools.run('send_image', args, {
+      ...ctx,
+      sendPhoto: async (url, caption, asset) => {
+        photos.push({
+          url: String(url ?? ''),
+          caption: String(caption ?? ''),
+          data: asset?.data ? Buffer.from(asset.data) : undefined,
+          contentType: asset?.contentType,
+        });
+        return { ok: true };
+      },
+    });
+    return { result, photos };
   }
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
@@ -178,11 +212,11 @@ export function createCommandRuntime(deps) {
     async status(interaction) {
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
-      const record = await runtime.store.get(chatId, { chatType: interaction.guildId ? 'GROUP' : 'PRIVATE' });
+      const record = await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE');
       await interaction.editReply({
         embeds: [
           statusEmbed({
-            model: runtime.models.resolve(record),
+            model: chat.currentModel(record),
             mode: platform.transportMode,
             uptimeSec: runtime.metrics.snapshot().uptimeSec ?? 0,
             messages: record.messages?.length ?? 0,
@@ -209,25 +243,27 @@ export function createCommandRuntime(deps) {
         return;
       }
       const chatId = String(interaction.channelId);
-      const record = await runtime.store.get(chatId, { chatType: interaction.guildId ? 'GROUP' : 'PRIVATE' });
-      const current = runtime.models.resolve(record);
+      const record = await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE');
+      const current = chat.currentModel(record);
       const name = interaction.options.getString('name');
       if (!name) {
         await replyEphemeral(interaction, {
           embeds: [new EmbedBuilder().setColor(COLORS.info).setTitle('Model').setDescription(`Current: **${current.label}** (\`${current.alias}\`)`)],
-          components: modelSelect(runtime.models.list(), current.alias),
+          components: modelSelect(chat.listModels(), current.alias),
         });
         return;
       }
-      const picked = runtime.models.find(name);
+      const picked = chat.findModel(name);
       if (!picked) {
         await replyEphemeral(interaction, { embeds: [errorEmbed(`No model named "${name}".`)] });
         return;
       }
-      if (!record.meta) record.meta = { thinking: null };
-      record.meta.model = picked.alias;
-      runtime.store.touch?.(chatId);
-      await replyEphemeral(interaction, { content: `Model is now **${picked.label}** (\`${picked.alias}\`).` });
+      const saved = await chat.setModel(chatId, name, interaction.guildId ? 'GROUP' : 'PRIVATE');
+      if (!saved.ok) {
+        await replyEphemeral(interaction, { embeds: [errorEmbed(`No model named "${name}".`)] });
+        return;
+      }
+      await replyEphemeral(interaction, { content: `Model is now **${saved.model.label}** (\`${saved.model.alias}\`).` });
     },
 
     async reset(interaction) {
@@ -237,7 +273,7 @@ export function createCommandRuntime(deps) {
       }
       const chatId = String(interaction.channelId);
       const full = interaction.options.getBoolean('all') === true;
-      await runtime.store.reset(chatId, { keepMeta: !full });
+      await chat.reset(chatId, { all: full });
       await replyEphemeral(interaction, {
         content: full ? 'Cleared the context and settings for this channel.' : 'Cleared this channel context (settings kept).',
       });
@@ -250,13 +286,11 @@ export function createCommandRuntime(deps) {
       }
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
-      const record = await runtime.store.get(chatId, { chatType: 'GROUP' });
-      const result = await runtime.compaction.compactIfNeeded({ record, trigger: 'manual' });
+      const result = await chat.compact(chatId, 'GROUP');
       if (!result?.changed) {
         await interaction.editReply({ content: 'The context does not need compaction yet.' });
         return;
       }
-      runtime.store.touch?.(chatId);
       await interaction.editReply({ content: `Compacted the context${result.summarized ? ' with a summary' : ''}.` });
     },
 
@@ -264,34 +298,19 @@ export function createCommandRuntime(deps) {
       await interaction.deferReply(ephemeral);
       const count = interaction.options.getInteger('count') ?? 30;
       const chatId = String(interaction.channelId);
-      const record = await runtime.store.get(chatId, { chatType: interaction.guildId ? 'GROUP' : 'PRIVATE' });
-      const history = (record.messages ?? [])
-        .filter((message) => (message.kind ?? 'turn') === 'turn' && String(message.text ?? '').trim())
-        .slice(-count);
-      if (history.length < 2) {
-        await interaction.editReply({ content: 'There are not enough messages to summarize yet.' });
+      const result = await chat.summarize(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE', count);
+      if (!result.ok) {
+        await interaction.editReply({
+          content:
+            result.reason === 'empty'
+              ? 'No summary returned.'
+              : 'There are not enough messages to summarize yet.',
+        });
         return;
       }
-      const transcript = history
-        .map((message) => `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${String(message.text).trim()}`)
-        .join('\n')
-        .slice(0, 12_000);
-      const timeoutMs = config.responseTimeoutMs > 0 ? Math.max(1500, Math.min(15_000, config.responseTimeoutMs - 300)) : 0;
-      const response = await runtime.models.chat({
-        record,
-        messages: [
-          { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-          { role: 'user', content: transcript },
-        ],
-        reasoning: 'none',
-        temperature: 0.3,
-        maxTokens: 300,
-        stream: false,
-        timeoutMs,
-        ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+      await interaction.editReply({
+        embeds: [textEmbed(`Summary of the last ${result.count} messages`, result.text)],
       });
-      const text = String(response?.content ?? '').trim();
-      await interaction.editReply({ embeds: [textEmbed(`Summary of the last ${history.length} messages`, text || 'No summary returned.')] });
     },
 
     async search(interaction) {
@@ -315,7 +334,7 @@ export function createCommandRuntime(deps) {
       const count = interaction.options.getInteger('count') ?? 1;
       const priv = interaction.options.getBoolean('private') === true;
       await interaction.deferReply(privateReply(priv));
-      const { result, photos } = await ask.image(
+      const { result, photos } = await runImage(
         { query, count, caption: query },
         { chatId: String(interaction.channelId), platform: 'discord', deadline: deadline() },
       );
@@ -331,19 +350,19 @@ export function createCommandRuntime(deps) {
     },
 
     async remind(interaction) {
-      if (!runtime.reminders) {
+      if (!reminderService.available()) {
         await replyEphemeral(interaction, { content: 'Reminders are not configured.' });
         return;
       }
       const chatId = String(interaction.channelId);
       const sub = interaction.options.getSubcommand();
       if (sub === 'list') {
-        await replyEphemeral(interaction, { embeds: [reminderEmbed(runtime.reminders.list(chatId))] });
+        await replyEphemeral(interaction, { embeds: [reminderEmbed(reminderService.list(chatId))] });
         return;
       }
       if (sub === 'cancel') {
         const id = interaction.options.getInteger('id', true);
-        const removed = await runtime.reminders.remove(chatId, id);
+        const removed = await reminderService.cancel(chatId, id);
         await replyEphemeral(interaction, {
           content: removed ? `Cancelled reminder #${removed.id}.` : `No reminder #${id} in this channel.`,
         });
@@ -351,26 +370,22 @@ export function createCommandRuntime(deps) {
       }
       const when = String(interaction.options.getString('when', true)).trim();
       const text = String(interaction.options.getString('text', true)).trim();
-      if (text.length > REMINDER_LIMITS.MAX_REMINDER_CHARS) {
-        await replyEphemeral(interaction, { content: `The reminder text is too long (max ${REMINDER_LIMITS.MAX_REMINDER_CHARS}).` });
-        return;
-      }
-      const parsed = parseReminderArgs(`${when} x`);
-      if (parsed.error || !Number.isFinite(parsed.at)) {
-        await replyEphemeral(interaction, { content: parsed.error ?? 'Invalid reminder time.' });
-        return;
-      }
-      const created = await runtime.reminders.add({ chatId, text, at: /** @type {number} */ (parsed.at), createdBy: interaction.user.id });
+      const created = await reminderService.add(chatId, when, text, interaction.user.id);
       if (!created.ok) {
+        const messages = {
+          'invalid-time': 'Invalid reminder time.',
+          'too-long': `The reminder text is too long (max ${REMINDER_LIMITS.MAX_REMINDER_CHARS}).`,
+          'chat-limit': `This channel already has ${REMINDER_LIMITS.MAX_PER_CHAT} reminders; cancel one first.`,
+          'total-limit': 'The reminder limit has been reached.',
+          invalid: 'Invalid reminder.',
+          'not-configured': 'Reminders are not configured.',
+        };
         await replyEphemeral(interaction, {
-          content:
-            /** @type {any} */ (created).reason === 'chat-limit'
-              ? `This channel already has ${REMINDER_LIMITS.MAX_PER_CHAT} reminders; cancel one first.`
-              : 'The reminder limit has been reached.',
+          content: messages[/** @type {keyof typeof messages} */ (created.reason)] ?? 'Could not create the reminder.',
         });
         return;
       }
-      const seconds = Math.floor(/** @type {number} */ (parsed.at) / 1000);
+      const seconds = Math.floor(created.item.at / 1000);
       await replyEphemeral(interaction, {
         content: `Reminder #${created.item.id} set for <t:${seconds}:f> (<t:${seconds}:R>): ${text}`,
       });
@@ -393,7 +408,9 @@ export function createCommandRuntime(deps) {
       return;
     }
     await interaction.deferReply(ephemeral);
-    const result = await ask.run(askEvent(interaction, `${prefix}\n\n${content}`));
+    const result = await runtime.agent.collect(askEvent(interaction, `${prefix}\n\n${content}`), {
+      skipCommands: true,
+    });
     const token = makeToken({
       prompt: `${prefix}\n\n${content}`,
       chatId: String(interaction.channelId),
@@ -423,8 +440,8 @@ export function createCommandRuntime(deps) {
   async function handleAutocomplete(interaction) {
     if (interaction.commandName !== 'model') return interaction.respond([]).catch(() => {});
     const focused = String(interaction.options.getFocused() ?? '').toLowerCase();
-    const matches = runtime.models
-      .list()
+    const matches = chat
+      .listModels()
       .filter((item) => `${item.alias} ${item.label} ${item.model}`.toLowerCase().includes(focused))
       .slice(0, 25)
       .map((item) => ({ name: `${item.alias} — ${item.label}`.slice(0, 100), value: item.alias }));
@@ -439,16 +456,13 @@ export function createCommandRuntime(deps) {
       return;
     }
     const alias = interaction.values?.[0];
-    const picked = alias ? runtime.models.find(alias) : null;
+    const picked = alias ? chat.findModel(alias) : null;
     if (!picked) {
       await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
       return;
     }
     const chatId = String(interaction.channelId);
-    const record = await runtime.store.get(chatId, { chatType: interaction.guildId ? 'GROUP' : 'PRIVATE' });
-    if (!record.meta) record.meta = { thinking: null };
-    record.meta.model = picked.alias;
-    runtime.store.touch?.(chatId);
+    await chat.setModel(chatId, picked.alias, interaction.guildId ? 'GROUP' : 'PRIVATE');
     await interaction.update({ embeds: [textEmbed('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`)], components: [] });
   }
 
@@ -477,7 +491,7 @@ export function createCommandRuntime(deps) {
       chatType: payload.chatType,
       messageId: `interaction:${crypto.randomUUID()}`,
     });
-    const result = await ask.run(event);
+    const result = await runtime.agent.collect(event, { skipCommands: true });
     const newToken = makeToken({ ...payload });
     const chunks = chunkContent(result.text || 'No answer.');
     if (action === 'regen') {

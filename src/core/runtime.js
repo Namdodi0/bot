@@ -16,6 +16,8 @@ import { createLogger } from './logger.js';
 import { createImageValidator } from './media/validate.js';
 import { createMetrics } from './metrics.js';
 import { createTavilyClient } from './search/tavily.js';
+import { createChatServices } from './services/chat.js';
+import { createReminderService } from './services/reminders.js';
 
 /**
  * Logger, metrics and the HTTP client shared by the entries and the runtime.
@@ -153,6 +155,8 @@ export async function createRuntime(input) {
   });
   const summarize = createSummarizer({ llm: models, logger });
   const compaction = createCompactionEngine({ config, logger, metrics, summarize });
+  const chatServices = createChatServices({ config, store, models, compaction });
+  const reminderService = createReminderService({ reminders });
   const tools = createToolRuntime({
     config,
     tavily,
@@ -345,6 +349,8 @@ export async function createRuntime(input) {
     tavily,
     validator,
     reminders,
+    reminderService,
+    chatServices,
     summarize,
     compaction,
     tools,

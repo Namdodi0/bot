@@ -1,5 +1,4 @@
 import { MessageFlags } from 'discord.js';
-import { createAskRunner } from './ask.js';
 import { createCommandRuntime } from './commands.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
 import { COMMANDS } from './specs.js';
@@ -16,8 +15,7 @@ export function createDiscordBot(deps) {
   const transport = platform.transport;
   const client = transport.client;
 
-  const ask = createAskRunner({ config, logger, metrics, platform, runtime });
-  const commands = createCommandRuntime({ config, logger, metrics, platform, runtime, ask });
+  const commands = createCommandRuntime({ config, logger, metrics, platform, runtime });
 
   /** @param {any} interaction */
   function channelOfInteraction(interaction) {

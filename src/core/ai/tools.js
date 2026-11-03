@@ -1,6 +1,8 @@
 import { formatSearchResults } from '../search/tavily.js';
 import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from './reminders.js';
 
+/** @typedef {(url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>} PhotoSender */
+
 /** @param {number} ms */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -140,7 +142,7 @@ export function createToolRuntime(options) {
   /**
    * @param {string} name
    * @param {any} args
-   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number}} ctx
+   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender}} ctx
    * @returns {Promise<{ok: boolean, text: string, data?: any}>}
    */
   async function run(name, args, ctx) {
@@ -189,7 +191,7 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, platform?: string, deadline?: number}} ctx
+   * @param {{chatId: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender}} ctx
    */
   async function sendImage(args, ctx) {
     if (!config.image.enabled) return { ok: false, text: 'Image sending is disabled.' };
@@ -266,7 +268,11 @@ export function createToolRuntime(options) {
       }
       if (remaining() <= 0) break;
       try {
-        await transport.sendPhoto(ctx.chatId, url, caption, upload ?? undefined);
+        const sendPhoto =
+          typeof ctx.sendPhoto === 'function'
+            ? ctx.sendPhoto
+            : (chatId, photoUrl, photoCaption, asset) => transport.sendPhoto(chatId, photoUrl, photoCaption, asset);
+        await sendPhoto(ctx.chatId, url, caption, upload ?? undefined);
         sent += 1;
         sentUrls.push(url);
         metrics?.inc('tool.sendImage.ok');

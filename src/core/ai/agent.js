@@ -2,7 +2,7 @@ import { createTokenMeter } from '../context/token-meter.js';
 import { CircuitOpenError, HttpError } from '../http.js';
 import { stripMention } from '../text/format.js';
 import { createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
-import { createSenderFactory } from './agent/sending.js';
+import { createCollectorSink, createSenderFactory } from './agent/sending.js';
 import { findBreak, planAttemptBudget, preview, sleep } from './agent/helpers.js';
 import { createTurnRunner } from './agent/turn.js';
 import { LLM_ERROR, isRetryableLlmError } from './llm/errors.js';
@@ -37,8 +37,9 @@ export function createAgent(deps) {
 
   /**
    * @param {import('../../platforms/contract.js').BotEvent} event
+   * @param {{collector?: ReturnType<typeof import('./agent/sending.js').createCollectorSink>, skipCommands?: boolean}} [options]
    */
-  async function handle(event) {
+  async function handle(event, options = {}) {
     if (!event) return;
     if (event.isBot) return;
     if (event.kind === 'unsupported' || event.kind === 'unknown') return;
@@ -56,7 +57,18 @@ export function createAgent(deps) {
       kind: event.kind,
       len: (event.text ?? '').length,
     });
-    const stopTyping = config.typing ? transport.startTyping(event.chatId) : async () => {};
+    const collector = options.collector ?? null;
+    const stopTyping = collector || !config.typing ? async () => {} : transport.startTyping(event.chatId);
+
+    /** @param {string} text */
+    async function reply(text) {
+      if (collector) {
+        await collector.enqueue(text);
+        return;
+      }
+      const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
+      await sendText(sender, text);
+    }
 
     try {
       // Keep the record in memory while the turn runs: eviction would silently lose it.
@@ -88,15 +100,13 @@ export function createAgent(deps) {
       }
 
       if (event.kind === 'voice') {
-        const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
-        await sendText(sender, 'I cannot listen to voice messages yet — please send text instead.');
+        await reply('I cannot listen to voice messages yet — please send text instead.');
         return;
       }
       if (event.kind === 'sticker') {
         // Platforms that support stickers handle the echo themselves; others just say so.
         if (await platform.handleIncoming?.(event, { stopTyping })) return;
-        const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
-        await sendText(sender, 'I cannot view stickers yet — please send text instead.');
+        await reply('I cannot view stickers yet — please send text instead.');
         return;
       }
 
@@ -106,7 +116,7 @@ export function createAgent(deps) {
       );
       const command = commands.parseCommand(cleanedText);
       const normalizedEvent = cleanedText === (event.text ?? '') ? event : { ...event, text: cleanedText };
-      if (command) {
+      if (command && !options.skipCommands) {
         const ctx = {
           chatId: event.chatId,
           chatType: event.chatType,
@@ -120,7 +130,7 @@ export function createAgent(deps) {
         metrics.inc(`commands.${command.name}`);
 
         if (result.kind === 'search') {
-          await conversation(normalizedEvent, record, { forceSearch: result.query }, stopTyping);
+          await conversation(normalizedEvent, record, { forceSearch: result.query }, stopTyping, collector);
           return;
         }
         if (result.kind === 'image') {
@@ -136,12 +146,10 @@ export function createAgent(deps) {
                 config.responseTimeoutMs > 0
                   ? Date.now() + config.responseTimeoutMs
                   : Number.POSITIVE_INFINITY,
+              ...(collector ? { sendPhoto: collector.sendPhoto } : {}),
             },
           );
-          if (!imageResult.ok) {
-            const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
-            await sendText(sender, imageResult.text);
-          }
+          if (!imageResult.ok) await reply(imageResult.text);
           return;
         }
         if (result.kind === 'sticker') {
@@ -162,14 +170,13 @@ export function createAgent(deps) {
           return;
         }
         if (result.kind === 'text' && result.text) {
-          const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
-          await sendText(sender, result.text);
+          await reply(result.text);
           return;
         }
         return;
       }
 
-      await conversation(normalizedEvent, record, {}, stopTyping);
+      await conversation(normalizedEvent, record, {}, stopTyping, collector);
     } catch (error) {
       metrics.inc('messages.error');
       const partial = /** @type {any} */ (error);
@@ -191,8 +198,7 @@ export function createAgent(deps) {
       }
 
       try {
-        const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
-        await sendText(sender, text);
+        await reply(text);
       } catch (sendError) {
         logger.error('failed to send error message', { error: sendError });
       }
@@ -208,7 +214,33 @@ export function createAgent(deps) {
 
   const { enqueue, pending, drain } = createQueue({ config, logger, metrics, transport, handle });
 
-  return { handle, enqueue, pending, drain, seenSize: () => seen.size() };
+  /** @type {Map<string, Promise<unknown>>} */
+  const collectQueues = new Map();
+
+  /**
+   * Run one turn and collect its output instead of sending it (native slash commands).
+   * Turns are serialized per chat so they cannot interleave writes to the same record.
+   * @param {import('../../platforms/contract.js').BotEvent} event
+   * @param {{skipCommands?: boolean}} [options]
+   * @returns {Promise<{text: string, photos: any[]}>}
+   */
+  function collect(event, options = {}) {
+    const chatId = String(event?.chatId ?? '');
+    const previous = collectQueues.get(chatId) ?? Promise.resolve();
+    const task = previous.then(async () => {
+      const collector = createCollectorSink();
+      await handle(event, { collector, skipCommands: options.skipCommands !== false });
+      return collector.result();
+    });
+    const guarded = task.catch(() => {});
+    collectQueues.set(chatId, guarded);
+    guarded.then(() => {
+      if (collectQueues.get(chatId) === guarded) collectQueues.delete(chatId);
+    });
+    return task;
+  }
+
+  return { handle, collect, enqueue, pending, drain, seenSize: () => seen.size() };
 }
 
 export const __test__ = { findBreak, planAttemptBudget };

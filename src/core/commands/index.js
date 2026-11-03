@@ -1,14 +1,13 @@
 import { latestSummary } from '../context/record.js';
 import { createTokenMeter } from '../context/token-meter.js';
-import { SUMMARY_SYSTEM_PROMPT } from '../ai/prompt/index.js';
 import { formatDuration } from '../text/format.js';
 import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from '../ai/reminders.js';
+import { createChatServices } from '../services/chat.js';
+import { createReminderService } from '../services/reminders.js';
 import { helpBullets } from './registry.js';
 
 const SUMMARY_DEFAULT_COUNT = 30;
 const SUMMARY_MAX_COUNT = 200;
-const SUMMARY_MAX_TRANSCRIPT = 12_000;
-const SUMMARY_TIMEOUT_MS = 15_000;
 
 /**
  * @param {string} text
@@ -23,7 +22,7 @@ export function parseCommand(text) {
 }
 
 /**
- * @param {{config: any, store: ReturnType<typeof import('../context/store.js').createContextStore>, metrics: ReturnType<typeof import('../metrics.js').createMetrics>, platform: import('../../platforms/contract.js').Platform, http: ReturnType<typeof import('../http.js').createHttp>, models: ReturnType<typeof import('../ai/router.js').createModelRouter>, reminders?: ReturnType<typeof import('../ai/reminders.js').createReminderStore>, logger?: import('../logger.js').Logger, compaction?: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
+ * @param {{config: any, store: ReturnType<typeof import('../context/store.js').createContextStore>, metrics: ReturnType<typeof import('../metrics.js').createMetrics>, platform: import('../../platforms/contract.js').Platform, http: ReturnType<typeof import('../http.js').createHttp>, models: ReturnType<typeof import('../ai/router.js').createModelRouter>, reminders?: ReturnType<typeof import('../ai/reminders.js').createReminderStore>, logger?: import('../logger.js').Logger, compaction?: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>, chatServices?: ReturnType<typeof import('../services/chat.js').createChatServices>, reminderService?: ReturnType<typeof import('../services/reminders.js').createReminderService>}} deps
  */
 export function createCommands(deps) {
   const { config, store, metrics, platform, models, compaction } = deps;
@@ -31,6 +30,8 @@ export function createCommands(deps) {
   const http = deps.http;
   const reminders = deps.reminders;
   const logger = deps.logger;
+  const chat = deps.chatServices ?? createChatServices({ config, store, models, compaction });
+  const reminderService = deps.reminderService ?? createReminderService({ reminders });
 
   function canManage(ctx) {
     // Private chats are per-chat settings, so the manager check is a group concern only.
@@ -133,7 +134,7 @@ export function createCommands(deps) {
         }
         const full = args.trim().toLowerCase() === 'all';
         const turns = ctx.record?.turns ?? 0;
-        await store.reset(ctx.chatId, { keepMeta: !full });
+        await chat.reset(ctx.chatId, { all: full });
         logger?.info('context reset', { chatId: ctx.chatId, turns, full });
         return {
           kind: 'text',
@@ -151,11 +152,10 @@ export function createCommands(deps) {
         if (!compaction) return { kind: 'text', text: 'Compaction is not configured.' };
         const meter = createTokenMeter();
         const before = meter.messages(ctx.record.messages);
-        const result = await compaction.compactIfNeeded({ record: ctx.record, trigger: 'manual' });
+        const result = await chat.compact(ctx.chatId, ctx.chatType, ctx.record);
         if (!result?.changed) {
           return { kind: 'text', text: 'The context does not need compaction yet (no safe range left to compact).' };
         }
-        store.touch?.(ctx.chatId);
         const after = meter.messages(ctx.record.messages);
         const parts = [];
         if (result.summarized) parts.push('summary');
@@ -176,47 +176,19 @@ export function createCommands(deps) {
           }
           count = parsed;
         }
-        const history = (ctx.record?.messages ?? [])
-          .filter(
-            (message) =>
-              (message.kind ?? 'turn') === 'turn' &&
-              typeof message.text === 'string' &&
-              message.text.trim().length > 0,
-          )
-          .slice(-count);
-        if (history.length < 2) {
-          return { kind: 'text', text: 'Not enough messages to summarize (need at least 2).' };
-        }
-        const transcript = history
-          .map(
-            (message) =>
-              `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${String(message.text).trim()}`,
-          )
-          .join('\n')
-          .slice(0, SUMMARY_MAX_TRANSCRIPT);
-        const timeoutMs =
-          config.responseTimeoutMs > 0
-            ? Math.max(1500, Math.min(SUMMARY_TIMEOUT_MS, config.responseTimeoutMs - 300))
-            : SUMMARY_TIMEOUT_MS;
         try {
-          const response = await models.chat({
-            record: ctx.record,
-            messages: [
-              { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-              { role: 'user', content: transcript },
-            ],
-            reasoning: 'none',
-            temperature: 0.3,
-            maxTokens: 300,
-            stream: false,
-            timeoutMs,
-            signal: AbortSignal.timeout(timeoutMs),
-          });
-          const text = String(/** @type {any} */ (response)?.content ?? '').trim();
-          if (!text) {
-            return { kind: 'text', text: 'The model returned no summary; try again later.' };
+          const result = await chat.summarize(ctx.chatId, ctx.chatType, count, ctx.record);
+          if (!result.ok) {
+            const reason = /** @type {any} */ (result).reason;
+            return {
+              kind: 'text',
+              text:
+                reason === 'empty'
+                  ? 'The model returned no summary; try again later.'
+                  : 'Not enough messages to summarize (need at least 2).',
+            };
           }
-          return { kind: 'text', text: `**Summary of the last ${history.length} messages:**\n\n${text}` };
+          return { kind: 'text', text: `**Summary of the last ${result.count} messages:**\n\n${result.text}` };
         } catch (error) {
           logger?.warn('summary command failed', {
             error: String(/** @type {any} */ (error)?.message ?? error),
@@ -241,33 +213,29 @@ export function createCommands(deps) {
         if (!canManage(ctx)) {
           return { kind: 'text', text: 'Only group admins can change the model.' };
         }
-        const current = models.resolve(ctx.record);
+        const current = chat.currentModel(ctx.record);
         if (!args) {
           const lines = [
             `**Current model:** \`${current.alias}\` — ${current.label} (\`${current.model}\`, ${current.provider})`,
             '',
             '**Change the model for this chat:**',
-            ...models
-              .list()
+            ...chat
+              .listModels()
               .map((item) => `• \`/model ${item.alias}\` — ${item.label} (${item.provider}/${item.model})`),
           ];
           return { kind: 'text', text: lines.join('\n') };
         }
-        const picked = models.find(args);
-        if (!picked) {
+        const saved = await chat.setModel(ctx.chatId, args, ctx.chatType, ctx.record);
+        if (!saved.ok) {
           return {
             kind: 'text',
-            text: `No model named "${args}". Choose: ${models.list().map((item) => item.alias).join(', ')}`,
+            text: `No model named "${args}". Choose: ${chat.listModels().map((item) => item.alias).join(', ')}`,
           };
         }
-        if (!ctx.record.meta) ctx.record.meta = { thinking: null };
-        ctx.record.meta.model = picked.alias;
-        try {
-          store.touch?.(ctx.chatId);
-        } catch (error) {
-          logger?.debug('persist model failed', { error: String(error) });
-        }
-        return { kind: 'text', text: `Switched to **${picked.label}** (\`${picked.model}\`, ${picked.provider}).` };
+        return {
+          kind: 'text',
+          text: `Switched to **${saved.model.label}** (\`${saved.model.model}\`, ${saved.model.provider}).`,
+        };
       }
 
       case 'think': {
@@ -314,13 +282,13 @@ export function createCommands(deps) {
       }
 
       case 'remind': {
-        if (!reminders) {
+        if (!reminderService.available()) {
           return { kind: 'text', text: 'Reminders are not configured.' };
         }
         const raw = args.trim();
         const lower = raw.toLowerCase();
         const listText = () => {
-          const items = reminders
+          const items = reminderService
             .list(ctx.chatId)
             .slice()
             .sort((a, b) => a.at - b.at);
@@ -345,7 +313,7 @@ export function createCommands(deps) {
           if (!target) {
             return { kind: 'text', text: 'Use `/remind remove <id>` (see ids with `/remind list`).' };
           }
-          const removed = await reminders.remove(ctx.chatId, target);
+          const removed = await reminderService.cancel(ctx.chatId, target);
           return {
             kind: 'text',
             text: removed
@@ -356,18 +324,17 @@ export function createCommands(deps) {
 
         const parsed = parseReminderArgs(raw);
         if (parsed.error) return { kind: 'text', text: parsed.error };
-        const result = await reminders.add({
-          chatId: ctx.chatId,
-          text: /** @type {string} */ (parsed.text),
-          at: /** @type {number} */ (parsed.at),
-          createdBy: ctx.senderId,
-        });
+        const result = await reminderService.addAt(
+          ctx.chatId,
+          /** @type {number} */ (parsed.at),
+          /** @type {string} */ (parsed.text),
+          ctx.senderId,
+        );
         if (!result.ok) {
-          const reason = /** @type {any} */ (result).reason;
           return {
             kind: 'text',
             text:
-              reason === 'chat-limit'
+              result.reason === 'chat-limit'
                 ? `This chat already has ${REMINDER_LIMITS.MAX_PER_CHAT} reminders — remove one with \`/remind remove <id>\`.`
                 : 'The total reminder limit is reached; try again later.',
           };

@@ -58,20 +58,16 @@ function makeRuntime() {
     tavily: null,
     validator: { validate: async () => ({ ok: true }), download: async () => ({ ok: true }) },
     commands: { parseCommand: () => null },
+    agent: { collect: async () => ({ text: 'Answer text', photos: [] }) },
   };
 }
 
-function makeCommands(askOverrides = {}) {
+function makeCommands() {
   const config = makeConfig();
   const platform = makePlatform();
   const runtime = makeRuntime();
-  const ask = {
-    run: async () => ({ text: 'Answer text', photos: [] }),
-    image: async () => ({ result: { ok: true, text: 'images' }, photos: [] }),
-    ...askOverrides,
-  };
-  const commands = createCommandRuntime({ config, logger: silentLogger, metrics: runtime.metrics, platform, runtime, ask });
-  return { commands, runtime, platform, ask };
+  const commands = createCommandRuntime({ config, logger: silentLogger, metrics: runtime.metrics, platform, runtime });
+  return { commands, runtime, platform };
 }
 
 /**
