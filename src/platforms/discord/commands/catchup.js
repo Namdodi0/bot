@@ -5,18 +5,41 @@ const CATCHUP_PAGE_SIZE = 100;
 const CATCHUP_MAX_TRANSCRIPT = 12_000;
 
 /**
+ * Keep the newest whole lines within the character cap.
+ * @param {string[]} lines
+ * @param {number} maxChars
+ */
+function tailTranscript(lines, maxChars) {
+  const kept = [];
+  let total = 0;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const cost = lines[index].length + 1;
+    if (total + cost > maxChars) break;
+    kept.unshift(lines[index]);
+    total += cost;
+  }
+  return { text: kept.join('\n'), count: kept.length };
+}
+
+/**
  * `/catchup`: page back through the channel history and stream a summary.
  * @param {ReturnType<typeof import('./shared.js').createShared>} shared
  */
 export function createCatchupHandlers(shared) {
-  const { chat, logger, ephemeral } = shared;
+  const { chat, logger, ephemeral, runtime, replyEphemeral } = shared;
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
   const handlers = {
     async catchup(interaction) {
+      const chatId = String(interaction.channelId);
+      if (runtime.agent.rateLimited?.(chatId, interaction.user.id)) {
+        await replyEphemeral(interaction, {
+          content: 'You are using commands too quickly — please wait a minute and try again.',
+        });
+        return;
+      }
       await interaction.deferReply(ephemeral);
       const hours = interaction.options.getInteger('hours') ?? 24;
-      const chatId = String(interaction.channelId);
       const channel = /** @type {any} */ (interaction.channel);
       if (!channel?.messages?.fetch) {
         await interaction.editReply({ content: 'I cannot read messages in this channel.' });
@@ -72,15 +95,18 @@ export function createCatchupHandlers(shared) {
         return;
       }
 
-      const transcript = collected
-        .slice()
-        .reverse()
-        .map((item) => `${item.name}: ${item.text}`)
-        .join('\n')
-        .slice(0, CATCHUP_MAX_TRANSCRIPT);
+      const transcript = tailTranscript(
+        collected
+          .slice()
+          .reverse()
+          .map((item) => `${item.name}: ${item.text}`),
+        CATCHUP_MAX_TRANSCRIPT,
+      );
       let streamed = '';
-      const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
-      const summary = await chat.summarizeText(transcript, {
+      const previewer = createPreviewer((text) =>
+        interaction.editReply({ content: text, allowedMentions: { parse: [] } }),
+      );
+      const summary = await chat.summarizeText(transcript.text, {
         record: await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE'),
         onDelta: (delta) => {
           streamed += delta;
@@ -92,7 +118,7 @@ export function createCatchupHandlers(shared) {
         await interaction.editReply({ content: 'I could not summarize those messages right now.' });
         return;
       }
-      await interaction.editReply({ embeds: [catchupEmbed(hours, collected.length, summary.text)] });
+      await interaction.editReply({ embeds: [catchupEmbed(hours, transcript.count, summary.text)] });
     },
   };
 

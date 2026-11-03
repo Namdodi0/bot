@@ -41,6 +41,9 @@ export function createShared(deps) {
   const ephemeral = { flags: MessageFlags.Ephemeral };
   const privateReply = (value) => (value ? ephemeral : {});
 
+  /** Model text must never ping: fresh object per payload so discord.js cannot share it. */
+  const noMentions = () => ({ parse: [] });
+
   /** @param {any} interaction */
   function isAdmin(interaction) {
     if (!interaction.guildId) return true;
@@ -95,9 +98,9 @@ export function createShared(deps) {
    */
   async function sendInteractionAnswer(interaction, result, token, priv) {
     const { chunks, first } = splitAnswer(result);
-    await interaction.editReply({ content: first, components: answerButtons(token) });
+    await interaction.editReply({ content: first, components: answerButtons(token), allowedMentions: noMentions() });
     for (const chunk of chunks) {
-      await interaction.followUp({ content: chunk, ...privateReply(priv) });
+      await interaction.followUp({ content: chunk, allowedMentions: noMentions(), ...privateReply(priv) });
     }
     await sendPhotos(interaction, result.photos, priv);
   }
@@ -105,9 +108,11 @@ export function createShared(deps) {
   /** @param {any} interaction @param {any[]} photos @param {boolean} priv */
   async function sendPhotos(interaction, photos, priv) {
     for (const group of photoBatches(photos)) {
+      const content = group[0].caption?.slice(0, 2000) || undefined;
       await interaction.followUp({
         files: group.map(photoAttachment),
-        content: group[0].caption?.slice(0, 2000) || undefined,
+        content,
+        ...(content ? { allowedMentions: noMentions() } : {}),
         ...(priv ? ephemeral : {}),
       });
     }
@@ -121,14 +126,16 @@ export function createShared(deps) {
    */
   async function sendChannelAnswer(channel, result, token, existing = null) {
     const { chunks, first } = splitAnswer(result);
-    const payload = { content: first, components: answerButtons(token) };
+    const payload = { content: first, components: answerButtons(token), allowedMentions: noMentions() };
     if (existing?.edit) await existing.edit(payload);
     else await channel.send(payload);
-    for (const chunk of chunks) await channel.send({ content: chunk });
+    for (const chunk of chunks) await channel.send({ content: chunk, allowedMentions: noMentions() });
     for (const group of photoBatches(result.photos)) {
+      const content = group[0].caption?.slice(0, 2000) || undefined;
       await channel.send({
         files: group.map(photoAttachment),
-        content: group[0].caption?.slice(0, 2000) || undefined,
+        content,
+        ...(content ? { allowedMentions: noMentions() } : {}),
       });
     }
   }

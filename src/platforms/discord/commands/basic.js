@@ -25,6 +25,16 @@ export function createBasicHandlers(shared) {
     return config.responseTimeoutMs > 0 ? Date.now() + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
   }
 
+  /** @param {any} interaction */
+  async function commandRateLimited(interaction) {
+    const chatId = String(interaction.channelId);
+    if (!runtime.agent.rateLimited?.(chatId, interaction.user.id)) return false;
+    await replyEphemeral(interaction, {
+      content: 'You are using commands too quickly — please wait a minute and try again.',
+    });
+    return true;
+  }
+
   /**
    * Run the image tool with a capture sink so the command can render the attachments itself.
    * @param {any} args
@@ -87,10 +97,11 @@ export function createBasicHandlers(shared) {
         await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can reset the context.')] });
         return;
       }
+      await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
       const full = interaction.options.getBoolean('all') === true;
-      await chat.reset(chatId, { all: full });
-      await replyEphemeral(interaction, {
+      await runtime.agent.exclusive(chatId, () => chat.reset(chatId, { all: full }));
+      await interaction.editReply({
         content: full ? 'Cleared the context and settings for this channel.' : 'Cleared this channel context (settings kept).',
       });
     },
@@ -100,9 +111,10 @@ export function createBasicHandlers(shared) {
         await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can compact the context.')] });
         return;
       }
+      if (await commandRateLimited(interaction)) return;
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
-      const result = await chat.compact(chatId, 'GROUP');
+      const result = await runtime.agent.exclusive(chatId, () => chat.compact(chatId, 'GROUP'));
       if (!result?.changed) {
         await interaction.editReply({ content: 'The context does not need compaction yet.' });
         return;
@@ -111,11 +123,14 @@ export function createBasicHandlers(shared) {
     },
 
     async summary(interaction) {
+      if (await commandRateLimited(interaction)) return;
       await interaction.deferReply(ephemeral);
       const count = interaction.options.getInteger('count') ?? 30;
       const chatId = String(interaction.channelId);
       let streamed = '';
-      const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+      const previewer = createPreviewer((text) =>
+        interaction.editReply({ content: text, allowedMentions: { parse: [] } }),
+      );
       const result = await chat.summarize(
         chatId,
         interaction.guildId ? 'GROUP' : 'PRIVATE',
@@ -144,6 +159,7 @@ export function createBasicHandlers(shared) {
     },
 
     async search(interaction) {
+      if (await commandRateLimited(interaction)) return;
       const query = String(interaction.options.getString('query', true)).trim();
       const priv = interaction.options.getBoolean('private') === true;
       await interaction.deferReply(privateReply(priv));
@@ -160,6 +176,7 @@ export function createBasicHandlers(shared) {
     },
 
     async image(interaction) {
+      if (await commandRateLimited(interaction)) return;
       const query = String(interaction.options.getString('query', true)).trim();
       const count = interaction.options.getInteger('count') ?? 1;
       const priv = interaction.options.getBoolean('private') === true;
@@ -175,6 +192,7 @@ export function createBasicHandlers(shared) {
       await interaction.editReply({
         content: result.text || `Here ${photos.length === 1 ? 'is' : 'are'} ${photos.length} image${photos.length === 1 ? '' : 's'}.`,
         components: [],
+        allowedMentions: { parse: [] },
       });
       await sendPhotos(interaction, photos, priv);
     },

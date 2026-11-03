@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDiscordStickerService, parseDiscordStickerIds } from '../src/platforms/discord/stickers.js';
+import {
+  createDiscordStickerService,
+  createStickerToolRunner,
+  parseDiscordStickerIds,
+} from '../src/platforms/discord/stickers.js';
 
 test('parseDiscordStickerIds keeps snowflake ids and names', () => {
   assert.deepEqual(parseDiscordStickerIds('123456789012345678:wave, 987654321098765432:cat'), [
@@ -37,4 +41,36 @@ test('sticker service sends guild stickers', async () => {
   assert.equal(sticker?.name, 'wave');
   await service.send(channel, sticker);
   assert.deepEqual(sent[0], { stickers: ['123456789012345678'], allowedMentions: { parse: [] } });
+});
+
+test('sticker tool runner sends through the channel when not suppressed', async () => {
+  const config = { discord: { stickers: { enabled: true, ids: '123456789012345678:wave' } } };
+  const sent = [];
+  const channel = { guild: null, send: async (payload) => sent.push(payload) };
+  const client = { channels: { cache: new Map([['c1', channel]]), fetch: async () => channel } };
+  const service = createDiscordStickerService({ config, client, logger: null });
+  const run = createStickerToolRunner({ stickers: service });
+
+  const result = await run('send_sticker', { emotion: 'wave' }, { chatId: 'c1' });
+  assert.deepEqual(result, { ok: true, text: 'Sent the sticker "wave".' });
+  assert.deepEqual(sent[0], { stickers: ['123456789012345678'], allowedMentions: { parse: [] } });
+});
+
+test('sticker tool runner refuses to post in a private turn', async () => {
+  const config = { discord: { stickers: { enabled: true, ids: '123456789012345678:wave' } } };
+  const sent = [];
+  const channel = { guild: null, send: async (payload) => sent.push(payload) };
+  const client = { channels: { cache: new Map([['c1', channel]]), fetch: async () => channel } };
+  const service = createDiscordStickerService({ config, client, logger: null });
+  const run = createStickerToolRunner({ stickers: service });
+
+  const result = await run('send_sticker', { emotion: 'wave' }, { chatId: 'c1', suppressDirectSend: true });
+  assert.deepEqual(result, { ok: false, text: 'Stickers cannot be sent in a private answer.' });
+  assert.deepEqual(sent, [], 'nothing may be posted to the channel');
+});
+
+test('sticker tool runner ignores other tool names', async () => {
+  const service = createDiscordStickerService({ config: { discord: { stickers: { enabled: true, ids: '' } } }, client: null, logger: null });
+  const run = createStickerToolRunner({ stickers: service });
+  assert.equal(await run('web_search', {}, { chatId: 'c1' }), null);
 });

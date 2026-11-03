@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { streamPreview } from '../src/platforms/discord/ui.js';
+import { createPreviewer, streamPreview } from '../src/platforms/discord/ui.js';
 import { makeDiscordCommands as makeCommands, makeInteraction as interaction } from '../test-utils/discord.js';
 
 test('/help replies with a native ephemeral embed', async () => {
@@ -149,6 +149,162 @@ test('streamPreview clamps length and balances code fences', () => {
   assert.equal((fenced.match(/```/g) ?? []).length % 2, 0);
 });
 
+test('previewer skips identical clamped text instead of re-editing', async () => {
+  /** @type {string[]} */
+  const edits = [];
+  const previewer = createPreviewer(async (text) => {
+    edits.push(text);
+  }, 0);
+  previewer.push('a'.repeat(2500));
+  await previewer.flush();
+  previewer.push('a'.repeat(3200));
+  await previewer.flush();
+  assert.equal(edits.length, 1, 'the clamped preview is byte-identical, so no second edit');
+
+  previewer.push('b'.repeat(2500));
+  await previewer.flush();
+  assert.equal(edits.length, 2);
+});
+
+test('previewer stops pushing after a failed edit', async () => {
+  let calls = 0;
+  const previewer = createPreviewer(async () => {
+    calls += 1;
+    throw new Error('missing permissions');
+  }, 0);
+  previewer.push('one');
+  await previewer.flush();
+  previewer.push('two');
+  await previewer.flush();
+  assert.equal(calls, 1);
+});
+
+test('private /ask wins over thread and never creates a public thread', async () => {
+  const { commands, runtime } = makeCommands();
+  const threads = [];
+  const channel = {
+    id: 'c1',
+    threads: {
+      create: async () => {
+        threads.push('created');
+        return { id: 't1', send: async () => ({ edit: async () => {} }) };
+      },
+    },
+  };
+  let seen = null;
+  runtime.agent.stream = async (event) => {
+    seen = event;
+    return { text: 'secret answer', photos: [] };
+  };
+
+  const i = interaction('ask', { prompt: 'top secret', private: true, thread: true }, { channel, guild: { id: 'g1' } });
+  await commands.handleCommand(i);
+
+  assert.deepEqual(threads, [], 'a private answer must not post to a thread');
+  assert.ok(i.deferPayload.flags, 'the deferral must be ephemeral');
+  assert.equal(i.edits.at(-1).content, 'secret answer');
+  assert.equal(seen.private, true);
+  const note = i.follows.at(-1);
+  assert.match(note.content, /skip threads/);
+  assert.ok(note.flags, 'the note must be ephemeral too');
+});
+
+test('thread answers disable mention parsing in the thread and the notice', async () => {
+  const { commands } = makeCommands();
+  const sent = [];
+  const placeholder = {
+    edit: async (payload) => {
+      sent.push(payload);
+      return payload;
+    },
+  };
+  const thread = {
+    id: 't1',
+    send: async (payload) => {
+      sent.push(payload);
+      return placeholder;
+    },
+  };
+  const channel = { id: 'c1', threads: { create: async () => thread } };
+  const i = interaction('ask', { prompt: 'hello', thread: true }, { channel, guild: { id: 'g1' } });
+  await commands.handleCommand(i);
+
+  assert.match(i.edits.at(-1).content, /^Answered in /);
+  for (const payload of [...sent, ...i.edits]) {
+    assert.deepEqual(payload.allowedMentions, { parse: [] }, `payload ${JSON.stringify(payload.content)} must not ping`);
+  }
+});
+
+test('every model-text payload from /ask disables mention parsing', async () => {
+  const { commands } = makeCommands();
+  const i = interaction('ask', { prompt: 'hello @everyone', private: true });
+  await commands.handleCommand(i);
+  const payloads = [...i.edits, ...i.follows];
+  assert.ok(payloads.some((payload) => payload.content === 'Answer '), 'a preview edit should be present');
+  for (const payload of payloads) {
+    if (!payload.content) continue;
+    assert.deepEqual(payload.allowedMentions, { parse: [] }, `payload ${JSON.stringify(payload.content)} must not ping`);
+  }
+});
+
+test('public asks are not flagged private', async () => {
+  const { commands, runtime } = makeCommands();
+  let seen = null;
+  runtime.agent.stream = async (event) => {
+    seen = event;
+    return { text: 'ok', photos: [] };
+  };
+  await commands.handleCommand(interaction('ask', { prompt: 'hi' }));
+  assert.equal(seen.private, undefined);
+  assert.equal(seen.chatId, 'c1');
+});
+
+test('context-menu answers are flagged private for the core', async () => {
+  const { commands, runtime } = makeCommands();
+  let seen = null;
+  runtime.agent.stream = async (event) => {
+    seen = event;
+    return { text: 'explained', photos: [] };
+  };
+  const i = interaction(
+    'Explain message',
+    {},
+    {
+      isChatInputCommand: () => false,
+      isMessageContextMenuCommand: () => true,
+      targetMessage: { content: 'hello there' },
+    },
+  );
+  await commands.handleCommand(i);
+  assert.equal(seen.private, true);
+});
+
+test('regenerating an ephemeral answer flags the turn private', async () => {
+  const { commands, runtime } = makeCommands();
+  const first = interaction('ask', { prompt: 'hello', private: true });
+  await commands.handleCommand(first);
+  const customId = first.edits[first.edits.length - 1].components[0].components[0].data.custom_id;
+
+  /** @type {any[]} */
+  const edits = [];
+  const message = {
+    edit: async (payload) => {
+      edits.push(payload);
+    },
+  };
+  const button = interaction('', {}, { customId, message, deferUpdate: async () => {} });
+  let seen = null;
+  runtime.agent.stream = async (event) => {
+    seen = event;
+    return { text: 'again', photos: [] };
+  };
+  await commands.handleButton(button);
+
+  assert.equal(seen.private, true);
+  assert.equal(edits.at(-1).content, 'again');
+  assert.deepEqual(edits.at(-1).allowedMentions, { parse: [] });
+});
+
 test('/ping reports the gateway and roundtrip latency', async () => {
   const { commands } = makeCommands();
   const i = interaction('ping');
@@ -170,6 +326,40 @@ test('/remind add uses Discord timestamps', async () => {
   await commands.handleCommand(i);
   assert.match(i.replies[0].content, /<t:\d+:f>/);
   assert.match(i.replies[0].content, /drink water/);
+});
+
+test('/reset is deferred and runs through the per-chat exclusive queue', async () => {
+  const { commands, runtime } = makeCommands();
+  const order = [];
+  runtime.agent.exclusive = async (chatId, task) => {
+    order.push(`exclusive:${chatId}`);
+    return task();
+  };
+  runtime.store.reset = async (chatId) => {
+    order.push(`reset:${chatId}`);
+  };
+  const i = interaction('reset');
+  await commands.handleCommand(i);
+
+  assert.deepEqual(order, ['exclusive:c1', 'reset:c1']);
+  assert.ok(i.deferPayload.flags, 'reset must defer before waiting for a turn');
+  assert.match(i.edits.at(-1).content, /settings kept/);
+});
+
+test('expensive native commands share the per-user rate limit', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.agent.rateLimited = () => true;
+  let chatCalled = false;
+  runtime.models.chat = async () => {
+    chatCalled = true;
+    return { content: 'summary text' };
+  };
+  const i = interaction('summary');
+  await commands.handleCommand(i);
+
+  assert.equal(i.replies.length, 1);
+  assert.match(i.replies[0].content, /too quickly/);
+  assert.equal(chatCalled, false);
 });
 
 test('buttons reject another user', async () => {

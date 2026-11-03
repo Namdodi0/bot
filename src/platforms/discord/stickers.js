@@ -53,9 +53,13 @@ export function stickerToolDefinitions(config) {
 export function createStickerToolRunner(deps) {
   const stickers = deps.stickers;
 
-  /** @param {string} name @param {any} args @param {{chatId: string}} ctx */
+  /** @param {string} name @param {any} args @param {{chatId: string, suppressDirectSend?: boolean}} ctx */
   return async function run(name, args, ctx) {
     if (name !== 'send_sticker') return null;
+    // Private turns live in an interaction reply; a channel send would leak them publicly.
+    if (ctx?.suppressDirectSend === true) {
+      return { ok: false, text: 'Stickers cannot be sent in a private answer.' };
+    }
     if (!stickers.enabled) return { ok: false, text: 'Stickers are disabled in the config.' };
     try {
       const channel = await stickers.channelOf(ctx.chatId);

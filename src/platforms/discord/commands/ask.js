@@ -26,9 +26,16 @@ export function createAskHandlers(shared) {
     sendInteractionAnswer,
   } = shared;
 
-  /** @param {any} interaction @param {string} text @param {Record<string, any>} [extra] */
+  /**
+   * @param {any} interaction
+   * @param {string} text
+   * @param {Record<string, any>} [extra] `private: true` marks the turn non-durable for the core
+   */
   function askEvent(interaction, text, extra = {}) {
-    return eventFromInteraction(interaction, client, text, extra);
+    /** @type {any} */
+    const event = eventFromInteraction(interaction, client, text, extra);
+    if (extra.private === true) event.private = true;
+    return event;
   }
 
   /**
@@ -54,13 +61,12 @@ export function createAskHandlers(shared) {
     return { ok: true, imageData: { data: downloaded.data, contentType: downloaded.contentType ?? contentType } };
   }
 
-  /** @param {any} interaction @param {string} prompt @param {{chatId?: string, chatType?: string, imageData?: any, onDelta?: (delta: string) => void}} [extra] */
+  /** @param {any} interaction @param {string} prompt @param {{chatId?: string, chatType?: string, imageData?: any, private?: boolean, onDelta?: (delta: string) => void}} [extra] */
   function streamAsk(interaction, prompt, extra = {}) {
-    const event = askEvent(
-      interaction,
-      prompt,
-      extra.chatId ? { chatId: extra.chatId, chatType: extra.chatType ?? 'GROUP' } : undefined,
-    );
+    const event = askEvent(interaction, prompt, {
+      ...(extra.chatId ? { chatId: extra.chatId, chatType: extra.chatType ?? 'GROUP' } : {}),
+      ...(extra.private === true ? { private: true } : {}),
+    });
     if (extra.imageData) event.imageData = extra.imageData;
     return runtime.agent.stream(event, { skipCommands: true, onDelta: extra.onDelta });
   }
@@ -70,7 +76,10 @@ export function createAskHandlers(shared) {
    * @param {{prompt: string, priv: boolean, useThread: boolean, withImage: boolean, imageData?: any}} options
    */
   async function runAskFlow(interaction, options) {
-    const { prompt, priv, useThread, withImage } = options;
+    const { prompt, priv, withImage } = options;
+    const wantsThread = options.useThread === true;
+    // A private answer must never be posted to a public thread.
+    const useThread = wantsThread && !priv;
     await interaction.deferReply(useThread ? ephemeral : privateReply(priv));
 
     let imageData = options.imageData ?? null;
@@ -96,8 +105,8 @@ export function createAskHandlers(shared) {
       }
       const name = prompt.replace(/\s+/g, ' ').slice(0, 90) || 'AI answer';
       const thread = await channel.threads.create({ name, autoArchiveDuration: 1440, reason: `AI answer for ${interaction.user.username}` });
-      const placeholder = await thread.send({ content: '…' });
-      const previewer = createPreviewer((text) => placeholder.edit({ content: text }));
+      const placeholder = await thread.send({ content: '…', allowedMentions: { parse: [] } });
+      const previewer = createPreviewer((text) => placeholder.edit({ content: text, allowedMentions: { parse: [] } }));
       const result = await streamAsk(interaction, prompt, {
         chatId: thread.id,
         imageData,
@@ -109,13 +118,14 @@ export function createAskHandlers(shared) {
       await previewer.flush();
       const token = makeToken({ prompt, chatId: thread.id, chatType: 'GROUP', userId: interaction.user.id, ephemeral: false });
       await sendChannelAnswer(thread, result, token, placeholder);
-      await interaction.editReply({ content: `Answered in ${thread}.` });
+      await interaction.editReply({ content: `Answered in ${thread}.`, allowedMentions: { parse: [] } });
       return;
     }
 
-    const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+    const previewer = createPreviewer((text) => interaction.editReply({ content: text, allowedMentions: { parse: [] } }));
     const result = await streamAsk(interaction, prompt, {
       imageData,
+      private: priv,
       onDelta: (delta) => {
         accumulate(delta);
         previewer.push(streamed);
@@ -130,6 +140,13 @@ export function createAskHandlers(shared) {
       ephemeral: priv,
     });
     await sendInteractionAnswer(interaction, result, token, priv);
+    if (wantsThread) {
+      await interaction.followUp({
+        content: 'Private answers skip threads, so this reply is ephemeral.',
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+      });
+    }
   }
 
   /** @param {any} interaction @param {string} prefix */
@@ -142,8 +159,8 @@ export function createAskHandlers(shared) {
     await interaction.deferReply(ephemeral);
     const prompt = `${prefix}\n\n${content}`;
     let streamed = '';
-    const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
-    const result = await runtime.agent.stream(askEvent(interaction, prompt), {
+    const previewer = createPreviewer((text) => interaction.editReply({ content: text, allowedMentions: { parse: [] } }));
+    const result = await runtime.agent.stream(askEvent(interaction, prompt, { private: true }), {
       skipCommands: true,
       onDelta: (delta) => {
         streamed += delta;
@@ -159,8 +176,10 @@ export function createAskHandlers(shared) {
       ephemeral: true,
     });
     const chunks = chunkContent(result.text || 'No answer.');
-    await interaction.editReply({ content: chunks[0], components: answerButtons(token) });
-    for (const chunk of chunks.slice(1)) await interaction.followUp({ content: chunk, ...ephemeral });
+    await interaction.editReply({ content: chunks[0], components: answerButtons(token), allowedMentions: { parse: [] } });
+    for (const chunk of chunks.slice(1)) {
+      await interaction.followUp({ content: chunk, allowedMentions: { parse: [] }, ...ephemeral });
+    }
     await sendPhotos(interaction, result.photos, true);
   }
 
@@ -216,13 +235,14 @@ export function createAskHandlers(shared) {
 
     let streamed = '';
     const edit = regenerating
-      ? (text) => interaction.message.edit({ content: text })
-      : (text) => interaction.editReply({ content: text });
+      ? (text) => interaction.message.edit({ content: text, allowedMentions: { parse: [] } })
+      : (text) => interaction.editReply({ content: text, allowedMentions: { parse: [] } });
     const previewer = createPreviewer(edit);
-    const event = eventFromInteraction(interaction, client, prompt, {
+    const event = askEvent(interaction, prompt, {
       chatId: payload.chatId,
       chatType: payload.chatType,
       messageId: `interaction:${crypto.randomUUID()}`,
+      ...(payload.ephemeral ? { private: true } : {}),
     });
     const result = await runtime.agent.stream(event, {
       skipCommands: true,
@@ -236,17 +256,27 @@ export function createAskHandlers(shared) {
     const chunks = chunkContent(result.text || 'No answer.');
     const followFlags = privateReply(payload.ephemeral);
     if (regenerating) {
-      await interaction.message.edit({ content: chunks[0], components: answerButtons(newToken) });
-      for (const chunk of chunks.slice(1)) await interaction.followUp({ content: chunk, ...followFlags });
+      await interaction.message.edit({
+        content: chunks[0],
+        components: answerButtons(newToken),
+        allowedMentions: { parse: [] },
+      });
+      for (const chunk of chunks.slice(1)) {
+        await interaction.followUp({ content: chunk, allowedMentions: { parse: [] }, ...followFlags });
+      }
     } else {
-      await interaction.editReply({ content: chunks[0], components: answerButtons(newToken) });
-      for (const chunk of chunks.slice(1)) await interaction.followUp({ content: chunk, ...followFlags });
+      await interaction.editReply({ content: chunks[0], components: answerButtons(newToken), allowedMentions: { parse: [] } });
+      for (const chunk of chunks.slice(1)) {
+        await interaction.followUp({ content: chunk, allowedMentions: { parse: [] }, ...followFlags });
+      }
     }
     for (let index = 0; index < result.photos.length; index += 10) {
       const group = result.photos.slice(index, index + 10);
+      const content = group[0].caption?.slice(0, 2000) || undefined;
       await interaction.followUp({
         files: group.map(photoAttachment),
-        content: group[0].caption?.slice(0, 2000) || undefined,
+        content,
+        ...(content ? { allowedMentions: { parse: [] } } : {}),
         ...followFlags,
       });
     }

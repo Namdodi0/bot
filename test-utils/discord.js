@@ -72,6 +72,8 @@ export function makeDiscordCommandRuntime() {
         options.onDelta?.('text');
         return { text: 'Answer text', photos: [] };
       },
+      exclusive: async (_chatId, task) => task(),
+      rateLimited: () => false,
     },
   };
 }
