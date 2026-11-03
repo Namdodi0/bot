@@ -23,6 +23,26 @@ export function photoCaption(caption) {
   return text ? text.slice(0, DISCORD_MAX_CONTENT) : '';
 }
 
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'gif', 'webp', 'bmp']);
+
+/**
+ * Discord renders attachments inline by extension; a buffer uploaded as "image" (no
+ * extension) shows up as a generic file. Use the validated content type first, then the URL.
+ * @param {string} url
+ * @param {string} [contentType]
+ */
+export function photoFilename(url, contentType) {
+  const subtype = String(contentType ?? '')
+    .split('/')[1]
+    ?.split(';')[0]
+    ?.trim()
+    .toLowerCase();
+  const fromType = subtype === 'jpeg' ? 'jpg' : subtype;
+  if (IMAGE_EXTENSIONS.has(fromType)) return `image.${fromType}`;
+  const fromUrl = /\.(png|jpe?g|gif|webp|bmp)(?:[?#]|$)/i.exec(String(url ?? ''));
+  return `image.${fromUrl ? fromUrl[1].toLowerCase().replace('jpeg', 'jpg') : 'png'}`;
+}
+
 /**
  * Discord transport backed by discord.js.
  * @param {{token: string, config?: {guildId?: string, allowedChannelIds?: string[], respondToAllChannelIds?: string[]}, commandSpecs?: import('../../core/commands/registry.js').CommandSpec[], nativeCommands?: Record<string, (interaction: any) => Promise<void>|void>, logger?: import('../../core/logger.js').Logger, metrics?: any, onEvent: (event: any) => Promise<unknown>|void, createClient?: () => any}} options
@@ -91,7 +111,9 @@ export function createDiscordTransport(options) {
    */
   async function sendPhoto(chatId, url, caption = '', options = {}) {
     const channel = await channelOf(chatId);
-    const file = new AttachmentBuilder(options?.data ? Buffer.from(options.data) : String(url), { name: 'image' });
+    const file = new AttachmentBuilder(options?.data ? Buffer.from(options.data) : String(url), {
+      name: photoFilename(url, options?.contentType),
+    });
     const content = photoCaption(caption);
     return channel.send({
       content: content || undefined,

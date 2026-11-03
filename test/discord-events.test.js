@@ -189,6 +189,33 @@ function fakeDiscordClient() {
   };
 }
 
+test('photo uploads keep an image extension so Discord renders them inline', async () => {
+  const { photoFilename, createDiscordTransport } = await import('../src/platforms/discord/client.js');
+  assert.equal(photoFilename('https://x/a.PNG', undefined), 'image.png');
+  assert.equal(photoFilename('https://x/a', 'image/jpeg'), 'image.jpg');
+  assert.equal(photoFilename('https://x/a.webp?x=1', 'application/octet-stream'), 'image.webp');
+  assert.equal(photoFilename('https://x/a', 'image/avif'), 'image.png');
+
+  /** @type {any[]} */
+  const sent = [];
+  const { client } = fakeDiscordClient();
+  client.channels.cache.set('c1', { send: async (payload) => sent.push(payload) });
+  const transport = createDiscordTransport({
+    token: 'dummy',
+    config: {},
+    onEvent: () => {},
+    createClient: () => client,
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+  });
+
+  await transport.sendPhoto('discord:c1', 'https://x/a', 'caption', {
+    data: Buffer.from('webp-bytes'),
+    contentType: 'image/webp',
+  });
+  assert.equal(sent[0].files[0].name, 'image.webp');
+  assert.equal(sent[0].content, 'caption');
+});
+
 test('native slash handlers bypass the text router', async () => {
   const { createDiscordTransport } = await import('../src/platforms/discord/client.js');
   const { handlers, client } = fakeDiscordClient();
