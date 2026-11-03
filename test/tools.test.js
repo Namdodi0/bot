@@ -105,6 +105,36 @@ test('when send_sticker is off there is no tool and nothing is sent', async () =
   assert.equal(transport.lastSticker, null);
 });
 
+test('read_url fetches a page and converts it to text', async () => {
+  const transport = { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) };
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: {
+      transport,
+      capabilities: { uploadMedia: false },
+      tools: { run: async () => null },
+    },
+    validator: {
+      validate: async () => ({ ok: true }),
+      readText: async () => ({
+        ok: true,
+        text: '<html><title>Docs</title><body><p>Hello from the page.</p></body></html>',
+        contentType: 'text/html',
+        finalUrl: 'https://example.com/page',
+      }),
+    },
+    stickers: fakeStickers,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+  assert.equal(tools.definitions().some((tool) => tool.function.name === 'read_url'), true);
+  const result = await tools.run('read_url', { url: 'https://example.com/page' }, { chatId: 'c1' });
+  assert.equal(result.ok, true);
+  assert.match(result.text, /Hello from the page/);
+  assert.match(result.text, /Title: Docs/);
+});
+
 test('no send_image tool when Tavily (search) is disabled', () => {
   const tools = createToolRuntime({
     config: baseConfig({ search: { enabled: false, auto: false, depth: 'fast', maxResults: 4, country: 'vietnam' } }),

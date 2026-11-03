@@ -179,7 +179,7 @@ export function createImageValidator(options = {}) {
    * @param {string[]} addresses
    * @returns {Promise<{ok: boolean, status: number, headers: {get: (name: string) => string|null}, body: {cancel: () => Promise<void>}, arrayBuffer: () => Promise<Buffer>}>}
    */
-  function pinnedGet(url, addresses) {
+  function pinnedGet(url, addresses, limit = maxBytes) {
     return new Promise((resolve, reject) => {
       const lib = url.protocol === 'https:' ? https : http;
       let settled = false;
@@ -218,8 +218,8 @@ export function createImageValidator(options = {}) {
           let total = 0;
           response.on('data', (chunk) => {
             total += chunk.length;
-            if (total > maxBytes) {
-              req.destroy(new Error(`image too large (over ${maxBytes} bytes)`));
+            if (total > limit) {
+              req.destroy(new Error(`response too large (over ${limit} bytes)`));
               return;
             }
             chunks.push(chunk);
@@ -247,12 +247,12 @@ export function createImageValidator(options = {}) {
   }
 
   /**
-   * Download an image with the same address/redirect/type/size checks as `check`.
-   * Used by platform transports that upload bytes instead of passing the URL to a server.
+   * Fetch a URL with redirect re-validation, pinned DNS and a hard size cap.
    * @param {string} url
-   * @returns {Promise<{ok: boolean, reason?: string, data?: Buffer, contentType?: string}>}
+   * @param {{maxSize: number, label: string, typeError: string, isAllowedType: (type: string) => boolean, fallbackExtensions?: RegExp|null}} options
+   * @returns {Promise<{ok: boolean, reason?: string, data?: Buffer, contentType?: string, finalUrl?: string}>}
    */
-  async function download(url) {
+  async function fetchResource(url, options) {
     let current;
     try {
       current = new URL(String(url ?? '').trim());
@@ -279,9 +279,12 @@ export function createImageValidator(options = {}) {
               redirect: 'manual',
               signal: AbortSignal.timeout(timeoutMs),
             })
-          : await pinnedGet(current, addresses);
+          : await pinnedGet(current, addresses, options.maxSize);
       } catch (error) {
-        return { ok: false, reason: `failed to fetch image (${String(/** @type {any} */ (error)?.message ?? error)})` };
+        return {
+          ok: false,
+          reason: `failed to fetch ${options.label} (${String(/** @type {any} */ (error)?.message ?? error)})`,
+        };
       }
 
       const location = response.headers.get('location');
@@ -308,15 +311,15 @@ export function createImageValidator(options = {}) {
       }
 
       const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-      if (contentType && !contentType.startsWith('image/')) {
+      if (contentType && !options.isAllowedType(contentType)) {
         try {
           await response.body?.cancel();
         } catch {
           // ignore
         }
-        return { ok: false, reason: `content-type is not an image (${contentType.split(';')[0]})` };
+        return { ok: false, reason: `${options.typeError} (${contentType.split(';')[0]})` };
       }
-      if (!contentType && !/\.(png|jpe?g|gif|webp|bmp)$/i.test(current.pathname)) {
+      if (!contentType && options.fallbackExtensions && !options.fallbackExtensions.test(current.pathname)) {
         try {
           await response.body?.cancel();
         } catch {
@@ -326,27 +329,72 @@ export function createImageValidator(options = {}) {
       }
 
       const declared = Number(response.headers.get('content-length') ?? NaN);
-      if (Number.isFinite(declared) && declared > maxBytes) {
+      if (Number.isFinite(declared) && declared > options.maxSize) {
         try {
           await response.body?.cancel();
         } catch {
           // ignore
         }
-        return { ok: false, reason: `image too large (${declared} bytes)` };
+        return { ok: false, reason: `${options.label} too large (${declared} bytes)` };
       }
 
       let data;
       try {
         data = Buffer.from(await response.arrayBuffer());
       } catch (error) {
-        return { ok: false, reason: `failed to read image (${String(/** @type {any} */ (error)?.message ?? error)})` };
+        return {
+          ok: false,
+          reason: `failed to read ${options.label} (${String(/** @type {any} */ (error)?.message ?? error)})`,
+        };
       }
-      if (data.byteLength > maxBytes) {
-        return { ok: false, reason: `image too large (${data.byteLength} bytes)` };
+      if (data.byteLength > options.maxSize) {
+        return { ok: false, reason: `${options.label} too large (${data.byteLength} bytes)` };
       }
-      return { ok: true, data, contentType: contentType || undefined };
+      return { ok: true, data, contentType: contentType || undefined, finalUrl: current.toString() };
     }
     return { ok: false, reason: 'too many redirects' };
+  }
+
+  /**
+   * Download an image with the same address/redirect/type/size checks as `check`.
+   * Used by platform transports that upload bytes instead of passing the URL to a server.
+   * @param {string} url
+   * @returns {Promise<{ok: boolean, reason?: string, data?: Buffer, contentType?: string}>}
+   */
+  async function download(url) {
+    return fetchResource(url, {
+      maxSize: maxBytes,
+      label: 'image',
+      typeError: 'content-type is not an image',
+      isAllowedType: (type) => type.startsWith('image/'),
+      fallbackExtensions: /\.(png|jpe?g|gif|webp|bmp)$/i,
+    });
+  }
+
+  /**
+   * Fetch a public web page as text for the `read_url` tool.
+   * @param {string} url
+   * @returns {Promise<{ok: boolean, reason?: string, text?: string, contentType?: string, finalUrl?: string}>}
+   */
+  async function readText(url) {
+    const result = await fetchResource(url, {
+      maxSize: Math.min(maxBytes, 1_000_000),
+      label: 'page',
+      typeError: 'unsupported content-type',
+      isAllowedType: (type) =>
+        type.startsWith('text/') ||
+        type.includes('json') ||
+        type.includes('xml') ||
+        type.includes('javascript'),
+      fallbackExtensions: null,
+    });
+    if (!result.ok || !result.data) return result;
+    return {
+      ok: true,
+      text: result.data.toString('utf8'),
+      contentType: result.contentType,
+      finalUrl: result.finalUrl,
+    };
   }
 
   /** @type {Map<string, {ok: boolean, reason?: string, contentType?: string, bytes?: number, expires: number}>} */
@@ -495,5 +543,5 @@ export function createImageValidator(options = {}) {
     return result;
   }
 
-  return { validate, download, size: () => cache.size };
+  return { validate, download, readText, size: () => cache.size };
 }

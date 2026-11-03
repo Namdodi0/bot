@@ -1,5 +1,6 @@
 import { formatSearchResults } from '../search/tavily.js';
 import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from './reminders.js';
+import { htmlToText } from './read-url.js';
 
 /** @typedef {(url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>} PhotoSender */
 
@@ -41,6 +42,21 @@ export function createToolRuntime(options) {
         },
       });
     }
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'read_url',
+        description:
+          'Read a public web page (article, docs, blog post) and return its readable text. Use when the user shares a link or asks about a page.',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', description: 'Public http(s) URL to read' },
+          },
+          required: ['url'],
+        },
+      },
+    });
     // The image tool needs Tavily to find URLs; do not advertise it when search is off.
     if (config.image.enabled && tavily) {
       tools.push({
@@ -147,11 +163,40 @@ export function createToolRuntime(options) {
    */
   async function run(name, args, ctx) {
     if (name === 'web_search') return webSearch(args, ctx);
+    if (name === 'read_url') return readUrl(args, ctx);
     if (name === 'send_image') return sendImage(args, ctx);
     if (name === 'set_reminder') return setReminder(args, ctx);
     const platformResult = await platform.tools?.run?.(name, args, ctx);
     if (platformResult) return platformResult;
     return { ok: false, text: `Tool does not exist: ${name}` };
+  }
+
+  /**
+   * @param {any} args
+   * @param {{chatId: string, deadline?: number}} ctx
+   */
+  async function readUrl(args, ctx) {
+    const url = String(args?.url ?? '').trim();
+    if (!url) return { ok: false, text: 'Missing the URL to read.' };
+    if (ctx.deadline && Date.now() > ctx.deadline) {
+      return { ok: false, text: 'Ran out of time before the page could be read.' };
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      return { ok: false, text: 'Only public http(s) URLs can be read.' };
+    }
+    const result = await validator.readText(url);
+    if (!result.ok) {
+      logger.debug('read_url rejected', { url, reason: result.reason, icon: '🌐' });
+      return { ok: false, text: `Could not read that page (${result.reason}).` };
+    }
+    const { title, text } = htmlToText(result.text ?? '', result.contentType);
+    if (!text) return { ok: false, text: 'That page has no readable text.' };
+    const header = title ? `Page: ${result.finalUrl ?? url}\nTitle: ${title}` : `Page: ${result.finalUrl ?? url}`;
+    return {
+      ok: true,
+      text: `${header}\n\n${text.slice(0, 6000)}`,
+      data: { url, finalUrl: result.finalUrl, title },
+    };
   }
 
   /**

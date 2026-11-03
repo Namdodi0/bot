@@ -117,6 +117,23 @@ test('download refuses a redirect to an internal address', async () => {
   assert.equal(calls, 1);
 });
 
+test('readText returns HTML as text and rejects binary content', async () => {
+  const page = makeValidator(async () =>
+    bodyResponse('<html><title>T</title><p>Hello</p></html>', {
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }),
+  );
+  const result = await page.readText('https://example.com/page');
+  assert.equal(result.ok, true);
+  assert.match(result.text, /Hello/);
+  assert.equal(result.finalUrl, 'https://example.com/page');
+
+  const binary = makeValidator(async () => bodyResponse('PNG', { headers: { 'content-type': 'image/png' } }));
+  const refused = await binary.readText('https://example.com/file');
+  assert.equal(refused.ok, false);
+  assert.match(String(refused.reason), /unsupported content-type/);
+});
+
 test('download returns a failure for a malformed redirect location', async () => {
   const validator = makeValidator(async () =>
     bodyResponse('', { status: 302, headers: { location: 'http://[' } }),
