@@ -24,6 +24,15 @@ test('htmlToText keeps out-of-range numeric entities literal', () => {
   assert.match(text, /ok/);
 });
 
+test('htmlToText drops an unclosed block and everything after it', () => {
+  for (const tag of ['script', 'style', 'noscript', 'svg', 'template', 'iframe', 'object']) {
+    const { text } = htmlToText(`<html><body><p>visible before</p><${tag} class="x">LEAKED ${tag} payload`, 'text/html');
+    assert.match(text, /visible before/);
+    assert.doesNotMatch(text, /LEAKED/);
+    assert.doesNotMatch(text, /payload/);
+  }
+});
+
 test('htmlToText leaves plain text untouched', () => {
   const { title, text } = htmlToText('just plain text', 'text/plain');
   assert.equal(title, '');

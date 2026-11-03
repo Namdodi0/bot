@@ -117,6 +117,40 @@ test('rawEstimatedTokens is the uncalibrated estimate', () => {
   assert.equal(built.rawEstimatedTokens * 2, built.estimatedTokens);
 });
 
+test('budget accounts for tool schema tokens', () => {
+  const tools = [
+    {
+      type: 'function',
+      function: { name: 'big_tool', description: 'd'.repeat(8000), parameters: { type: 'object', properties: {} } },
+    },
+  ];
+  const messages = [];
+  for (let i = 0; i < 12; i += 1) {
+    messages.push({ role: i % 2 ? 'assistant' : 'user', text: `msg ${i} `.repeat(60), ts: i });
+  }
+  const meter = createTokenMeter();
+  const budget = meter.tools(tools) + 1000;
+  const built = assemble(messages, { tools, meter, maxTokens: budget });
+  assert.ok(built.keptMessages < messages.length);
+  assert.ok(built.keptMessages >= 4);
+  assert.ok(built.estimatedTokens <= budget);
+  assert.match(String(built.messages.at(-1).content), /msg 11/);
+
+  const withoutTools = assemble(messages, { meter: createTokenMeter(), maxTokens: budget });
+  assert.ok(withoutTools.keptMessages > built.keptMessages);
+});
+
+test('budget accounts for tool schema tokens without a meter', () => {
+  const tools = [{ type: 'function', function: { name: 'big_tool', description: 'd'.repeat(8000) } }];
+  const messages = [];
+  for (let i = 0; i < 12; i += 1) {
+    messages.push({ role: i % 2 ? 'assistant' : 'user', text: `msg ${i} `.repeat(60), ts: i });
+  }
+  const built = assemble(messages, { tools, maxTokens: 600 });
+  assert.ok(built.keptMessages < messages.length);
+  assert.equal(built.keptMessages, 4);
+});
+
 test('pressure is computed when the context window is known', () => {
   const built = assemble([{ role: 'user', text: 'x'.repeat(400), ts: 1 }], {
     meter: createTokenMeter(),

@@ -1,5 +1,5 @@
 import { MESSAGE_KIND } from './record.js';
-import { estimateMessageTokens } from './token-meter.js';
+import { estimateMessageTokens, estimateTextTokens } from './token-meter.js';
 
 /**
  * Build a request from a record.
@@ -103,8 +103,14 @@ export function assembleRequest(input) {
   const messageCap = input.maxMessages > 0 ? input.maxMessages : Number.POSITIVE_INFINITY;
 
   const systemCost = estimateMessageTokens({ text: systemPrompt });
-  let used = calibrate(systemCost);
-  let rawUsed = systemCost;
+  // The tool schema travels with every request too; charging it here keeps the budget honest.
+  const toolCost = tools.length
+    ? typeof input.meter?.tools === 'function'
+      ? input.meter.tools(tools)
+      : estimateTextTokens(JSON.stringify(tools))
+    : 0;
+  let used = calibrate(systemCost + toolCost);
+  let rawUsed = systemCost + toolCost;
   /** @type {number[]} */
   const keptIndexes = [];
   let dropped = 0;

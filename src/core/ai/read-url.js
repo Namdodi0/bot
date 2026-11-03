@@ -47,6 +47,8 @@ export function htmlToText(input, contentType = '') {
   let text = raw
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<(script|style|noscript|svg|template|iframe|object)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    // An unclosed block means the rest of the document is untrusted script/markup: drop it.
+    .replace(/<(script|style|noscript|svg|template|iframe|object)\b[^>]*>[\s\S]*$/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|section|article|header|footer|li|tr|h[1-6]|blockquote|pre)>/gi, '\n')
     .replace(/<li[^>]*>/gi, '\n- ')

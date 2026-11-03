@@ -7,7 +7,7 @@ export { createPromptRegistry } from './registry.js';
 /**
  * Build the prompt registry for one turn: shared sections + platform sections + tool
  * guidance + runtime context.
- * @param {{platform?: import('../../../platforms/contract.js').Platform, botName?: string, chatType?: string, searchEnabled?: boolean, imageEnabled?: boolean, tone?: string, styleSeed?: string, tools?: any[]}} [options]
+ * @param {{platform?: import('../../../platforms/contract.js').Platform, botName?: string, chatType?: string, searchEnabled?: boolean, imageEnabled?: boolean, tone?: string, tools?: any[]}} [options]
  */
 export function createPrompt(options = {}) {
   const registry = createPromptRegistry();
@@ -44,8 +44,9 @@ export const SUMMARY_SYSTEM_PROMPT =
 
 /** @param {Array<{role: string, text: string, name?: string}>} messages */
 export function buildSummaryInput(messages) {
-  return messages
+  const transcript = messages
     .map((message) => `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${message.text}`)
-    .join('\n')
-    .slice(0, 12_000);
+    .join('\n');
+  // Keep the newest tail: the oldest lines matter least for a running summary.
+  return transcript.length > 12_000 ? transcript.slice(-12_000) : transcript;
 }

@@ -4,6 +4,7 @@ import { createCompactionEngine } from '../src/core/context/compaction/engine.js
 import { summarizeRange } from '../src/core/context/compaction/summarizer.js';
 import { pruneToolResults } from '../src/core/context/compaction/tool-result-pruner.js';
 import { freshRecord, toolCallEntry, toolResultEntry } from '../src/core/context/record.js';
+import { buildSummaryInput } from '../src/core/ai/prompt/index.js';
 import { makeConfig, silentLogger } from '../test-utils/helpers.js';
 
 function recordWith(messages) {
@@ -93,6 +94,78 @@ test('summarizer repairs a leading unpaired tool call instead of deadlocking', a
   assert.equal(result.changed, true);
   assert.equal(record.messages[0].kind, 'summary');
   assert.equal(record.messages.some((message) => message.kind === 'tool-call'), false);
+});
+
+test('summarizer repairs a mid-history orphan block and can summarize again afterwards', async () => {
+  const messages = [
+    ...turns(3),
+    toolCallEntry({
+      toolCalls: [
+        { id: 'c1', name: 'web_search', arguments: {} },
+        { id: 'c2', name: 'read_url', arguments: {} },
+      ],
+      ts: 3,
+    }),
+    toolResultEntry({ toolCallId: 'c1', text: 'partial result', ts: 4 }),
+    ...turns(4),
+  ];
+  const record = recordWith(messages);
+
+  const first = await summarizeRange(record, {
+    keepRecent: 2,
+    summaryMaxChars: 200,
+    summarize: async (range) => {
+      assert.equal(range.some((message) => message.kind === 'tool-call'), false);
+      assert.equal(range.some((message) => message.kind === 'tool-result'), false);
+      return 'FIRST';
+    },
+  });
+  assert.equal(first.changed, true);
+  assert.equal(record.messages[0].kind, 'summary');
+  assert.equal(record.messages.some((message) => message.kind === 'tool-call'), false);
+  assert.equal(record.messages.some((message) => message.kind === 'tool-result'), false);
+  assert.equal(record.messages.some((message) => message.text === 'partial result'), false);
+
+  record.messages.push(...turns(4).map((message, index) => ({ ...message, text: `more ${index}`, ts: 100 + index })));
+  const second = await summarizeRange(record, {
+    keepRecent: 2,
+    summaryMaxChars: 200,
+    summarize: async () => 'SECOND',
+  });
+  assert.equal(second.changed, true);
+  assert.equal(record.messages[0].kind, 'summary');
+});
+
+test('summarizer keeps a complete tool pair at the head', async () => {
+  const messages = [
+    toolCallEntry({ toolCalls: [{ id: 'c1', name: 'web_search', arguments: {} }], ts: 1 }),
+    toolResultEntry({ toolCallId: 'c1', text: 'complete result', ts: 2 }),
+    ...turns(6),
+  ];
+  const record = recordWith(messages);
+
+  let summarized = [];
+  const result = await summarizeRange(record, {
+    keepRecent: 2,
+    summaryMaxChars: 200,
+    summarize: async (range) => {
+      summarized = range;
+      return 'T';
+    },
+  });
+  assert.equal(result.changed, true);
+  assert.equal(summarized.some((message) => message.kind === 'tool-call'), true);
+  assert.equal(summarized.some((message) => message.kind === 'tool-result'), true);
+});
+
+test('buildSummaryInput keeps the newest tail instead of the oldest characters', () => {
+  const input = buildSummaryInput([
+    { role: 'user', text: `OLDEST ${'x'.repeat(20_000)}` },
+    { role: 'assistant', text: 'NEWEST answer' },
+  ]);
+  assert.equal(input.length, 12_000);
+  assert.match(input, /NEWEST answer/);
+  assert.doesNotMatch(input, /OLDEST/);
 });
 
 test('summarizer excludes private turns from the summarized range', async () => {

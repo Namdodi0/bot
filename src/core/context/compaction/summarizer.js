@@ -1,32 +1,49 @@
 import { MESSAGE_KIND, summaryEntry, toolPairingBalanced } from '../record.js';
 
 /**
- * Remove leading tool entries that cannot be part of a balanced pair (a crash/early save
- * can leave a call with missing results, or a result with no call). Without this, every
- * prefix is unbalanced and compaction can never move past that block.
+ * Drop tool entries that cannot be part of a complete pair: a standalone result, or a call
+ * whose results are missing/partial (a crash or early save can leave such a block anywhere,
+ * not only at the head). Without this, every prefix covering the block is unbalanced and
+ * compaction can never move past it. Complete call/result pairs, including one at the head,
+ * are preserved.
  * @param {any[]} messages
+ * @returns {{messages: any[], changed: boolean}}
  */
-function dropLeadingOrphanBlock(messages) {
-  let start = 0;
-  while (start < messages.length) {
-    const message = messages[start];
+function repairToolBlocks(messages) {
+  /** @type {any[]} */
+  const out = [];
+  let changed = false;
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
     const kind = message.kind ?? MESSAGE_KIND.TURN;
     if (kind === MESSAGE_KIND.TOOL_RESULT) {
-      start += 1;
+      changed = true;
       continue;
     }
-    if (kind !== MESSAGE_KIND.TOOL_CALL) break;
-    const ids = (message.toolCalls ?? []).map((/** @type {any} */ call) => call.id);
-    const results = new Set();
-    let cursor = start + 1;
+    if (kind !== MESSAGE_KIND.TOOL_CALL) {
+      out.push(message);
+      continue;
+    }
+    const ids = new Set((message.toolCalls ?? []).map((/** @type {any} */ call) => call.id));
+    /** @type {any[]} */
+    const results = [];
+    let cursor = index + 1;
     while (cursor < messages.length && (messages[cursor].kind ?? MESSAGE_KIND.TURN) === MESSAGE_KIND.TOOL_RESULT) {
-      results.add(messages[cursor].toolCallId);
+      results.push(messages[cursor]);
       cursor += 1;
     }
-    if (ids.every((/** @type {string} */ id) => results.has(id))) break;
-    start = cursor;
+    const answered = new Set(results.map((result) => result.toolCallId));
+    const complete = [...ids].every((id) => answered.has(id));
+    if (!complete) {
+      changed = true;
+    } else {
+      const paired = results.filter((result) => ids.has(result.toolCallId));
+      if (paired.length !== results.length) changed = true;
+      out.push(message, ...paired);
+    }
+    index = cursor - 1;
   }
-  return start ? messages.slice(start) : messages;
+  return { messages: changed ? out : messages, changed };
 }
 
 /**
@@ -38,17 +55,19 @@ function dropLeadingOrphanBlock(messages) {
 export async function summarizeRange(record, options) {
   let messages = record.messages ?? [];
   const keepRecent = Math.max(1, Number(options.keepRecent ?? 8));
+
+  // Repair orphan tool entries wherever they sit, so a mid-history crash cannot make
+  // every prefix unbalanced forever.
+  const repaired = repairToolBlocks(messages);
+  if (repaired.changed) {
+    messages = repaired.messages;
+    record.messages = messages;
+  }
+
   let cut = Math.max(0, messages.length - keepRecent);
   if (cut <= 0) return { changed: false };
 
   while (cut > 0 && !toolPairingBalanced(messages, 0, cut)) cut -= 1;
-  if (cut <= 0) {
-    const repaired = dropLeadingOrphanBlock(messages);
-    if (repaired.length === messages.length) return { changed: false };
-    record.messages = messages = repaired;
-    cut = Math.max(0, messages.length - keepRecent);
-    while (cut > 0 && !toolPairingBalanced(messages, 0, cut)) cut -= 1;
-  }
   if (cut <= 0) return { changed: false };
 
   // Private turns never belong in shared compressed memory.
