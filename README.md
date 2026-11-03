@@ -12,7 +12,9 @@ A chat bot for **Zalo group chats** and **Discord**, powered by **DeepSeek Flash
 - **Sticker sending** (`sendSticker`) via `/sticker`, the `send_sticker` tool, and echoing the sticker back when someone sends one to the bot (needs an official sticker ID — see below).
 - **Text-only model**: images sent by users are only noted in the context (a bracketed note saying the user attached an image the bot cannot view), image content is never sent to the API. The bot can still **send images** through `send_image`.
 - Zalo markdown formatting, long messages split into ≤ 1900 characters (Zalo's safe limit).
-- **Discord bot (separate process)**: slash commands, mention/reply triggering, native replies and attachments. It shares the engine/prompt with the Zalo bot but keeps its own `config.discord.json` and `data/discord/`; run both if you want both platforms.
+- **Discord bot (separate process)**: slash commands, context menus, buttons, embeds, ephemeral
+  replies, optional answer threads and attachment uploads. It has its own `config.discord.json`
+  and `data/discord/`; run both processes if you want both platforms.
 - **Low latency**: no `max_tokens` cap, `reasoning_effort: none` by default (~0 thinking tokens), typing indicator, model warm-up, streaming + partial sends for slow answers, search/image cache, retry + circuit breaker.
 - **Concise by default**: about 1–3 sentences (roughly under 500 characters) for simple chat, 3–5 sentences or a short list for normal questions; answers expand only when the user asks for detail, steps, a comparison, or a specific length.
 - **Reminders** (`/remind 20:00 tomorrow team meeting`, or the model's `set_reminder` tool) persisted to `data/reminders.json`.
@@ -149,25 +151,29 @@ After the first run the log prints the `chatId` (or type `/id` in the group) —
 
 ## Discord (separate process)
 
-The Discord bot is a **separate process** that shares the engine and prompt with the Zalo
-bot, but has its own config (`config.discord.json`) and data directory (`data/discord`).
-Run both processes if you want both platforms; their histories and reminders never mix.
+The Discord bot is a **separate process** with its own config (`config.discord.json`) and
+data directory (`data/discord`). It is slash-command-first: `/ask`, `/help`, `/status`,
+`/ping`, `/model`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, plus
+the **Explain message** and **Summarize message** context menus. Answers use Discord
+embeds/attachments, buttons (Regenerate / Continue / Delete), ephemeral replies, and an
+optional thread. Zalo-only features (stickers, tone/split/think commands, text-command
+parser) do not exist here.
 
 1. Create an application at <https://discord.com/developers/applications> → **Bot** → reset/copy the token.
-2. In **Bot → Privileged Gateway Intents**, enable **Message Content** (needed to read mentions/replies; slash commands work without it).
-3. Invite the bot with the `bot` + `applications.commands` scopes and Send Messages / Attach Files / Read Message History permissions:
-   `https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=274878008320&scope=bot%20applications.commands`
+2. In **Bot → Privileged Gateway Intents**, enable **Message Content** (needed for @mention/reply chat; slash commands work without it).
+3. Invite the bot with the `bot` + `applications.commands` scopes and View Channels / Send Messages / Embed Links / Attach Files / Read Message History / Send Messages in Threads / Create Public Threads:
+   `https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=292057893888&scope=bot%20applications.commands`
 4. Put the token in `.env`: `DISCORD_BOT_TOKEN=...`
 5. Use `config.discord.json` (tracked; copy `config.discord.example.json` if it is missing):
    ```json
    "platform": "discord",
    "dataDir": "./data/discord",
-   "discord": { "guildId": "", "allowedChannelIds": [] }
+   "discord": { "guildId": "", "allowedChannelIds": [], "respondToAllChannelIds": [] }
    ```
-   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). When `guildId` is set the bot clears its global commands so the client does not show duplicates. `allowedChannelIds` empty = every channel; DMs are always allowed and a thread inherits its parent channel's entry. The engine settings (model, AI, search, context, tone) are in the same file, independent from the Zalo config.
-6. Start it with `npm run start:discord` (or pm2 `discord-bot`). The log shows `discord bot ready` and the slash-command registration.
+   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). When `guildId` is set the bot clears its global commands so the client does not show duplicates. `allowedChannelIds` empty = every channel; DMs are always allowed and a thread inherits its parent channel's entry. `respondToAllChannelIds` answers every message in those channels (also inherited by their threads). The engine settings (model, AI, search, context, tone) are in the same file.
+6. Start it with `npm run start:discord` (or pm2 `discord-bot`). The log shows `discord bot ready` and the command registration count.
 
-In a server the bot answers when it is **@mentioned** or someone **replies** to its message; DMs work directly. Slash commands mirror `/help`, `/status`, `/id`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, `/model`, `/tone`, `/think`, `/split`, `/ping` (Zalo-only `/sticker` is absent). The first reply is a native Discord reply to the triggering message, and images are uploaded as attachments. Discord admins are members with **Manage Server**; `adminIds` in `config.json` applies to Zalo only.
+In a server the bot also answers when it is **@mentioned** or someone **replies** to its message; DMs work directly. Typed text commands are ignored — use the slash commands. Channel and thread histories are stored per Discord channel id. Admins are members with **Manage Server** (the admin commands are hidden from everyone else by default).
 
 ## Commands
 
@@ -193,7 +199,7 @@ In a server the bot answers when it is **@mentioned** or someone **replies** to 
 | `/compact` | Compact the context right away (admin): shrink tool results → summarize older ranges |
 | `/ping` | Measure the platform API round-trip |
 
-On Discord the same commands are available as **slash commands**; `/sticker` is Zalo-only.
+Discord uses its own slash commands (`/ask`, `/help`, `/status`, `/model`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, `/ping`) and context menus; the Zalo command table above does not apply to it.
 
 ## Configuration
 
@@ -265,7 +271,7 @@ Zalo API ──► polling/webhook ──► agent (per-chat queue, 4 chats in p
               (JSON + trim)   (DeepSeek/NIM)      (cache + validate)
 ```
 
-- **Platform contract**: `src/platforms/contract.js` defines what the engine needs from a platform (transport, output limits, markdown dialect, admin rule, prompt sections, tools, command specs/handlers, lifecycle). Zalo and Discord implement it in `src/platforms/zalo` and `src/platforms/discord`; `src/core` never branches on the platform name. Discord also exposes raw interaction/message handles, native slash-command handlers, and rich transport methods (`editMessage`, `react`, `sendEmbed`, `createThread`) for future Discord-only features.
+- **Platform contract**: `src/platforms/contract.js` defines what the engine needs from a platform (transport, output limits, markdown dialect, admin rule, prompt sections, tools, command specs/handlers, lifecycle). Zalo and Discord implement it in `src/platforms/zalo` and `src/platforms/discord`; `src/core` never branches on the platform name. Discord's native layer (`bot.js`, `commands.js`, `ask.js`, `ui.js`, `specs.js`) owns slash commands, context menus, buttons/selects, embeds and ephemeral replies; it does not import any Zalo module.
 - **Model selection**: each chat has a `meta.model` (set by `/model`) → the router picks the matching provider/model; `config.model.defaultAlias` by default (deepseek-flash, reasoning off).
 - **No `max_tokens` cap**: the model generates until it is done. The prompt asks for compact replies by default; there is **no answer deadline by default** (`config.responseTimeoutMs=0`), long answers are split at the platform's message limit (Zalo 1900, Discord 2000 characters), with **no limit on the number of messages** (`config.maxMessagesPerReply=0`).
 - **Lower latency**: `reasoning_effort: none` (DeepSeek returns no `reasoning_content`, measured ~600–900ms), typing indicator, warm-up at boot, Tavily cache (10 minutes by default), image validation result cache, `fetch` keep-alive, only `search_depth=fast`.
@@ -315,8 +321,8 @@ src/
     contract.js    platform interface: transport, limits, prompt, tools, commands
     zalo/          REST client, events, polling, webhook, stickers,
                    prompt, tools, commands, formatting, lifecycle
-    discord/       gateway client, events, slash commands, prompt,
-                   native command hooks, rich transport methods, lifecycle
+    discord/       native Discord bot: slash specs, command handlers, capture
+                   runner, UI builders, gateway transport, prompt
 scripts/smoke.js     checks token + DeepSeek + NIM + Tavily
 scripts/simulate.js  runs the real agent, sends nothing to Zalo
 test/                unit tests (node --test)
@@ -332,6 +338,8 @@ test-utils/          shared test helpers (incl. platform doubles)
 | Discord bot isn't running | It is a separate process: `npm start` only starts Zalo. Run `npm run start:discord` (or pm2 `discord-bot`) as well. |
 | Discord bot uses the wrong settings | It loads `config.discord.json` (not `config.json`) unless `--config <path>` is given; check `platform: "discord"` there. |
 | Discord slash commands are missing | Invite with the `applications.commands` scope; global commands can take up to an hour — set `discord.guildId` for instant registration. |
+| Discord ignores a typed `/ask` | The Discord bot is slash-only: pick the command from Discord's command picker. Typed text commands are not parsed. |
+| `/ask thread:true` fails | The bot needs **Create Public Threads** and **Send Messages in Threads** in that channel, and the channel must allow threads. |
 | Discord image upload fails | Discord's default attachment limit is 8MB; the validator rejects larger images. |
 | Log `zalo.getUpdates.empty` / `error_code 408` | Normal: the long-poll timed out with no new messages. The client treats it as "no messages" and does not back off. |
 | `LLM HTTP 500` / hangs for a few seconds | DeepSeek/NIM occasionally returns 500 or hangs. With the default `config.responseTimeoutMs=0` the bot simply waits; if you set a positive deadline it retries once then falls back to a different model (`config.model.fallbackAlias`). If the errors persist: lower `config.context.maxTokens` or `/model` to a different model. |

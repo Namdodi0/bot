@@ -58,9 +58,11 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   formatOutgoing, admin rule, prompt, tools, commands, health services, lifecycle.
 - `src/platforms/zalo/` — Zalo client, event normalization, polling/webhook, stickers,
   Zalo prompt sections, sticker tool/command, markdown sanitizing, admission/admin policy.
-- `src/platforms/discord/` — discord.js client (slash commands, mention/reply gate,
-  attachments, native interaction hooks, rich messaging methods), Discord prompt sections,
-  command specs/help wording and event normalization.
+- `src/platforms/discord/` — native Discord bot: `specs.js` (slash/context-menu surface),
+  `commands.js` (native handlers, buttons/selects, ephemeral replies), `ask.js` (capture
+  runner over the shared engine), `ui.js` (embeds/attachments/components), `bot.js` (gateway
+  events + command routing), `transport.js`, `events.js` (normalization/admission) and
+  `prompt.js`. Slash commands only; no Zalo imports.
 - `src/core/ai/agent.js` — agent composition: event routing (commands, dedupe, rate limit)
   and queue wiring.
 - `src/core/ai/agent/` — `helpers.js` (budget/prompt helpers), `sending.js` (sender +
@@ -103,9 +105,15 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - **Image URLs** must pass `createImageValidator` before `sendPhoto`; platforms with
   `capabilities.uploadMedia` download validated bytes first.
 - **Zalo mutating POSTs** are not retried (duplicate messages).
-- **Platform-specific ids are opaque in core.** Discord owns the `discord:` prefix and must
-  never pass a prefixed id to the Zalo client. Zalo `allowedChatIds`/`adminIds` are enforced
-  by `src/platforms/zalo`; Discord admins are Manage Server members.
+- **Discord is slash-first.** Chat input is `/ask` (plus `/help`, `/status`, `/ping`,
+  `/model`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`), message context
+  menus are `Explain message`/`Summarize message`, and native handlers own the interaction
+  lifecycle (embeds, buttons, selects, ephemeral replies). Typed text commands are ignored.
+  Ordinary @mention/reply chat still goes through the shared agent.
+- **Platform-specific ids are opaque in core.** Discord uses raw channel/thread ids; its
+  transport tolerates a legacy `discord:` prefix in old reminders but new ids are never
+  prefixed. Zalo `allowedChatIds`/`adminIds` are enforced by `src/platforms/zalo`; Discord
+  admin commands use Manage Server and are hidden from other members by default.
 - **Context store writes** are atomic (temp + rename); keep per-chat ordering.
 - **No new runtime dependencies** without explicit approval.
 
