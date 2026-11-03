@@ -116,9 +116,10 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`,
   `/remind`), message context menus are `Explain message`/`Summarize message`, and native
   handlers own the interaction lifecycle (embeds, buttons, selects, ephemeral replies).
-  `/ask` streams through `agent.stream()` into one edited message; other commands collect
-  through `agent.collect()`. Typed text commands are ignored. Ordinary @mention/reply chat
-  still goes through the shared agent.
+  Model-generated replies stream through `agent.stream()` into one edited message (`/ask`,
+  mention/reply chat, context menus, Regenerate/Continue, `/summary`, `/catchup`); tool-only
+  outputs use `agent.collect()` or are sent when ready. Typed text commands are ignored.
+  Ordinary @mention/reply chat still goes through the shared agent.
 - **Platform-specific ids are opaque in core.** Discord uses raw channel/thread ids; its
   transport tolerates a legacy `discord:` prefix in old reminders but new ids are never
   prefixed. Zalo `allowedChatIds`/`adminIds` are enforced by `src/platforms/zalo`; Discord

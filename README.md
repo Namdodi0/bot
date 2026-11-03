@@ -19,8 +19,9 @@ Nothing in the Discord code imports the Zalo integration.
 - **Slash-first UX** — `/ask`, `/help`, `/status`, `/ping`, `/model`, `/settings`, `/reset`,
   `/compact`, `/summary`, `/catchup`, `/search`, `/image`, `/remind`.
 - **Message menus** — right-click a message → Apps → **Explain message** / **Summarize message**.
-- **Live answers** — `/ask` edits one message as tokens stream in, then adds
-  **Regenerate / Continue / Delete** buttons.
+- **Live answers** — every model-generated reply streams into one edited message: `/ask`,
+  @mention/reply chat, Explain/Summarize menus, Regenerate/Continue, `/summary` and
+  `/catchup`. Tool-only outputs (`/search`, `/image`) are sent when ready.
 - **Vision** — attach an image to `/ask`, or @mention the bot with an image; the turn switches
   to the configured vision model and sends the image as an OpenAI `image_url` block.
 - **Channel settings** — `/settings` (admin) controls model, tone, default privacy and
@@ -146,7 +147,8 @@ parser. Those were Zalo-shaped and do not fit Discord.
    `agent.collect()`: the turn runs against a **response sink** that captures text/images,
    then Discord renders them natively (embed/edit reply, attachments, buttons) instead of
    posting its own messages.
-3. Ordinary @mention/reply chat goes through the same shared agent and replies in-channel.
+3. Ordinary @mention/reply chat goes through the same shared agent; its first delta creates a
+   reply placeholder, later deltas edit it, and the final text is chunked only if needed.
 4. Context is stored per **channel or thread id** under `data/discord/`.
 5. Long answers are split at 2000 characters. A fence-aware split leaves room for code-fence
    balancing so a message never exceeds Discord's limit.
@@ -303,7 +305,7 @@ npm test          # node --test, no network
 npm run typecheck # tsc checkJs over src/ and scripts/
 ```
 
-- 311 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
+- 313 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
 - `scripts/smoke.js` and `scripts/simulate.js` belong to the Zalo process and use real APIs.
 - Keep platform behavior in `src/platforms/*`; `src/core` must not branch on platform names.
 - No new runtime dependencies without approval.
