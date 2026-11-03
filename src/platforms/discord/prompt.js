@@ -1,5 +1,10 @@
 import { SECTION_ORDER } from '../../core/ai/prompt/sections.js';
 
+export const DISCORD_TOOL_GUIDANCE = {
+  send_sticker:
+    'When the user asks for a sticker or reaction image, call the `send_sticker` tool with a mood, name or id. Only stickers available in this server can be sent; if none match, say so.',
+};
+
 /**
  * Discord-specific prompt sections. Slash-command UI and embeds are native, so answers
  * should read like normal Discord messages — no Zalo-style multi-message splitting advice.

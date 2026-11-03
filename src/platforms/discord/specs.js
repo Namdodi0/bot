@@ -2,7 +2,7 @@ import { ApplicationCommandType, PermissionFlagsBits } from 'discord.js';
 
 /**
  * Discord-native command surface: slash commands first, plus two message context menus.
- * Zalo-only commands (stickers, tone, split, think) are intentionally absent.
+ * Zalo-only commands (tone, split, think) are intentionally absent.
  */
 export const COMMANDS = [
   {
@@ -11,7 +11,8 @@ export const COMMANDS = [
     description: 'Ask the AI in this channel',
     help: '`/ask` — ask the AI (options: private answer, new thread, image)',
     options: [
-      { name: 'prompt', description: 'What do you want to ask?', type: 3, required: true },
+      { name: 'prompt', description: 'What do you want to ask? (omit to open a form)', type: 3 },
+      { name: 'form', description: 'Open a multi-line prompt form', type: 5 },
       { name: 'private', description: 'Only you can see the answer', type: 5 },
       { name: 'thread', description: 'Answer in a new thread', type: 5 },
       { name: 'image', description: 'An image for the bot to look at (max 8 MB)', type: 11 },
@@ -102,6 +103,15 @@ export const COMMANDS = [
       { name: 'query', description: 'Image keywords', type: 3, required: true },
       { name: 'count', description: 'How many images (default 1)', type: 4, min_value: 1, max_value: 25 },
       { name: 'private', description: 'Only you can see the images', type: 5 },
+    ],
+  },
+  {
+    type: ApplicationCommandType.ChatInput,
+    name: 'sticker',
+    description: 'Send a sticker available in this server',
+    help: '`/sticker [name]` — send a server sticker (omit to list)',
+    options: [
+      { name: 'name', description: 'Sticker name, tag or id (omit to list)', type: 3 },
     ],
   },
   {

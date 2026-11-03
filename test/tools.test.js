@@ -317,7 +317,7 @@ test('send_image reports a partial batch when there are not enough unique images
   assert.match(result.text, /2 of 5/);
 });
 
-test('discord excludes Zalo stickers and the tool refuses', async () => {
+test('Discord uses its own server sticker tool', async () => {
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: null,
@@ -326,8 +326,8 @@ test('discord excludes Zalo stickers and the tool refuses', async () => {
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
   });
-  assert.equal(tools.definitions().some((tool) => tool.function.name === 'send_sticker'), false);
-  const result = await tools.run('send_sticker', { emotion: 'hi' }, { chatId: 'discord:c1' });
-  assert.equal(result.ok, false);
-  assert.match(result.text, /not available on Discord/);
+  assert.equal(tools.definitions().some((tool) => tool.function.name === 'send_sticker'), true);
+  const result = await tools.run('send_sticker', { emotion: 'wave' }, { chatId: 'discord:c1' });
+  assert.equal(result.ok, true);
+  assert.match(result.text, /Sent the sticker/);
 });

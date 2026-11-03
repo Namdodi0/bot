@@ -1,8 +1,16 @@
-import { MessageFlags } from 'discord.js';
+import { ActivityType, MessageFlags } from 'discord.js';
 import { createCommandRuntime } from './commands.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
 import { COMMANDS } from './specs.js';
 import { chunkContent, createPreviewer, photoAttachment } from './ui.js';
+
+const PRESENCE_TYPES = {
+  PLAYING: ActivityType.Playing,
+  STREAMING: ActivityType.Streaming,
+  LISTENING: ActivityType.Listening,
+  WATCHING: ActivityType.Watching,
+  COMPETING: ActivityType.Competing,
+};
 
 /**
  * Discord bot runtime: gateway events, admission, command registration and interaction
@@ -160,6 +168,10 @@ export function createDiscordBot(deps) {
         await commands.handleSelect(interaction);
         return;
       }
+      if (interaction.isModalSubmit()) {
+        await commands.handleModal(interaction);
+        return;
+      }
       if (interaction.isChatInputCommand() || interaction.isMessageContextMenuCommand()) {
         await commands.handleCommand(interaction);
       }
@@ -199,6 +211,25 @@ export function createDiscordBot(deps) {
       );
     });
     client.once('clientReady', () => {
+      const presence = config.discord?.presence;
+      if (presence?.text) {
+        const type = PRESENCE_TYPES[/** @type {keyof typeof PRESENCE_TYPES} */ (presence.type)] ?? ActivityType.Watching;
+        client.user?.setPresence({
+          status: presence.status ?? 'online',
+          activities: [
+            {
+              name: presence.text,
+              type,
+              ...(type === ActivityType.Streaming && presence.url ? { url: presence.url } : {}),
+            },
+          ],
+        });
+        logger?.info('discord presence set', {
+          status: presence.status,
+          type: presence.type,
+          text: presence.text,
+        });
+      }
       logger?.info('discord bot ready', {
         id: client.user?.id,
         name: client.user?.username,

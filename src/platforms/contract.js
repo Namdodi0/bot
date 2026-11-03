@@ -105,6 +105,7 @@
  * @property {PlatformPrompt} prompt
  * @property {PlatformCommands} commands
  * @property {PlatformTools} [tools]
+ * @property {any} [stickers] platform sticker service, when supported
  * @property {string[]} healthServices
  * @property {(error: any) => string|null} explainError
  * @property {(input: PlatformStartInput) => Promise<PlatformStartResult>} start

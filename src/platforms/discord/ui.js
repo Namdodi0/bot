@@ -4,8 +4,11 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  ModalBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
@@ -75,6 +78,24 @@ export function streamPreview(text, limit = 1900) {
 /** @param {string} message */
 export function errorEmbed(message) {
   return new EmbedBuilder().setColor(COLORS.error).setDescription(String(message ?? 'Something went wrong.'));
+}
+
+/**
+ * Multi-line prompt form for `/ask`. Privacy/thread choices travel in the customId.
+ * @param {boolean} priv
+ * @param {boolean} inThread
+ */
+export function askModal(priv, inThread) {
+  const input = new TextInputBuilder()
+    .setCustomId('prompt')
+    .setLabel('Your question')
+    .setStyle(TextInputStyle.Paragraph)
+    .setMaxLength(4000)
+    .setRequired(true);
+  return new ModalBuilder()
+    .setCustomId(`ask-form:${priv ? 1 : 0}:${inThread ? 1 : 0}`)
+    .setTitle('Ask the AI')
+    .addComponents(/** @type {any} */ (new ActionRowBuilder().addComponents(input)));
 }
 
 /**

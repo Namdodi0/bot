@@ -7,6 +7,7 @@ import { eventFromInteraction } from './events.js';
 import { COMMANDS, HELP_NOTE } from './specs.js';
 import {
   answerButtons,
+  askModal,
   catchupEmbed,
   chunkContent,
   COLORS,
@@ -213,79 +214,89 @@ export function createCommandRuntime(deps) {
     return { result, photos };
   }
 
-  /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
-  const handlers = {
-    async ask(interaction) {
-      const prompt = String(interaction.options.getString('prompt', true)).trim();
-      if (!prompt) {
-        await replyEphemeral(interaction, { content: 'Ask me something first.' });
-        return;
-      }
-      const chatId = String(interaction.channelId);
-      const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
-      const record = await chat.getRecord(chatId, chatType);
-      const privOption = interaction.options.getBoolean('private');
-      const threadOption = interaction.options.getBoolean('thread');
-      const priv = privOption ?? record?.meta?.privateDefault === true;
-      const inThread = threadOption ?? record?.meta?.autoThread === true;
-      // Acknowledge BEFORE the image download: downloading up to 8 MB can exceed the
-      // 3-second interaction window.
-      const useThread = inThread && Boolean(interaction.guild);
-      await interaction.deferReply(useThread ? ephemeral : privateReply(priv));
+  /**
+   * @param {any} interaction
+   * @param {{prompt: string, priv: boolean, useThread: boolean, withImage: boolean, imageData?: any}} options
+   */
+  async function runAskFlow(interaction, options) {
+    const { prompt, priv, useThread, withImage } = options;
+    await interaction.deferReply(useThread ? ephemeral : privateReply(priv));
 
+    let imageData = options.imageData ?? null;
+    if (withImage) {
       const image = await askImage(interaction);
       if (!image.ok) {
         await interaction.editReply({ content: String(/** @type {any} */ (image).reason ?? 'That image is not usable.') });
         return;
       }
+      imageData = image.imageData;
+    }
 
-      let streamed = '';
-      const accumulate = (delta) => {
-        streamed += delta;
-      };
+    let streamed = '';
+    const accumulate = (delta) => {
+      streamed += delta;
+    };
 
-      if (useThread) {
-        const channel = /** @type {any} */ (interaction.channel);
-        if (!channel?.threads?.create) {
-          await interaction.editReply({ content: 'Threads are not available in this channel.' });
-          return;
-        }
-        const name = prompt.replace(/\s+/g, ' ').slice(0, 90) || 'AI answer';
-        const thread = await channel.threads.create({ name, autoArchiveDuration: 1440, reason: `AI answer for ${interaction.user.username}` });
-        const placeholder = await thread.send({ content: '…' });
-        const previewer = createPreviewer((text) => placeholder.edit({ content: text }));
-        const result = await streamAsk(interaction, prompt, {
-          chatId: thread.id,
-          imageData: image.imageData,
-          onDelta: (delta) => {
-            accumulate(delta);
-            previewer.push(streamed);
-          },
-        });
-        await previewer.flush();
-        const token = makeToken({ prompt, chatId: thread.id, chatType: 'GROUP', userId: interaction.user.id, ephemeral: false });
-        await sendChannelAnswer(thread, result, token, placeholder);
-        await interaction.editReply({ content: `Answered in ${thread}.` });
+    if (useThread) {
+      const channel = /** @type {any} */ (interaction.channel);
+      if (!channel?.threads?.create) {
+        await interaction.editReply({ content: 'Threads are not available in this channel.' });
         return;
       }
-
-      const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+      const name = prompt.replace(/\s+/g, ' ').slice(0, 90) || 'AI answer';
+      const thread = await channel.threads.create({ name, autoArchiveDuration: 1440, reason: `AI answer for ${interaction.user.username}` });
+      const placeholder = await thread.send({ content: '…' });
+      const previewer = createPreviewer((text) => placeholder.edit({ content: text }));
       const result = await streamAsk(interaction, prompt, {
-        imageData: image.imageData,
+        chatId: thread.id,
+        imageData,
         onDelta: (delta) => {
           accumulate(delta);
           previewer.push(streamed);
         },
       });
       await previewer.flush();
-      const token = makeToken({
-        prompt,
-        chatId,
-        chatType,
-        userId: interaction.user.id,
-        ephemeral: priv,
-      });
-      await sendInteractionAnswer(interaction, result, token, priv);
+      const token = makeToken({ prompt, chatId: thread.id, chatType: 'GROUP', userId: interaction.user.id, ephemeral: false });
+      await sendChannelAnswer(thread, result, token, placeholder);
+      await interaction.editReply({ content: `Answered in ${thread}.` });
+      return;
+    }
+
+    const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+    const result = await streamAsk(interaction, prompt, {
+      imageData,
+      onDelta: (delta) => {
+        accumulate(delta);
+        previewer.push(streamed);
+      },
+    });
+    await previewer.flush();
+    const token = makeToken({
+      prompt,
+      chatId: String(interaction.channelId),
+      chatType: interaction.guildId ? 'GROUP' : 'PRIVATE',
+      userId: interaction.user.id,
+      ephemeral: priv,
+    });
+    await sendInteractionAnswer(interaction, result, token, priv);
+  }
+
+  /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
+  const handlers = {
+    async ask(interaction) {
+      const prompt = String(interaction.options.getString('prompt') ?? '').trim();
+      const chatId = String(interaction.channelId);
+      const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
+      const record = await chat.getRecord(chatId, chatType);
+      const priv = interaction.options.getBoolean('private') ?? record?.meta?.privateDefault === true;
+      const inThread = interaction.options.getBoolean('thread') ?? record?.meta?.autoThread === true;
+      const useThread = inThread && Boolean(interaction.guild);
+      const form = interaction.options.getBoolean('form') === true;
+      if (form || !prompt) {
+        await interaction.showModal(askModal(priv, useThread));
+        return;
+      }
+      await runAskFlow(interaction, { prompt, priv, useThread, withImage: true });
     },
 
     async settings(interaction) {
@@ -295,6 +306,43 @@ export function createCommandRuntime(deps) {
       }
       const record = await chat.getRecord(String(interaction.channelId), interaction.guildId ? 'GROUP' : 'PRIVATE');
       await replyEphemeral(interaction, settingsPayload(record));
+    },
+
+    async sticker(interaction) {
+      const stickers = platform.stickers;
+      if (!stickers?.enabled) {
+        await replyEphemeral(interaction, { content: 'Stickers are disabled in the config.' });
+        return;
+      }
+      await interaction.deferReply(ephemeral);
+      const channel = interaction.channel;
+      const query = interaction.options.getString('name');
+      try {
+        if (!query) {
+          const items = await stickers.list(channel);
+          if (!items.length) {
+            await interaction.editReply({
+              content: 'No server stickers found. Add ids in `config.discord.stickers.ids` or give the bot Manage Expressions.',
+            });
+            return;
+          }
+          const lines = items
+            .slice(0, 25)
+            .map((item) => `• **${item.name}** — \`${item.id}\``)
+            .join('\n');
+          await interaction.editReply({ content: `**Server stickers** (${items.length})\n${lines}` });
+          return;
+        }
+        const sticker = await stickers.resolve(channel, query);
+        if (!sticker) {
+          await interaction.editReply({ content: `No sticker matches "${query}" in this server.` });
+          return;
+        }
+        await stickers.send(channel, sticker);
+        await interaction.editReply({ content: `Sent the sticker **${sticker.name}**.` });
+      } catch (error) {
+        await interaction.editReply({ content: `Could not send the sticker: ${String(/** @type {any} */ (error)?.message ?? error)}` });
+      }
     },
 
     async catchup(interaction) {
@@ -760,5 +808,28 @@ export function createCommandRuntime(deps) {
     }
   }
 
-  return { handleCommand, handleAutocomplete, handleSelect, handleButton };
+  /** @param {any} interaction */
+  async function handleModal(interaction) {
+    if (!interaction.isModalSubmit?.()) return;
+    const customId = String(interaction.customId ?? '');
+    if (!customId.startsWith('ask-form:')) return;
+    const [, privFlag, threadFlag] = customId.split(':');
+    const prompt = String(interaction.fields.getTextInputValue('prompt') ?? '').trim();
+    if (!prompt) {
+      await replyEphemeral(interaction, { content: 'Ask me something first.' });
+      return;
+    }
+    try {
+      await runAskFlow(interaction, {
+        prompt,
+        priv: privFlag === '1',
+        useThread: threadFlag === '1' && Boolean(interaction.guild),
+        withImage: false,
+      });
+    } catch (error) {
+      await reportError(interaction, error);
+    }
+  }
+
+  return { handleCommand, handleAutocomplete, handleSelect, handleButton, handleModal };
 }

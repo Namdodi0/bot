@@ -104,8 +104,10 @@ export function createDiscordTransport(options) {
     });
   }
 
-  async function sendSticker() {
-    throw new Error('Stickers are not supported on Discord');
+  /** @param {string} chatId @param {string} stickerId */
+  async function sendSticker(chatId, stickerId) {
+    const channel = await channelOf(chatId);
+    return channel.send({ stickers: [String(stickerId)], allowedMentions: { parse: [] } });
   }
 
   /** @param {string} chatId @param {string} messageId @param {string} text */

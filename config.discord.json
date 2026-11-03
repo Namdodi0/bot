@@ -4,7 +4,17 @@
   "discord": {
     "guildId": "1545374195540693004",
     "allowedChannelIds": [],
-    "respondToAllChannelIds": []
+    "respondToAllChannelIds": [],
+    "stickers": {
+      "enabled": true,
+      "ids": ""
+    },
+    "presence": {
+      "status": "online",
+      "type": "WATCHING",
+      "text": "/ask",
+      "url": ""
+    }
   },
   "nim": {
     "baseUrl": "https://integrate.api.nvidia.com/v1",

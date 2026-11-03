@@ -22,16 +22,17 @@ test('Discord exposes a slash-first command surface', () => {
     'catchup',
     'search',
     'image',
+    'sticker',
     'remind',
     'Explain message',
     'Summarize message',
   ]);
-  for (const legacy of ['sticker', 'tone', 'split', 'think', 'id']) {
+  for (const legacy of ['tone', 'split', 'think', 'id']) {
     assert.equal(names.includes(legacy), false, legacy);
   }
-  assert.equal(COMMANDS.filter((command) => command.type === 1).length, 13);
+  assert.equal(COMMANDS.filter((command) => command.type === 1).length, 14);
   assert.equal(COMMANDS.filter((command) => command.type === 3).length, 2);
-  assert.equal(COMMANDS.length, 15);
+  assert.equal(COMMANDS.length, 16);
 });
 
 test('Discord admin commands are hidden behind Manage Server by default', () => {
@@ -44,7 +45,7 @@ test('Discord command options cover the native interactions', () => {
   const ask = COMMANDS.find((command) => command.name === 'ask');
   assert.deepEqual(
     ask?.options?.map((option) => option.name),
-    ['prompt', 'private', 'thread', 'image'],
+    ['prompt', 'form', 'private', 'thread', 'image'],
   );
   assert.equal(ask?.options?.find((option) => option.name === 'image')?.type, 11);
   const image = COMMANDS.find((command) => command.name === 'image');
@@ -62,10 +63,11 @@ test('Discord command options cover the native interactions', () => {
   );
 });
 
-test('Discord help has no Zalo-only features', () => {
+test('Discord help has no Zalo-only features but does list stickers', () => {
   const bullets = helpBullets(COMMANDS, {}).join('\n');
   assert.match(bullets, /`\/ask`/);
-  assert.doesNotMatch(bullets, /`\/(sticker|tone|split|think)`/);
+  assert.match(bullets, /`\/sticker/);
+  assert.doesNotMatch(bullets, /`\/(tone|split|think)`/);
   assert.match(HELP_NOTE, /Explain message/);
   assert.match(HELP_NOTE, /Summarize message/);
 });

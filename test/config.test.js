@@ -333,6 +333,32 @@ test('the shipped config files use only known keys', async () => {
   }
 });
 
+test('Discord stickers and presence are parsed and validated', () => {
+  const config = load(
+    {
+      platform: 'discord',
+      discord: {
+        stickers: { enabled: false, ids: '123456789012345678:wave' },
+        presence: { status: 'idle', type: 'PLAYING', text: 'with code' },
+      },
+    },
+    baseEnv({ DISCORD_BOT_TOKEN: 'discord-token' }),
+  );
+  assert.equal(config.discord.stickers.enabled, false);
+  assert.equal(config.discord.stickers.ids, '123456789012345678:wave');
+  assert.equal(config.discord.presence.status, 'idle');
+  assert.equal(config.discord.presence.type, 'PLAYING');
+  assert.equal(config.discord.presence.text, 'with code');
+  assert.throws(
+    () => load({ platform: 'discord', discord: { presence: { status: 'busy' } } }, baseEnv({ DISCORD_BOT_TOKEN: 'x' })),
+    /presence\.status/,
+  );
+  assert.throws(
+    () => load({ platform: 'discord', discord: { presence: { type: 'DANCING' } } }, baseEnv({ DISCORD_BOT_TOKEN: 'x' })),
+    /presence\.type/,
+  );
+});
+
 test('collectSecrets includes every configured key', () => {
   const config = load();
   const secrets = collectSecrets(config);

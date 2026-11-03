@@ -21,6 +21,12 @@ function makePlatform() {
     prompt: {},
     commands: { specs: [] },
     tools: {},
+    stickers: {
+      enabled: true,
+      list: async () => [{ id: '123456789012345678', name: 'wave', tags: [] }],
+      resolve: async () => ({ id: '123456789012345678', name: 'wave' }),
+      send: async () => {},
+    },
     healthServices: ['tavily'],
     explainError: () => null,
   };
@@ -101,6 +107,11 @@ function interaction(name, options = {}, overrides = {}) {
     createdTimestamp: Date.now(),
     isChatInputCommand: () => true,
     isMessageContextMenuCommand: () => false,
+    isModalSubmit: () => false,
+    async showModal(modal) {
+      this.modal = modal;
+      this.replied = true;
+    },
     options: {
       getString: (key) => values.get(key) ?? null,
       getBoolean: (key) => values.get(key) ?? null,
@@ -360,4 +371,41 @@ test('context menus stream into the ephemeral reply', async () => {
   assert.equal(i.deferred, true);
   assert.ok(i.edits.some((payload) => String(payload.content).includes('explaining')));
   assert.equal(i.edits.at(-1).content, 'final explanation');
+});
+
+test('/ask without a prompt opens the modal form', async () => {
+  const { commands } = makeCommands();
+  const i = interaction('ask', {});
+  await commands.handleCommand(i);
+  assert.ok(i.modal);
+  assert.match(String(i.modal.data.custom_id), /^ask-form:/);
+  assert.equal(i.deferred, undefined);
+});
+
+test('modal submission runs the ask flow', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.agent.stream = async (_event, { onDelta }) => {
+    onDelta('modal ');
+    return { text: 'modal answer', photos: [] };
+  };
+  const i = interaction(
+    '',
+    {},
+    {
+      isModalSubmit: () => true,
+      customId: 'ask-form:0:0',
+      fields: { getTextInputValue: () => 'hello from the form' },
+    },
+  );
+  await commands.handleModal(i);
+  assert.equal(i.deferred, true);
+  assert.equal(i.edits.at(-1).content, 'modal answer');
+});
+
+test('/sticker sends a server sticker', async () => {
+  const { commands } = makeCommands();
+  const i = interaction('sticker', { name: 'wave' });
+  await commands.handleCommand(i);
+  assert.equal(i.deferred, true);
+  assert.match(i.edits.at(-1).content, /Sent the sticker/);
 });

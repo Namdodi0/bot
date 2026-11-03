@@ -204,11 +204,24 @@ export function makeDiscordPlatform(input = {}) {
       helpNote: DISCORD_HELP_NOTE,
       run: async () => undefined,
     },
+    stickers: {
+      enabled: true,
+      list: async () => [{ id: '1', name: 'wave', tags: [] }],
+      resolve: async () => ({ id: '1', name: 'wave' }),
+      send: async () => {},
+    },
     tools: {
-      run: async (name) =>
-        name === 'send_sticker'
-          ? { ok: false, text: 'Zalo stickers are not available on Discord.' }
-          : null,
+      definitions: () => [
+        {
+          type: 'function',
+          function: {
+            name: 'send_sticker',
+            description: 'Send a server sticker',
+            parameters: { type: 'object', properties: { emotion: { type: 'string' } }, required: ['emotion'] },
+          },
+        },
+      ],
+      run: async (name) => (name === 'send_sticker' ? { ok: true, text: 'Sent the sticker "wave".' } : null),
     },
     healthServices: ['tavily'],
     explainError: () => null,
