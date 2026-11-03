@@ -35,6 +35,8 @@ Nothing in the Discord code imports the Zalo integration.
 - **Reminders** with Discord timestamps: `/remind add|list|cancel`.
 - **Web search and images** through Tavily; image bytes are validated (SSRF-safe, pinned DNS,
   size/type checks) and uploaded as proper image attachments.
+- **Read pages** — share a link and the model calls `read_url`, which fetches public
+  HTML/text/JSON/XML through the same SSRF-safe path and answers from the page text.
 - **No artificial caps by default** — no `max_tokens` cap, no answer deadline, unlimited
   context and tool rounds. Set limits in config if you want them.
 - **Reliability** — retry + per-provider circuit breaker, different-model fallback without
@@ -305,7 +307,7 @@ npm test          # node --test, no network
 npm run typecheck # tsc checkJs over src/ and scripts/
 ```
 
-- 313 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
+- 317 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
 - `scripts/smoke.js` and `scripts/simulate.js` belong to the Zalo process and use real APIs.
 - Keep platform behavior in `src/platforms/*`; `src/core` must not branch on platform names.
 - No new runtime dependencies without approval.
@@ -326,6 +328,8 @@ config, tokens, context or reminders.
 ## Known limitations
 
 - No voice messages and no Discord stickers.
+- `read_url` fetches public HTML/text/JSON/XML only (no JavaScript rendering or PDF parsing),
+  caps pages at 1 MB and passes only the first part of long pages to the model.
 - Vision sees the image attached to the current turn; the durable context keeps a text note,
   so old images are not replayed on later questions.
 - Slash commands are guild-scoped when `guildId` is set, so they are unavailable in DMs;

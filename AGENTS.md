@@ -77,15 +77,16 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/core/ai/llm/` — provider-neutral service, OpenAI-compatible adapter, model catalog,
   retry executor, stable error codes.
 - `src/core/ai/router.js`, `src/core/ai/models.js` — per-chat model choice and aliases.
-- `src/core/ai/tools.js` — `web_search`, `send_image`, `set_reminder` + platform tool hook.
+- `src/core/ai/tools.js` — `web_search`, `read_url`, `send_image`, `set_reminder` + platform
+  tool hook.
 - `src/core/ai/reminders.js` — persisted reminders, single-flight tick, VN-time parsing.
 - `src/core/context/` — record schema v2, assembler, atomic JSON store, token meter,
   compaction (prune tool results then summarize balanced ranges).
 - `src/core/commands/index.js` — shared command router and admin/manager checks.
 - `src/core/commands/registry.js` — shared command metadata; platforms append specs and
   help overrides.
-- `src/core/media/validate.js` — SSRF-safe image URL validation/download (pinned DNS,
-  redirects, size).
+- `src/core/media/validate.js` — SSRF-safe image URL validation/download and public page
+  text fetching (pinned DNS, redirects, size).
 - `src/core/http.js` — fetch wrapper: timeout, retry, per-service breaker (only retryable
   failures count), SSE opening.
 - `src/core/text/format.js` — chunking, mention stripping, time/duration helpers.
