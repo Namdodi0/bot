@@ -34,26 +34,19 @@ test('parseEnvFile: strips BOM + CRLF (files written by panels/Notepad)', () => 
   ]);
 });
 
-test('parseEnvFile: single/double quotes and trailing comments', () => {
+test('parseEnvFile: quoted values, escapes and trailing comments', () => {
+  // Quotes protect hashes; comments only start after the closing quote (with or without
+  // whitespace before the hash); escapes apply inside double quotes only.
   assert.deepEqual(parseEnvFile('A="has # not a comment"'), [['A', 'has # not a comment']]);
   assert.deepEqual(parseEnvFile("B='keep $VAR as is'"), [['B', 'keep $VAR as is']]);
   assert.deepEqual(parseEnvFile('C=abc  # note'), [['C', 'abc']]);
   assert.deepEqual(parseEnvFile('D="a\\nb"'), [['D', 'a\nb']]);
-});
-
-test('parseEnvFile: a quoted value drops the quotes and any trailing comment', () => {
-  assert.deepEqual(parseEnvFile('A="sk-abc123" # prod'), [['A', 'sk-abc123']]);
-  assert.deepEqual(parseEnvFile('B="sk-abc123"# no space before the hash'), [['B', 'sk-abc123']]);
-  assert.deepEqual(parseEnvFile('C="a # b" # note'), [['C', 'a # b']]);
-});
-
-test('parseEnvFile: single-quoted values keep hashes and drop the trailing comment', () => {
-  assert.deepEqual(parseEnvFile("A='tvly-x # not a comment'"), [['A', 'tvly-x # not a comment']]);
-  assert.deepEqual(parseEnvFile("B='plain' # note"), [['B', 'plain']]);
-});
-
-test('parseEnvFile: a hash without preceding whitespace stays part of the value', () => {
-  assert.deepEqual(parseEnvFile('A=abc#123'), [['A', 'abc#123']]);
+  assert.deepEqual(parseEnvFile('E="sk-abc123" # prod'), [['E', 'sk-abc123']]);
+  assert.deepEqual(parseEnvFile('F="sk-abc123"# no space before the hash'), [['F', 'sk-abc123']]);
+  assert.deepEqual(parseEnvFile('G="a # b" # note'), [['G', 'a # b']]);
+  assert.deepEqual(parseEnvFile("H='tvly-x # not a comment'"), [['H', 'tvly-x # not a comment']]);
+  assert.deepEqual(parseEnvFile("I='plain' # note"), [['I', 'plain']]);
+  assert.deepEqual(parseEnvFile('J=abc#123'), [['J', 'abc#123']]);
 });
 
 test('parseEnvFile: skips junk lines and invalid keys', () => {

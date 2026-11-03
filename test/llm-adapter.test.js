@@ -50,7 +50,7 @@ test('DeepSeek maps medium to high, none stays none', async () => {
   assert.equal(http.calls[1].payload.model, 'deepseek-flash');
 });
 
-test('does not send max_tokens when the config is null', async () => {
+test('max_tokens is sent only when configured', async () => {
   const http = fakeHttp([], standardResponse);
   const nim = makeClient(http);
   const result = await nim.chat({ messages: [{ role: 'user', content: 'hi' }], reasoning: 'none', maxTokens: null });
@@ -58,13 +58,9 @@ test('does not send max_tokens when the config is null', async () => {
   assert.equal('max_tokens' in http.calls[0].payload, false);
   assert.equal(http.calls[0].payload.reasoning_effort, 'none');
   assert.equal(result.content, 'Hello');
-});
 
-test('sends max_tokens when it is set', async () => {
-  const http = fakeHttp([], standardResponse);
-  const nim = makeClient(http);
   await nim.chat({ messages: [{ role: 'user', content: 'hi' }], reasoning: 'none', maxTokens: 512 });
-  assert.equal(http.calls[0].payload.max_tokens, 512);
+  assert.equal(http.calls[1].payload.max_tokens, 512);
 });
 
 test('reasoning auto maps to low and tools are sent along', async () => {
@@ -80,7 +76,7 @@ test('reasoning auto maps to low and tools are sent along', async () => {
   assert.equal(http.calls[0].payload.tools.length, 1);
 });
 
-test('sends sampling parameters when provided', async () => {
+test('sampling parameters are sent only when configured', async () => {
   const http = fakeHttp([], standardResponse);
   const nim = makeClient(http);
   await nim.chat({
@@ -105,15 +101,11 @@ test('sends sampling parameters when provided', async () => {
   assert.equal(payload.frequency_penalty, 0.3);
   assert.equal(payload.presence_penalty, 0.4);
   assert.equal(payload.seed, 42);
-});
 
-test('omits sampling parameters that are not configured', async () => {
-  const http = fakeHttp([], standardResponse);
-  const nim = makeClient(http);
   await nim.chat({ messages: [{ role: 'user', content: 'hi' }], reasoning: 'none' });
-  const payload = http.calls[0].payload;
-  assert.equal('top_p' in payload, false);
-  assert.equal('top_k' in payload, false);
+  const bare = http.calls[1].payload;
+  assert.equal('top_p' in bare, false);
+  assert.equal('top_k' in bare, false);
 });
 
 test('circuit breaker is keyed by provider+model and does not lock the whole provider', async () => {

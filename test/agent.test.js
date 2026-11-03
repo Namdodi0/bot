@@ -262,11 +262,16 @@ test('web_search tool call, then an answer with the source', async () => {
   assert.match(sent.at(-1).text, /vnexpress/);
 });
 
-test('model errors produce an apology instead of a crash', async () => {
-  const { agent, sent } = await setup({ nimError: new Error('boom') });
+test('model errors produce an apology and keep the question', async () => {
+  const { agent, sent, store } = await setup({ nimError: new Error('boom') });
   await agent.handle(textEvent('hi'));
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /Sorry/);
+
+  const record = await store.get('chat-1');
+  assert.equal(record.messages[0].role, 'user');
+  assert.match(String(record.messages[0].text), /hi/);
+  assert.equal(record.turns, 1);
 });
 
 test('stops typing BEFORE sending the first message', async () => {
@@ -320,15 +325,6 @@ test('/sticker sends a sticker for the given mood', async () => {
   await agent.handle(textEvent('/sticker greeting'));
   assert.equal(sentStickers.length, 1);
   assert.equal(sentStickers[0].stickerId, 'd8fa8021bc64553a0c75');
-});
-
-test('keeps the question when the model fails', async () => {
-  const { agent, store } = await setup({ nimError: new Error('boom') });
-  await agent.handle(textEvent('hi'));
-  const record = await store.get('chat-1');
-  assert.equal(record.messages[0].role, 'user');
-  assert.match(String(record.messages[0].text), /hi/);
-  assert.equal(record.turns, 1);
 });
 
 test('PROGRESSIVE=on sends split segments early', async () => {

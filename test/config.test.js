@@ -84,14 +84,6 @@ test('reads every setting from config.json', async () => {
   assert.equal(config.configFileFound, true);
 });
 
-test('a missing explicit config file throws', async () => {
-  const dir = await tempDir();
-  assert.throws(
-    () => loadConfig({ argv: [], env: baseEnv(), configPath: path.join(dir, 'missing.json') }),
-    /Config file not found/,
-  );
-});
-
 test('invalid JSON in config.json is reported', async () => {
   const dir = await tempDir();
   const file = path.join(dir, 'config.json');
@@ -296,10 +288,14 @@ test('--config overrides the configPath default passed by an entry point', async
   assert.equal(config.configFile, cliPath);
 });
 
-test('a missing --config file throws even when configPath is given', async () => {
+test('a missing explicit config file throws for configPath and --config', async () => {
   const dir = await tempDir();
   const entryDefault = path.join(dir, 'config.discord.json');
   await fsp.writeFile(entryDefault, JSON.stringify({ dataDir: dir }));
+  assert.throws(
+    () => loadConfig({ argv: [], env: baseEnv(), configPath: path.join(dir, 'missing.json') }),
+    /Config file not found/,
+  );
   assert.throws(
     () =>
       loadConfig({

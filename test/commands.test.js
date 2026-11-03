@@ -189,18 +189,24 @@ test('/model lists and switches the model for the chat', async () => {
   assert.match(bad.text, /No model named/);
 });
 
-test('/model is blocked for non-admins', async () => {
-  const d = deps({ config: { adminIds: ['admin-1'] } });
-  const commands = createCommands(d);
-  const result = await commands.run({ name: 'model', args: 'deepseek' }, ctx(d, { isAdmin: false }));
-  assert.match(result.text, /Only group admins/);
-});
-
-test('a group chat with no platform admin decision is treated as non-admin', async () => {
-  const d = deps();
-  const commands = createCommands(d);
-  const result = await commands.run({ name: 'model', args: 'deepseek' }, ctx(d, { isAdmin: undefined }));
-  assert.match(result.text, /Only group admins/);
+test('admin-only commands reject group members without the platform admin flag', async () => {
+  const cases = [
+    ['model', 'deepseek'],
+    ['reset', ''],
+    ['split', 'off'],
+    ['think', 'off'],
+    ['tone', 'roast'],
+    ['compact', ''],
+  ];
+  for (const [name, args] of cases) {
+    // undefined is what an older/misconfigured platform would pass: deny, never open up.
+    for (const isAdmin of [false, undefined]) {
+      const d = deps({ config: { adminIds: ['admin-1'] } });
+      const commands = createCommands(d);
+      const result = await commands.run({ name, args }, ctx(d, { isAdmin }));
+      assert.match(result.text, /Only group admins/, `${name} isAdmin=${String(isAdmin)}: ${result.text}`);
+    }
+  }
 });
 
 test('/model settings work in a Discord DM but stay admin-only in a group', async () => {
@@ -218,13 +224,6 @@ test('/model settings work in a Discord DM but stay admin-only in a group', asyn
     ctx(d, { chatId: 'discord:c1', chatType: 'GROUP', isAdmin: false }),
   );
   assert.match(group.text, /Only group admins/);
-});
-
-test('/reset is blocked for non-admins', async () => {
-  const d = deps({ config: { adminIds: ['admin-1'] } });
-  const commands = createCommands(d);
-  const result = await commands.run({ name: 'reset', args: '' }, ctx(d, { isAdmin: false }));
-  assert.match(result.text, /Only group admins/);
 });
 
 test('/reset lets admins clear the context', async () => {
@@ -281,13 +280,6 @@ test('/split off disables splitting for the chat, /split auto returns to the con
 
   const bad = await commands.run({ name: 'split', args: 'xyz' }, context);
   assert.match(bad.text, /Invalid value/);
-});
-
-test('/split is blocked for non-admins', async () => {
-  const d = deps({ config: { adminIds: ['admin-1'] } });
-  const commands = createCommands(d);
-  const result = await commands.run({ name: 'split', args: 'off' }, ctx(d, { isAdmin: false }));
-  assert.match(result.text, /Only group admins/);
 });
 
 test('an unknown command returns guidance', async () => {
