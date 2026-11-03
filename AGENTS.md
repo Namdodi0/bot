@@ -108,12 +108,17 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   and generated zips with secrets stay out of git.
 - **Image URLs** must pass `createImageValidator` before `sendPhoto`; platforms with
   `capabilities.uploadMedia` download validated bytes first.
+- **Vision input is current-turn only.** Validated image bytes travel on `event.imageData`,
+  the vision model is chosen via `config.model.visionAlias`, and the durable record keeps a
+  text note instead of the image bytes. Tool/fallback calls strip image content blocks.
 - **Zalo mutating POSTs** are not retried (duplicate messages).
 - **Discord is slash-first.** Chat input is `/ask` (plus `/help`, `/status`, `/ping`,
-  `/model`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`), message context
-  menus are `Explain message`/`Summarize message`, and native handlers own the interaction
-  lifecycle (embeds, buttons, selects, ephemeral replies). Typed text commands are ignored.
-  Ordinary @mention/reply chat still goes through the shared agent.
+  `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`,
+  `/remind`), message context menus are `Explain message`/`Summarize message`, and native
+  handlers own the interaction lifecycle (embeds, buttons, selects, ephemeral replies).
+  `/ask` streams through `agent.stream()` into one edited message; other commands collect
+  through `agent.collect()`. Typed text commands are ignored. Ordinary @mention/reply chat
+  still goes through the shared agent.
 - **Platform-specific ids are opaque in core.** Discord uses raw channel/thread ids; its
   transport tolerates a legacy `discord:` prefix in old reminders but new ids are never
   prefixed. Zalo `allowedChatIds`/`adminIds` are enforced by `src/platforms/zalo`; Discord

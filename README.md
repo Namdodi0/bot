@@ -16,10 +16,16 @@ Nothing in the Discord code imports the Zalo integration.
 
 ## Highlights
 
-- **Slash-first UX** — `/ask`, `/help`, `/status`, `/ping`, `/model`, `/reset`, `/compact`,
-  `/summary`, `/search`, `/image`, `/remind`.
+- **Slash-first UX** — `/ask`, `/help`, `/status`, `/ping`, `/model`, `/settings`, `/reset`,
+  `/compact`, `/summary`, `/catchup`, `/search`, `/image`, `/remind`.
 - **Message menus** — right-click a message → Apps → **Explain message** / **Summarize message**.
-- **Answers in place** — embeds and attachments, with **Regenerate / Continue / Delete** buttons.
+- **Live answers** — `/ask` edits one message as tokens stream in, then adds
+  **Regenerate / Continue / Delete** buttons.
+- **Vision** — attach an image to `/ask`, or @mention the bot with an image; the turn switches
+  to the configured vision model and sends the image as an OpenAI `image_url` block.
+- **Channel settings** — `/settings` (admin) controls model, tone, default privacy and
+  auto-thread per channel.
+- **Catch-up** — `/catchup [hours]` summarizes what happened in the channel since a time window.
 - **Private or public** — `/ask private:true`, `/search private:true`, `/image private:true`.
 - **Threads** — `/ask thread:true` creates a thread and answers there.
 - **Model picker** — `/model` opens a select menu; `/model name:` autocompletes aliases.
@@ -28,7 +34,6 @@ Nothing in the Discord code imports the Zalo integration.
 - **Reminders** with Discord timestamps: `/remind add|list|cancel`.
 - **Web search and images** through Tavily; image bytes are validated (SSRF-safe, pinned DNS,
   size/type checks) and uploaded as proper image attachments.
-- **Text-only model** — images posted by users are noted in context, never sent to the API.
 - **No artificial caps by default** — no `max_tokens` cap, no answer deadline, unlimited
   context and tool rounds. Set limits in config if you want them.
 - **Reliability** — retry + per-provider circuit breaker, different-model fallback without
@@ -107,14 +112,16 @@ still works.
 
 | Command | What it does |
 |---|---|
-| `/ask <prompt> [private] [thread]` | Ask the AI; answer in the channel, ephemeral, or a new thread. Includes Regenerate / Continue / Delete buttons. |
+| `/ask <prompt> [image] [private] [thread]` | Ask the AI; attach an image for vision, answer in the channel, ephemeral, or a new thread. Streams into one message, then adds Regenerate / Continue / Delete buttons. |
 | `/help` | Ephemeral command list. |
 | `/status` | Model, transport, uptime, context size, latency, traffic. |
 | `/ping` | Gateway and interaction round-trip latency. |
 | `/model [name]` | Admin: show a select menu or switch the channel model. Autocomplete for aliases. |
+| `/settings` | Admin: model, tone, default privacy and auto-thread for this channel. |
 | `/reset [all]` | Admin: clear the channel context; `all` also clears per-channel settings. |
 | `/compact` | Admin: compact the context now. |
 | `/summary [count]` | Summarize the last 2–200 messages (default 30). |
+| `/catchup [hours]` | Summarize what happened in this channel in the last N hours (default 24, max 168). |
 | `/search <query> [private]` | Web search, answered with an embed. |
 | `/image <query> [count] [private]` | Find and upload images (default 1, max 25). |
 | `/remind add <when> <text>` | Set a reminder (`20:00`, `20:00 tomorrow`, `20:00 25/12`, `+10m`, `+2h`, `+1d`; Vietnam time input). |
@@ -123,7 +130,7 @@ still works.
 
 **Message context menus:** `Explain message`, `Summarize message`.
 
-Admin commands (`/model`, `/reset`, `/compact`) are hidden from non-admins by default
+Admin commands (`/model`, `/settings`, `/reset`, `/compact`) are hidden from non-admins by default
 (Manage Server). In DMs, slash commands only exist when commands are registered globally
 (no `guildId`); otherwise DM text chat still works.
 
@@ -170,6 +177,7 @@ Important settings:
 | `discord.allowedChannelIds` | Empty = all channels; DMs always allowed; threads inherit the parent. |
 | `discord.respondToAllChannelIds` | Answer every message in these channels. |
 | `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`. |
+| `model.visionAlias` | Vision-capable alias used when an image is attached (default `nim`, the Super VL model). |
 | `ai.reasoning` | `none`, `low`, `medium`, `high`, `auto`. |
 | `ai.maxTokens` / `ai.maxToolRounds` | `null`/`0` = unlimited. |
 | `responseTimeoutMs` | `0` = no deadline. |
@@ -236,6 +244,8 @@ the full stack appears only in JSON mode. `--verbose` adds retry/cache/tool/cont
 | Slash commands are missing | Invite with `applications.commands`; global commands can take up to an hour — set `discord.guildId`. |
 | Typed `/ask` does nothing | The Discord bot is slash-only; use Discord's command picker. |
 | `/ask thread:true` fails | Grant **Create Public Threads** and **Send Messages in Threads**, and use a channel that supports threads. |
+| `/catchup` cannot read messages | The bot needs **Read Message History** in that channel. |
+| The bot ignores an image | Check `model.visionAlias` points at the vision model (`nim` by default) and that the attachment is an image under 8 MB. Images are only used for the current turn. |
 | Images arrive as files | Fixed in 1.2.0 by giving uploads an image extension. If it still happens, the source format (e.g. AVIF) may not preview on Discord. |
 | Image upload rejected | The validator rejects non-images, private/internal URLs and files over 8 MB. |
 | Admin commands missing | They are hidden from non-admins (Manage Server) by default. |
@@ -293,7 +303,7 @@ npm test          # node --test, no network
 npm run typecheck # tsc checkJs over src/ and scripts/
 ```
 
-- 301 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
+- 311 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
 - `scripts/smoke.js` and `scripts/simulate.js` belong to the Zalo process and use real APIs.
 - Keep platform behavior in `src/platforms/*`; `src/core` must not branch on platform names.
 - No new runtime dependencies without approval.
@@ -313,9 +323,9 @@ config, tokens, context or reminders.
 
 ## Known limitations
 
-- No voice messages, no Discord stickers, no vision input (images from users are noted only).
-- No token-by-token streaming into a Discord message; `/ask` shows a deferred reply and then
-  the final answer.
+- No voice messages and no Discord stickers.
+- Vision sees the image attached to the current turn; the durable context keeps a text note,
+  so old images are not replayed on later questions.
 - Slash commands are guild-scoped when `guildId` is set, so they are unavailable in DMs;
   DM text chat still works.
 - Only the first image attachment of an incoming message is considered.
