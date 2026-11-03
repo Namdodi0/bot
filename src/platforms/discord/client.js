@@ -5,6 +5,7 @@ import {
   isBotAddressed,
   isBotRoleMentioned,
   isChannelAllowed,
+  isRespondToAllChannel,
   toDiscordEvent,
   toDiscordInteractionEvent,
 } from './events.js';
@@ -202,7 +203,7 @@ export function createDiscordTransport(options) {
       repliedToBot = Boolean(referenced && referenced.author?.id === client.user?.id);
     }
     // Channels listed in respondToAllChannelIds get a reply to every message, no mention needed.
-    const listensHere = config.respondToAllChannelIds?.includes(message.channelId) === true;
+    const listensHere = isRespondToAllChannel(config, message.channel ?? { id: message.channelId });
     if (!isBotAddressed({ mentioned, roleMentioned, repliedToBot, isDm, listensHere })) return;
     const event = toDiscordEvent(message, client);
     if (!event) return;

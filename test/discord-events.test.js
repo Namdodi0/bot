@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isChannelAllowed, stripBotMention, isBotAddressed, toDiscordEvent, toDiscordInteractionEvent } from '../src/platforms/discord/events.js';
+import {
+  isBotAddressed,
+  isChannelAllowed,
+  isRespondToAllChannel,
+  stripBotMention,
+  toDiscordEvent,
+  toDiscordInteractionEvent,
+} from '../src/platforms/discord/events.js';
 
 const client = { user: { id: 'bot1', username: 'Bot deepseek' } };
 
@@ -74,6 +81,14 @@ test('isBotAddressed covers mention, role, reply, DM and respond-to-all channels
   assert.equal(isBotAddressed({ repliedToBot: true }), true);
   assert.equal(isBotAddressed({ isDm: true }), true);
   assert.equal(isBotAddressed({ listensHere: true }), true);
+});
+
+test('respond-to-all channels also cover their threads', () => {
+  const config = { respondToAllChannelIds: ['general'] };
+  assert.equal(isRespondToAllChannel(config, { id: 'general' }), true);
+  assert.equal(isRespondToAllChannel(config, { id: 'thread-1', parentId: 'general' }), true);
+  assert.equal(isRespondToAllChannel(config, { id: 'other' }), false);
+  assert.equal(isRespondToAllChannel({}, { id: 'general' }), false);
 });
 
 test('slash interaction becomes a synthetic text command', () => {

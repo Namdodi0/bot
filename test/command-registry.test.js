@@ -15,6 +15,7 @@ test('slashCommandPayloads returns the 14 Discord commands without Zalo-only sti
   assert.equal(payloads.length, 14);
   assert.equal(payloads.some((payload) => payload.name === 'sticker'), false);
   assert.equal(payloads.some((payload) => payload.name === 'help'), true);
+  assert.equal(payloads.find((payload) => payload.name === 'ping')?.description, 'Check the Discord connection');
 });
 
 test('slashCommandPayloads keeps Discord option definitions', () => {

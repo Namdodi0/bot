@@ -24,6 +24,21 @@ export function isChannelAllowed(config, channel) {
 }
 
 /**
+ * Whether a channel is opted into answering every message (no mention required).
+ * Threads inherit their parent channel's entry, like `allowedChannelIds`.
+ * @param {{respondToAllChannelIds?: string[]}|null|undefined} config
+ * @param {{id?: string, parentId?: string|null}|null|undefined} channel
+ */
+export function isRespondToAllChannel(config, channel) {
+  const ids = config?.respondToAllChannelIds ?? [];
+  if (!ids.length) return false;
+  const id = String(channel?.id ?? '').trim();
+  if (id && ids.includes(id)) return true;
+  const parentId = String(channel?.parentId ?? '').trim();
+  return Boolean(parentId) && ids.includes(parentId);
+}
+
+/**
  * Remove <@id> / <@!id> mentions of the bot, its managed role mention (<@&id>), and
  * collapse the leftover spaces.
  * @param {string} text

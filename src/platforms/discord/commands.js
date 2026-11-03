@@ -1,6 +1,8 @@
 import { COMMAND_SPECS } from '../../core/commands/registry.js';
 
-export const DISCORD_COMMAND_SPECS = COMMAND_SPECS;
+export const DISCORD_COMMAND_SPECS = COMMAND_SPECS.map((spec) =>
+  spec.name === 'ping' ? { ...spec, description: 'Check the Discord connection' } : spec,
+);
 
 export const DISCORD_HELP_OVERRIDES = {
   ping: '`/ping` — check the Discord connection',
