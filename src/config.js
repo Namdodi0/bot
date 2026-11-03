@@ -236,6 +236,16 @@ const KNOWN_SECTION_KEYS = {
 };
 
 /**
+ * Nested sections (second level) that have their own known keys, keyed by dotted path.
+ * A typo such as `discord.presence.statuss` would otherwise pass silently.
+ * @type {Record<string, Set<string>>}
+ */
+const KNOWN_NESTED_SECTION_KEYS = {
+  'discord.stickers': new Set(['enabled', 'ids']),
+  'discord.presence': new Set(['status', 'type', 'text', 'url']),
+};
+
+/**
  * Dotted names of settings that config.js never reads. Reported at startup (never fatal):
  * a typo like `allowChatIds` would otherwise silently leave `allowedChatIds` empty.
  * @param {Record<string, any>} root
@@ -251,6 +261,16 @@ export function collectUnknownConfigKeys(root) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
     for (const key of Object.keys(value)) {
       if (!known.has(key)) unknown.push(`${name}.${key}`);
+    }
+  }
+  for (const [prefix, known] of Object.entries(KNOWN_NESTED_SECTION_KEYS)) {
+    const [name, nested] = prefix.split('.');
+    const parent = root?.[name];
+    if (!parent || typeof parent !== 'object' || Array.isArray(parent)) continue;
+    const value = parent[nested];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    for (const key of Object.keys(value)) {
+      if (!known.has(key)) unknown.push(`${prefix}.${key}`);
     }
   }
   return unknown.sort();

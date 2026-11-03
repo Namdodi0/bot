@@ -317,6 +317,21 @@ test('unknown config keys are reported instead of silently dropped', () => {
   assert.deepEqual(config.allowedChatIds, []);
 });
 
+test('typos inside the nested discord.stickers and discord.presence sections are reported', () => {
+  const config = load(
+    {
+      platform: 'discord',
+      discord: {
+        stickers: { enabled: true, idd: '123456789012345678' },
+        presence: { statuss: 'idle' },
+      },
+    },
+    baseEnv({ DISCORD_BOT_TOKEN: 'discord-token' }),
+  );
+
+  assert.deepEqual(config.unknownConfigKeys, ['discord.presence.statuss', 'discord.stickers.idd']);
+});
+
 test('the shipped config files use only known keys', async () => {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const files = [

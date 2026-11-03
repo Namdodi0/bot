@@ -18,6 +18,40 @@ if (-not $Out) {
 }
 $outPath = if ([System.IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path $root $Out }
 
+# Blank every secret-like field (webhook.secret, *.token, *.apiKey, *.password ...) in a parsed
+# config object and return the dotted paths that were blanked. Only names are returned so the
+# caller can report what was removed without ever printing a value.
+function Clear-SecretFields {
+  param(
+    [object]$Node,
+    [string]$Path = ''
+  )
+  if ($null -eq $Node) { return @() }
+
+  $removed = @()
+  if ($Node -is [System.Collections.IList]) {
+    for ($i = 0; $i -lt $Node.Count; $i++) {
+      $removed += Clear-SecretFields -Node $Node[$i] -Path "$Path[$i]"
+    }
+    return $removed
+  }
+
+  if ($Node -is [System.Management.Automation.PSCustomObject]) {
+    foreach ($property in $Node.PSObject.Properties) {
+      $fieldPath = if ($Path) { "$Path.$($property.Name)" } else { $property.Name }
+      if ($property.Name -match '^(secret|token|api_?key|password|passwd|private_?key|client_?secret|webhook_?secret)$') {
+        if ($null -ne $property.Value -and "$($property.Value)" -ne '') {
+          $property.Value = ''
+          $removed += $fieldPath
+        }
+      } else {
+        $removed += Clear-SecretFields -Node $property.Value -Path $fieldPath
+      }
+    }
+  }
+  return $removed
+}
+
 # Only what is needed on the server. NO: .env, data/, node_modules/, dist/
 $include = @(
   'src',
@@ -79,11 +113,27 @@ try {
     }
   }
 
-  # config.json has settings only (no secrets); include it when it exists.
+  # config.json holds settings only (no API keys), but it can still carry `webhook.secret`
+  # (a valid setting that is a real secret). Stage a sanitized copy instead of the raw file.
+  # Field names are reported; values are never printed.
   $localConfig = Join-Path $root 'config.json'
   if (Test-Path $localConfig) {
-    Copy-Item -Path $localConfig -Destination $staging -Force
-    Write-Host "INCLUDED config.json (settings only, no API keys)" -ForegroundColor Green
+    try {
+      $settings = Get-Content -Path $localConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+      $sanitized = @(Clear-SecretFields -Node $settings)
+      $stagedConfig = Join-Path $staging 'config.json'
+      $json = ConvertTo-Json -InputObject $settings -Depth 20
+      [System.IO.File]::WriteAllLines($stagedConfig, ($json -split '\r?\n'), (New-Object System.Text.UTF8Encoding($false)))
+      if ($sanitized.Count -gt 0) {
+        Write-Host "INCLUDED config.json (settings only; secret value removed: $($sanitized -join ', '))" -ForegroundColor Green
+      } else {
+        Write-Host "INCLUDED config.json (settings only, no secret values found)" -ForegroundColor Green
+      }
+    } catch {
+      # The include loop already copied the raw file; drop it so nothing secret is zipped.
+      Remove-Item -Path (Join-Path $staging 'config.json') -Force -ErrorAction SilentlyContinue
+      Write-Warning "config.json could not be parsed ($($_.Exception.Message)) - NOT included; remove secret values and copy it manually"
+    }
   } else {
     Write-Warning "no config.json found - the bot will use built-in defaults"
   }
@@ -148,7 +198,7 @@ try {
   } else {
     Write-Host "  - .env is NOT in the package -> send the API keys separately or enter them in the panel"
   }
-  Write-Host "  - config.json is included when present (settings only, no secrets)"
+  Write-Host "  - config.json is included when present (settings only; webhook.secret is blanked)"
   Write-Host "  - config.example.json is included -> copy it to config.json on a fresh server"
   Write-Host "  - data/ is NOT included -> the chat history stays on the dev machine"
   Write-Host "  - node_modules is NOT included -> the server only needs Node >= 20.6"

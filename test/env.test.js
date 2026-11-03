@@ -75,6 +75,15 @@ test('loadEnvFiles: an existing empty variable may be filled from the file', asy
   assert.equal(env.ZALO_BOT_TOKEN, 'from-file');
 });
 
+test('loadEnvFiles: a whitespace-only variable is treated as empty and filled from the file', async () => {
+  const dir = await tempDir();
+  await fsp.writeFile(path.join(dir, '.env'), 'ZALO_BOT_TOKEN=from-file\nNIM_API_KEY=nvapi-file\n');
+  const env = { ZALO_BOT_TOKEN: '   ', NIM_API_KEY: 'nvapi-panel' };
+  loadEnvFiles({ cwd: dir, env });
+  assert.equal(env.ZALO_BOT_TOKEN, 'from-file');
+  assert.equal(env.NIM_API_KEY, 'nvapi-panel');
+});
+
 test('loadEnvFiles: no .env does not throw, the report records it as missing', async () => {
   const dir = await tempDir();
   const env = {};

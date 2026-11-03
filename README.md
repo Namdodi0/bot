@@ -17,7 +17,7 @@ Nothing in the Discord code imports the Zalo integration.
 ## Highlights
 
 - **Slash-first UX** — `/ask`, `/help`, `/status`, `/ping`, `/model`, `/settings`, `/reset`,
-  `/compact`, `/summary`, `/catchup`, `/search`, `/image`, `/remind`.
+  `/compact`, `/summary`, `/catchup`, `/search`, `/image`, `/sticker`, `/remind`.
 - **Message menus** — right-click a message → Apps → **Explain message** / **Summarize message**.
 - **Live answers** — every model-generated reply streams into one edited message: `/ask`,
   @mention/reply chat, Explain/Summarize menus, Regenerate/Continue, `/summary` and
@@ -78,10 +78,11 @@ copy .env.example .env
    Send Messages in Threads, Create Public Threads:
 
    ```
-   https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=293131635712&scope=bot%20applications.commands
+   https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=327491374080&scope=bot%20applications.commands
    ```
-   This adds **Manage Expressions** so the bot can list server stickers; without it, add
-   sticker ids manually in `config.discord.stickers.ids`.
+   The integer also grants **Manage Threads** and **Manage Expressions**: the latter lets the
+   bot list server stickers; without it, add sticker ids manually in
+   `config.discord.stickers.ids`.
 
 4. Edit `config.discord.json` (tracked; `config.discord.example.json` is a reference):
 
@@ -108,7 +109,8 @@ copy .env.example .env
    npm run start:discord      # or: node src/discord.js
    ```
 
-   The log shows `discord commands registered ... count=13`.
+   The log shows `discord commands registered ... count=16` (14 slash commands + 2 message
+   context menus).
 
 The bot also answers when it is **@mentioned** or someone **replies** to one of its messages.
 DMs work as normal chat. **Typed text commands are ignored** — use the slash commands.
@@ -144,7 +146,7 @@ Admin commands (`/model`, `/settings`, `/reset`, `/compact`) are hidden from non
 (Manage Server). In DMs, slash commands only exist when commands are registered globally
 (no `guildId`); otherwise DM text chat still works.
 
-Removed on purpose: `/sticker`, `/tone`, `/split`, `/think`, `/id`, and the typed text-command
+Removed on purpose: `/tone`, `/split`, `/think`, `/id`, and the typed text-command
 parser. Those were Zalo-shaped and do not fit Discord.
 
 ---
@@ -152,10 +154,10 @@ parser. Those were Zalo-shaped and do not fit Discord.
 ## How answers work
 
 1. The gateway routes slash commands and message events.
-2. `/ask`, `/search`, `/image` and the context menus call the shared engine through
-   `agent.collect()`: the turn runs against a **response sink** that captures text/images,
-   then Discord renders them natively (embed/edit reply, attachments, buttons) instead of
-   posting its own messages.
+2. `/ask` and the context menus call the shared engine through `agent.stream()`: deltas edit a
+   single Discord message, so the turn renders natively (embed/edit reply, attachments,
+   buttons) instead of posting its own. `/search` and `/image` call the tools directly and
+   send the result when it is ready.
 3. Ordinary @mention/reply chat goes through the same shared agent; its first delta creates a
    reply placeholder, later deltas edit it, and the final text is chunked only if needed.
 4. Context is stored per **channel or thread id** under `data/discord/`.
@@ -175,10 +177,10 @@ Only two files matter:
 | `.env` (gitignored) | API keys/tokens only: `DISCORD_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `NIM_API_KEY`, `TAVILY_API_KEY` (and `ZALO_BOT_TOKEN` for the legacy process). |
 | `config.discord.json` (tracked) | Non-secret Discord settings. Never put API keys or a real `webhook.secret` here. |
 
-Variables already set in the host panel/CI win over `.env`; an empty variable is filled from
-the file. Unknown config keys (for example a typo such as `allowChatId`) are reported at
-startup instead of being silently ignored. `--config <path>` overrides the default config
-file for either entry point.
+Variables already set in the host panel/CI win over `.env`; an empty (or whitespace-only)
+variable is filled from the file. Unknown config keys (for example a typo such as `allowChatId`)
+are reported at startup instead of being silently ignored. `--config <path>` overrides the
+default config file for either entry point.
 
 Important settings:
 
@@ -237,7 +239,7 @@ Pretty logs by default; JSON with `--json` or `logFormat: "json"`.
 
 ```
 18:33:43 🤖 discord bot ready          version=1.2.0 id=... name=... guilds=1
-18:33:44 🛠️ discord commands registered version=1.2.0 scope="guild ..." count=13
+18:33:44 🛠️ discord commands registered version=1.2.0 scope="guild ..." count=16
 18:33:45 💬 Nam: how do I center a div? chatId=... kind=text len=24
 18:33:46 🔍 web search                 query="center a div" results=4
 18:33:47 🤖 bot: ...                   chatId=... part=1
