@@ -32,6 +32,8 @@ test('the shy tone injects the flustered persona rules', () => {
   assert.match(text, /Mnhh~/);
   assert.match(text, /"em"/);
   assert.match(text, /Style first, answer second/);
-  assert.match(text, /\(mặt đỏ bừng\)/);
+  assert.match(text, /\(mặt đỏ bừng\.\.\.\)/);
+  assert.match(text, /uwu/);
+  assert.match(text, /Stutter machine/);
   assert.match(text, /No swearing/);
 });
