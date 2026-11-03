@@ -23,3 +23,12 @@ test('zalo prompts use Zalo formatting and the Zalo command list', () => {
   assert.match(text, /\/sticker/);
   assert.equal(text.includes('slash commands'), false);
 });
+
+test('the shy tone injects the flustered persona rules', () => {
+  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /TONE OF THIS CHAT/);
+  assert.match(text, /Mnhh~/);
+  assert.match(text, /"em"/);
+  assert.match(text, /No swearing/);
+});

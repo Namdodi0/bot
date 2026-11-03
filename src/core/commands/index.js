@@ -418,7 +418,7 @@ export function createCommands(deps) {
         if (!value) {
           return {
             kind: 'text',
-            text: `Tone for this chat: **${ctx.record.meta.tone ?? config.tone}** (global config: ${config.tone}).\nUse \`/tone roast\` (snarky, playful roasting) or \`/tone friendly\` (polite); \`/tone default\` to follow the config.`,
+            text: `Tone for this chat: **${ctx.record.meta.tone ?? config.tone}** (global config: ${config.tone}).\nUse \`/tone roast\` (snarky, playful roasting), \`/tone shy\` (soft, flustered) or \`/tone friendly\` (polite); \`/tone default\` to follow the config.`,
           };
         }
         if (['max', 'extreme', 'cuc', 'c\u1EF1c', 'sieu-nang', 'si\u00EAu n\u1EB7ng', 'g\u1EAFt', 'gat'].includes(value)) {
@@ -440,6 +440,11 @@ export function createCommands(deps) {
           ctx.record.meta.tone = 'friendly';
           markTone('Ok, from now on I talk politely and drop the roasting completely.');
           return { kind: 'text', text: 'Back to the polite tone for this chat.' };
+        }
+        if (['shy', 'cute', 'timid', 'ngai', 'ng\u1EA1i'].includes(value)) {
+          ctx.record.meta.tone = 'shy';
+          markTone('Um... okay... from now on I will speak softly and get a little shy... please be gentle with me...');
+          return { kind: 'text', text: '**Shy** tone enabled for this chat 🌸 (soft, flustered, no swearing).' };
         }
         if (['default', 'auto', 'reset'].includes(value)) {
           ctx.record.meta.tone = null;

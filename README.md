@@ -199,7 +199,7 @@ Important settings:
 | `context.maxTokens` / `maxMessages` | `0` = unlimited; compaction then runs on provider overflow. |
 | `context.ttlHours` | `0` = keep context forever. |
 | `search.enabled` / `search.auto` | Tavily on/off; `auto:false` disables model-initiated search. |
-| `tone` | `friendly`, `roast`, `roast-hard`, `roast-extreme`. |
+| `tone` | `friendly`, `shy`, `roast`, `roast-hard`, `roast-extreme`. |
 | `typing` | Typing indicator for message chat. |
 | `logLevel` / `logFormat` / `logColor` | Pretty or JSON logs, with secret redaction. |
 

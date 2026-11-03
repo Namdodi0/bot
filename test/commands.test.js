@@ -113,6 +113,16 @@ test('/status on Discord reports the gateway transport', async () => {
   assert.doesNotMatch(result.text, /zalo:/);
 });
 
+test('/tone shy switches the chat to the shy persona', async () => {
+  const d = deps();
+  const commands = createCommands(d);
+  const context = ctx(d);
+  const result = await commands.run({ name: 'tone', args: 'shy' }, context);
+  assert.equal(context.record.meta.tone, 'shy');
+  assert.match(result.text, /Shy/);
+  assert.match(context.record.messages.at(-1).text, /shy/);
+});
+
 test('/compact runs compaction and reports the result', async () => {
   const d = deps();
   d.compaction = {
