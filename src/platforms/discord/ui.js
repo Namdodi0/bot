@@ -11,6 +11,41 @@ import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
 
 export const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
+export const PREVIEW_INTERVAL_MS = 1000;
+
+/**
+ * Serialized, throttled message preview. A failed edit disables previews for the rest of
+ * the turn; the final answer still replaces the message.
+ * @param {(text: string) => Promise<unknown>} edit
+ * @param {number} [intervalMs]
+ */
+export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
+  let chain = Promise.resolve();
+  let disabled = false;
+  let lastAt = 0;
+  return {
+    /** @param {string} text */
+    push(text) {
+      if (disabled) return;
+      const now = Date.now();
+      if (lastAt && now - lastAt < intervalMs) return;
+      const previewText = streamPreview(text);
+      if (!previewText) return;
+      lastAt = now;
+      chain = chain
+        .then(async () => {
+          if (disabled) return;
+          await edit(previewText);
+        })
+        .catch(() => {
+          disabled = true;
+        });
+    },
+    async flush() {
+      await chain;
+    },
+  };
+}
 
 /** @param {string} text @param {number} [limit] */
 export function chunkContent(text, limit = 2000) {

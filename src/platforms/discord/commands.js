@@ -10,6 +10,7 @@ import {
   catchupEmbed,
   chunkContent,
   COLORS,
+  createPreviewer,
   errorEmbed,
   helpEmbed,
   modelSelect,
@@ -18,13 +19,11 @@ import {
   settingsEmbed,
   settingsRows,
   statusEmbed,
-  streamPreview,
   textEmbed,
   TONES,
 } from './ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
-const PREVIEW_INTERVAL_MS = 1000;
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
 const CATCHUP_MAX_MESSAGES = 500;
 const CATCHUP_PAGE_SIZE = 100;
@@ -96,40 +95,6 @@ export function createCommandRuntime(deps) {
   /** @param {any} interaction @param {string} text */
   function askEvent(interaction, text, extra = {}) {
     return eventFromInteraction(interaction, client, text, extra);
-  }
-
-  /**
-   * Serialized, throttled message preview. A failed edit disables previews for the rest of
-   * the turn; the final answer still replaces the message.
-   * @param {(text: string) => Promise<unknown>} edit
-   * @param {number} [intervalMs]
-   */
-  function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
-    let chain = Promise.resolve();
-    let disabled = false;
-    let lastAt = 0;
-    return {
-      /** @param {string} text */
-      push(text) {
-        if (disabled) return;
-        const now = Date.now();
-        if (lastAt && now - lastAt < intervalMs) return;
-        const previewText = streamPreview(text);
-        if (!previewText) return;
-        lastAt = now;
-        chain = chain
-          .then(async () => {
-            if (disabled) return;
-            await edit(previewText);
-          })
-          .catch(() => {
-            disabled = true;
-          });
-      },
-      async flush() {
-        await chain;
-      },
-    };
   }
 
   /**
@@ -335,6 +300,7 @@ export function createCommandRuntime(deps) {
     async catchup(interaction) {
       await interaction.deferReply(ephemeral);
       const hours = interaction.options.getInteger('hours') ?? 24;
+      const chatId = String(interaction.channelId);
       const channel = /** @type {any} */ (interaction.channel);
       if (!channel?.messages?.fetch) {
         await interaction.editReply({ content: 'I cannot read messages in this channel.' });
@@ -396,7 +362,16 @@ export function createCommandRuntime(deps) {
         .map((item) => `${item.name}: ${item.text}`)
         .join('\n')
         .slice(0, CATCHUP_MAX_TRANSCRIPT);
-      const summary = await chat.summarizeText(transcript);
+      let streamed = '';
+      const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+      const summary = await chat.summarizeText(transcript, {
+        record: await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE'),
+        onDelta: (delta) => {
+          streamed += delta;
+          previewer.push(streamed);
+        },
+      });
+      await previewer.flush();
       if (!summary.ok) {
         await interaction.editReply({ content: 'I could not summarize those messages right now.' });
         return;
@@ -497,7 +472,21 @@ export function createCommandRuntime(deps) {
       await interaction.deferReply(ephemeral);
       const count = interaction.options.getInteger('count') ?? 30;
       const chatId = String(interaction.channelId);
-      const result = await chat.summarize(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE', count);
+      let streamed = '';
+      const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+      const result = await chat.summarize(
+        chatId,
+        interaction.guildId ? 'GROUP' : 'PRIVATE',
+        count,
+        null,
+        {
+          onDelta: (delta) => {
+            streamed += delta;
+            previewer.push(streamed);
+          },
+        },
+      );
+      await previewer.flush();
       if (!result.ok) {
         await interaction.editReply({
           content:
@@ -607,11 +596,19 @@ export function createCommandRuntime(deps) {
       return;
     }
     await interaction.deferReply(ephemeral);
-    const result = await runtime.agent.collect(askEvent(interaction, `${prefix}\n\n${content}`), {
+    const prompt = `${prefix}\n\n${content}`;
+    let streamed = '';
+    const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+    const result = await runtime.agent.stream(askEvent(interaction, prompt), {
       skipCommands: true,
+      onDelta: (delta) => {
+        streamed += delta;
+        previewer.push(streamed);
+      },
     });
+    await previewer.flush();
     const token = makeToken({
-      prompt: `${prefix}\n\n${content}`,
+      prompt,
       chatId: String(interaction.channelId),
       chatType: interaction.guildId ? 'GROUP' : 'PRIVATE',
       userId: interaction.user.id,
@@ -721,28 +718,44 @@ export function createCommandRuntime(deps) {
       return;
     }
     const prompt = action === 'continue' ? 'Continue from where you left off.' : payload.prompt;
-    await interaction.deferUpdate();
+    const regenerating = action === 'regen';
+    if (regenerating) await interaction.deferUpdate();
+    else await interaction.deferReply(privateReply(payload.ephemeral));
+
+    let streamed = '';
+    const edit = regenerating
+      ? (text) => interaction.message.edit({ content: text })
+      : (text) => interaction.editReply({ content: text });
+    const previewer = createPreviewer(edit);
     const event = eventFromInteraction(interaction, client, prompt, {
       chatId: payload.chatId,
       chatType: payload.chatType,
       messageId: `interaction:${crypto.randomUUID()}`,
     });
-    const result = await runtime.agent.collect(event, { skipCommands: true });
+    const result = await runtime.agent.stream(event, {
+      skipCommands: true,
+      onDelta: (delta) => {
+        streamed += delta;
+        previewer.push(streamed);
+      },
+    });
+    await previewer.flush();
     const newToken = makeToken({ ...payload });
     const chunks = chunkContent(result.text || 'No answer.');
-    if (action === 'regen') {
+    const followFlags = privateReply(payload.ephemeral);
+    if (regenerating) {
       await interaction.message.edit({ content: chunks[0], components: answerButtons(newToken) });
-      for (const chunk of chunks.slice(1)) await interaction.followUp({ content: chunk, ...privateReply(payload.ephemeral) });
+      for (const chunk of chunks.slice(1)) await interaction.followUp({ content: chunk, ...followFlags });
     } else {
-      await interaction.followUp({ content: chunks[0], components: answerButtons(newToken), ...privateReply(payload.ephemeral) });
-      for (const chunk of chunks.slice(1)) await interaction.followUp({ content: chunk, ...privateReply(payload.ephemeral) });
+      await interaction.editReply({ content: chunks[0], components: answerButtons(newToken) });
+      for (const chunk of chunks.slice(1)) await interaction.followUp({ content: chunk, ...followFlags });
     }
     for (let index = 0; index < result.photos.length; index += 10) {
       const group = result.photos.slice(index, index + 10);
       await interaction.followUp({
         files: group.map(photoAttachment),
         content: group[0].caption?.slice(0, 2000) || undefined,
-        ...privateReply(payload.ephemeral),
+        ...followFlags,
       });
     }
   }

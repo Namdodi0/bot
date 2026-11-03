@@ -2,6 +2,7 @@ import { MessageFlags } from 'discord.js';
 import { createCommandRuntime } from './commands.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
 import { COMMANDS } from './specs.js';
+import { chunkContent, createPreviewer, photoAttachment } from './ui.js';
 
 /**
  * Discord bot runtime: gateway events, admission, command registration and interaction
@@ -16,6 +17,25 @@ export function createDiscordBot(deps) {
   const client = transport.client;
 
   const commands = createCommandRuntime({ config, logger, metrics, platform, runtime });
+
+  const MAX_STREAMING_CHATS = 4;
+  let activeStreams = 0;
+  /** @type {Array<() => void>} */
+  const streamWaiters = [];
+
+  async function acquireStreamSlot() {
+    if (activeStreams < MAX_STREAMING_CHATS) {
+      activeStreams += 1;
+      return;
+    }
+    await new Promise((resolve) => streamWaiters.push(/** @type {any} */ (resolve)));
+    activeStreams += 1;
+  }
+
+  function releaseStreamSlot() {
+    activeStreams = Math.max(0, activeStreams - 1);
+    streamWaiters.shift()?.();
+  }
 
   /** @param {any} interaction */
   function channelOfInteraction(interaction) {
@@ -62,7 +82,58 @@ export function createDiscordBot(deps) {
       }
     }
     metrics?.inc('discord.messages.in');
-    await runtime.agent.enqueue(event);
+
+    // Ordinary chat streams into one placeholder reply, the same way /ask does.
+    await acquireStreamSlot();
+    const stopTyping = config.typing ? transport.startTyping(event.chatId) : async () => {};
+    /** @type {any} */
+    let placeholder = null;
+    let streamed = '';
+    const previewer = createPreviewer(async (text) => {
+      if (!placeholder) {
+        placeholder = await message.reply({ content: text, allowedMentions: { parse: [] } });
+        await stopTyping();
+        return;
+      }
+      await placeholder.edit({ content: text, allowedMentions: { parse: [] } });
+    });
+
+    try {
+      const result = await runtime.agent.stream(event, {
+        skipCommands: true,
+        onDelta: (delta) => {
+          streamed += delta;
+          previewer.push(streamed);
+        },
+      });
+      await previewer.flush();
+      const chunks = result.text ? chunkContent(result.text) : [];
+      const first = chunks.shift();
+      if (placeholder) {
+        if (!first && !result.photos.length) await placeholder.delete().catch(() => {});
+        else await placeholder.edit({ content: first || 'Here are the images.', allowedMentions: { parse: [] } }).catch(() => {});
+      } else if (first) {
+        placeholder = await message.reply({ content: first, allowedMentions: { parse: [] } });
+      }
+      for (const chunk of chunks) {
+        await message.channel.send({ content: chunk, allowedMentions: { parse: [] } }).catch(() => {});
+      }
+      for (let index = 0; index < result.photos.length; index += 10) {
+        const group = result.photos.slice(index, index + 10);
+        await message.channel
+          .send({
+            files: group.map(photoAttachment),
+            content: group[0].caption?.slice(0, 2000) || undefined,
+            allowedMentions: { parse: [] },
+          })
+          .catch(() => {});
+      }
+    } catch (error) {
+      logger?.error('discord streaming reply failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
+    } finally {
+      await stopTyping();
+      releaseStreamSlot();
+    }
   }
 
   /** @param {any} interaction */

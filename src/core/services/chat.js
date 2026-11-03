@@ -58,14 +58,17 @@ export function createChatServices({ config, store, models, compaction }) {
   /**
    * Summarize an arbitrary transcript through the configured model.
    * @param {string} transcript
+   * @param {{onDelta?: (delta: string) => void, record?: any}} [options]
    * @returns {Promise<{ok: true, text: string}|{ok: false, reason: 'empty'}>}
    */
-  async function summarizeText(transcript) {
+  async function summarizeText(transcript, options = {}) {
     const timeoutMs =
       config.responseTimeoutMs > 0
         ? Math.max(1500, Math.min(SUMMARY_TIMEOUT_MS, config.responseTimeoutMs - 300))
         : 0;
+    const onDelta = options.onDelta;
     const response = await models.chat({
+      ...(options.record ? { record: options.record } : {}),
       messages: [
         { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
         { role: 'user', content: String(transcript ?? '').slice(0, SUMMARY_MAX_TRANSCRIPT) },
@@ -73,7 +76,8 @@ export function createChatServices({ config, store, models, compaction }) {
       reasoning: 'none',
       temperature: 0.3,
       maxTokens: 300,
-      stream: false,
+      stream: typeof onDelta === 'function',
+      ...(onDelta ? { onDelta } : {}),
       timeoutMs,
       ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
@@ -86,9 +90,10 @@ export function createChatServices({ config, store, models, compaction }) {
    * @param {string} [chatType]
    * @param {number} [count]
    * @param {any} [record]
+   * @param {{onDelta?: (delta: string) => void}} [options]
    * @returns {Promise<{ok: true, count: number, text: string}|{ok: false, reason: 'not-enough'|'empty'}>}
    */
-  async function summarize(chatId, chatType = 'GROUP', count = SUMMARY_DEFAULT_COUNT, record = null) {
+  async function summarize(chatId, chatType = 'GROUP', count = SUMMARY_DEFAULT_COUNT, record = null, options = {}) {
     const target = record ?? (await getRecord(chatId, chatType));
     const limit = Number.isInteger(count) ? Math.min(SUMMARY_MAX_COUNT, Math.max(2, count)) : SUMMARY_DEFAULT_COUNT;
     const history = (target.messages ?? [])
@@ -100,7 +105,7 @@ export function createChatServices({ config, store, models, compaction }) {
       .map((message) => `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${String(message.text).trim()}`)
       .join('\n')
       .slice(0, SUMMARY_MAX_TRANSCRIPT);
-    const result = await summarizeText(transcript);
+    const result = await summarizeText(transcript, { record: target, ...options });
     if (!result.ok) return { ok: false, reason: /** @type {any} */ (result).reason };
     return { ok: true, count: history.length, text: result.text };
   }

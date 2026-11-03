@@ -311,3 +311,53 @@ test('buttons reject another user', async () => {
   await commands.handleButton(other);
   assert.match(other.replies[0].content, /not your conversation/);
 });
+
+test('regenerate streams into the existing message', async () => {
+  const { commands, runtime } = makeCommands();
+  const first = interaction('ask', { prompt: 'hello' });
+  await commands.handleCommand(first);
+  const customId = first.edits[first.edits.length - 1].components[0].components[0].data.custom_id;
+
+  /** @type {string[]} */
+  const edits = [];
+  const message = { edit: async (payload) => edits.push(payload.content) };
+  const button = interaction(
+    '',
+    {},
+    {
+      customId,
+      message,
+      deferUpdate: async () => {
+        button.deferred = true;
+      },
+    },
+  );
+  runtime.agent.stream = async (_event, { onDelta }) => {
+    onDelta('streamed ');
+    return { text: 'final answer', photos: [] };
+  };
+  await commands.handleButton(button);
+  assert.ok(edits.some((text) => text.includes('streamed')));
+  assert.equal(edits.at(-1), 'final answer');
+});
+
+test('context menus stream into the ephemeral reply', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.agent.stream = async (_event, { onDelta }) => {
+    onDelta('explaining ');
+    return { text: 'final explanation', photos: [] };
+  };
+  const i = interaction(
+    'Explain message',
+    {},
+    {
+      isChatInputCommand: () => false,
+      isMessageContextMenuCommand: () => true,
+      targetMessage: { content: 'hello there' },
+    },
+  );
+  await commands.handleCommand(i);
+  assert.equal(i.deferred, true);
+  assert.ok(i.edits.some((payload) => String(payload.content).includes('explaining')));
+  assert.equal(i.edits.at(-1).content, 'final explanation');
+});
