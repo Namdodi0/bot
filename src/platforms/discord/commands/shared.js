@@ -2,17 +2,17 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { answerButtons, chunkContent, errorEmbed, photoAttachment, settingsEmbed, settingsRows } from '../ui.js';
+import { answerButtons, chunkContent, errorEmbed, photoAttachment } from '../ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
 
 /**
  * State and helpers shared by the native Discord command modules: the chat/reminder
  * services, the answer-button token store, ephemeral/admin plumbing and the send helpers.
- * @param {{config: any, logger: any, metrics: any, platform: import('../../contract.js').Platform, runtime: any}} deps
+ * @param {{config: any, logger: any, platform: import('../../contract.js').Platform, runtime: any}} deps
  */
 export function createShared(deps) {
-  const { config, logger, metrics, platform, runtime } = deps;
+  const { config, logger, platform, runtime } = deps;
   const client = platform.transport.client;
   const chat = runtime.chatServices ?? createChatServices({
     config,
@@ -69,13 +69,22 @@ export function createShared(deps) {
     return config.responseTimeoutMs > 0 ? Date.now() + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
   }
 
-  /** @param {any} record */
-  function settingsPayload(record) {
-    const current = chat.currentModel(record);
-    return {
-      embeds: [settingsEmbed(record, config, current)],
-      components: settingsRows(chat.listModels(), record, current),
-    };
+  /**
+   * Split an agent result into chunks and a first message, including the empty-answer text.
+   * @param {{text: string, photos: any[]}} result
+   */
+  function splitAnswer(result) {
+    const chunks = result.text ? chunkContent(result.text) : [];
+    const first = chunks.shift() ?? (result.photos.length ? 'Here are the images.' : 'I do not have an answer for that yet.');
+    return { chunks, first };
+  }
+
+  /** @param {any[]} photos */
+  function photoBatches(photos) {
+    /** @type {any[][]} */
+    const batches = [];
+    for (let index = 0; index < photos.length; index += 10) batches.push(photos.slice(index, index + 10));
+    return batches;
   }
 
   /**
@@ -85,8 +94,7 @@ export function createShared(deps) {
    * @param {boolean} priv
    */
   async function sendInteractionAnswer(interaction, result, token, priv) {
-    const chunks = result.text ? chunkContent(result.text) : [];
-    const first = chunks.shift() ?? (result.photos.length ? 'Here are the images.' : 'I do not have an answer for that yet.');
+    const { chunks, first } = splitAnswer(result);
     await interaction.editReply({ content: first, components: answerButtons(token) });
     for (const chunk of chunks) {
       await interaction.followUp({ content: chunk, ...privateReply(priv) });
@@ -96,8 +104,7 @@ export function createShared(deps) {
 
   /** @param {any} interaction @param {any[]} photos @param {boolean} priv */
   async function sendPhotos(interaction, photos, priv) {
-    for (let index = 0; index < photos.length; index += 10) {
-      const group = photos.slice(index, index + 10);
+    for (const group of photoBatches(photos)) {
       await interaction.followUp({
         files: group.map(photoAttachment),
         content: group[0].caption?.slice(0, 2000) || undefined,
@@ -113,14 +120,12 @@ export function createShared(deps) {
    * @param {any} [existing] a preview message to edit instead of sending the first chunk
    */
   async function sendChannelAnswer(channel, result, token, existing = null) {
-    const chunks = result.text ? chunkContent(result.text) : [];
-    const first = chunks.shift() ?? (result.photos.length ? 'Here are the images.' : 'I do not have an answer for that yet.');
+    const { chunks, first } = splitAnswer(result);
     const payload = { content: first, components: answerButtons(token) };
     if (existing?.edit) await existing.edit(payload);
     else await channel.send(payload);
     for (const chunk of chunks) await channel.send({ content: chunk });
-    for (let index = 0; index < result.photos.length; index += 10) {
-      const group = result.photos.slice(index, index + 10);
+    for (const group of photoBatches(result.photos)) {
       await channel.send({
         files: group.map(photoAttachment),
         content: group[0].caption?.slice(0, 2000) || undefined,
@@ -131,7 +136,6 @@ export function createShared(deps) {
   return {
     config,
     logger,
-    metrics,
     platform,
     runtime,
     client,
@@ -144,8 +148,6 @@ export function createShared(deps) {
     isAdmin,
     replyEphemeral,
     reportError,
-    deadline,
-    settingsPayload,
     sendInteractionAnswer,
     sendPhotos,
     sendChannelAnswer,

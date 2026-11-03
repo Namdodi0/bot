@@ -1,12 +1,21 @@
 import { EmbedBuilder, MessageFlags } from 'discord.js';
-import { COLORS, errorEmbed, modelSelect, textEmbed, TONES } from '../ui.js';
+import { COLORS, errorEmbed, modelSelect, settingsEmbed, settingsRows, textEmbed, TONES } from '../ui.js';
 
 /**
  * `/settings` and `/model`, plus the select menus and autocomplete that back them.
  * @param {ReturnType<typeof import('./shared.js').createShared>} shared
  */
 export function createSettingsHandlers(shared) {
-  const { runtime, chat, isAdmin, replyEphemeral, settingsPayload } = shared;
+  const { config, runtime, chat, isAdmin, replyEphemeral } = shared;
+
+  /** @param {any} record */
+  function settingsPayload(record) {
+    const current = chat.currentModel(record);
+    return {
+      embeds: [settingsEmbed(record, config, current)],
+      components: settingsRows(chat.listModels(), record, current),
+    };
+  }
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
   const handlers = {

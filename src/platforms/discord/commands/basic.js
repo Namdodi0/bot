@@ -18,9 +18,12 @@ export function createBasicHandlers(shared) {
     privateReply,
     isAdmin,
     replyEphemeral,
-    deadline,
     sendPhotos,
   } = shared;
+
+  function deadline() {
+    return config.responseTimeoutMs > 0 ? Date.now() + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
+  }
 
   /**
    * Run the image tool with a capture sink so the command can render the attachments itself.
