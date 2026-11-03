@@ -18,13 +18,14 @@ function safeEqual(a, b) {
 
 /**
  * Webhook server built on node:http (no framework dependency).
- * @param {{config: any, logger: import('../../core/logger.js').Logger, metrics?: any, onEvent: (event: import('./events.js').BotEvent) => void}} options
+ * @param {{config: any, logger: import('../../core/logger.js').Logger, metrics?: any, onEvent: (event: import('./events.js').BotEvent) => void, onFatal?: (error: Error) => void}} options
  */
 export function createWebhookServer(options) {
   const config = options.config;
   const logger = options.logger;
   const metrics = options.metrics;
   const onEvent = options.onEvent;
+  const onFatal = options.onFatal;
   const path = config.webhook.path;
 
   /** @type {http.Server|null} */
@@ -127,22 +128,37 @@ export function createWebhookServer(options) {
    * @returns {Promise<{port: number, url: string}>}
    */
   async function start() {
-    server = http.createServer((req, res) => {
+    const current = http.createServer((req, res) => {
       handle(req, res).catch((error) => {
         logger.error('webhook handler crashed', { error });
         if (!res.headersSent) res.writeHead(500);
         res.end();
       });
     });
-    server.keepAliveTimeout = 65_000;
-    server.headersTimeout = 70_000;
+    server = current;
+    current.keepAliveTimeout = 65_000;
+    current.headersTimeout = 70_000;
 
     await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(config.webhook.port, config.webhook.host || '127.0.0.1', () => resolve(undefined));
+      /** @param {Error} error */
+      const onStartupError = (error) => reject(error);
+      current.once('error', onStartupError);
+      current.listen(config.webhook.port, config.webhook.host || '127.0.0.1', () => {
+        // Keep only the runtime handler: a leftover once() listener would swallow the
+        // first error after startup.
+        current.off('error', onStartupError);
+        resolve(undefined);
+      });
     });
 
-    const address = server.address();
+    current.on('error', (error) => {
+      logger.error('webhook server error', { error });
+      // The port is no longer trustworthy: end the webhook loop so the process shuts down
+      // instead of running forever with no message intake.
+      onFatal?.(error);
+    });
+
+    const address = current.address();
     const port = typeof address === 'object' && address ? address.port : config.webhook.port;
     return { port, url: `http://${config.webhook.host || '127.0.0.1'}:${port}${path}` };
   }

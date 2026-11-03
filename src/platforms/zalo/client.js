@@ -1,3 +1,5 @@
+import { prepareOutgoing } from './format.js';
+
 export class ZaloApiError extends Error {
   /**
    * @param {string} method
@@ -144,7 +146,10 @@ export function createZaloClient(options) {
   async function sendPhoto(chatId, photoUrl, caption = '') {
     /** @type {Record<string, unknown>} */
     const payload = { chat_id: chatId, photo: photoUrl };
-    if (caption) payload.caption = caption.slice(0, 1900);
+    // Captions go through the same markdown sanitizing as text, and are cut by code point
+    // so an emoji is never split into two lone surrogates.
+    const formatted = caption ? prepareOutgoing(caption, { parseMode }) : '';
+    if (formatted) payload.caption = Array.from(formatted).slice(0, 1900).join('');
     if (mutating('sendPhoto', payload)) {
       metrics?.inc('zalo.send.dryRun');
       return { ok: true, dryRun: true };

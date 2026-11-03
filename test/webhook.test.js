@@ -123,3 +123,52 @@ test('webhook rejects everything when the configured secret is empty', async () 
     await server.stop();
   }
 });
+
+test('webhook logs runtime server errors instead of swallowing them', async () => {
+  const config = makeConfig();
+  config.webhook = { ...config.webhook, host: '127.0.0.1', port: 0 };
+  /** @type {any[]} */
+  const errors = [];
+  const logger = {
+    ...silentLogger,
+    error: (/** @type {string} */ message, /** @type {any} */ meta) => errors.push({ message, meta }),
+  };
+  const fatal = [];
+  const server = createWebhookServer({
+    config,
+    logger,
+    metrics: createMetrics(),
+    onEvent: () => {},
+    onFatal: (error) => fatal.push(error),
+  });
+  await server.start();
+  try {
+    const error = new Error('boom');
+    assert.doesNotThrow(() => server.server?.emit('error', error));
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].message, 'webhook server error');
+    assert.equal(errors[0].meta.error, error);
+    assert.deepEqual(fatal, [error]);
+
+    // a second error is handled as well (no once() listener was left behind)
+    server.server?.emit('error', new Error('boom again'));
+    assert.equal(errors.length, 2);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('webhook start() still rejects when the port is taken', async () => {
+  const blocker = http.createServer();
+  await new Promise((resolve) => blocker.listen(0, '127.0.0.1', () => resolve(undefined)));
+  const address = /** @type {import('node:net').AddressInfo} */ (blocker.address());
+  const config = makeConfig();
+  config.webhook = { ...config.webhook, host: '127.0.0.1', port: address.port };
+  const server = createWebhookServer({ config, logger: silentLogger, metrics: createMetrics(), onEvent: () => {} });
+  try {
+    await assert.rejects(() => server.start(), /EADDRINUSE/);
+  } finally {
+    await server.stop();
+    await new Promise((resolve) => blocker.close(() => resolve(undefined)));
+  }
+});

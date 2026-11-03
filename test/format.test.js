@@ -58,6 +58,27 @@ test('sanitizeZaloMarkdown converts links and tables', () => {
   assert.equal(sanitizeZaloMarkdown('**bold** and `code`'), '**bold** and `code`');
 });
 
+test('sanitizeZaloMarkdown leaves prose with pipes untouched', () => {
+  assert.equal(sanitizeZaloMarkdown('if (a || b) return;'), 'if (a || b) return;');
+  assert.equal(sanitizeZaloMarkdown('a | b | c'), 'a | b | c');
+  assert.equal(sanitizeZaloMarkdown('left || right\nnext line | here'), 'left || right\nnext line | here');
+});
+
+test('sanitizeZaloMarkdown leaves fenced code with pipes untouched', () => {
+  const code = '```js\nconst t = "| a | b |";\n// | --- | --- |\n| 1 | 2 |\n```';
+  assert.equal(sanitizeZaloMarkdown(code), code);
+  const tilde = '~~~\n| a | b |\n| --- | --- |\n~~~';
+  assert.equal(sanitizeZaloMarkdown(tilde), tilde);
+});
+
+test('sanitizeZaloMarkdown converts table rows around a separator and drops it', () => {
+  const table = 'Intro\n\n| Name | Value |\n| --- | --- |\n| a | 1 |\n| b | 2 |\n\nOutro';
+  assert.equal(sanitizeZaloMarkdown(table), 'Intro\n\nName · Value\na · 1\nb · 2\n\nOutro');
+  // a lone separator row is not a table: the horizontal rule stays a divider
+  assert.equal(sanitizeZaloMarkdown('before\n---\nafter'), 'before\n———\nafter');
+  assert.equal(sanitizeZaloMarkdown('| a | b |\nnot a row\n| --- | --- |'), '| a | b |\nnot a row');
+});
+
 test('prepareOutgoing applies parseMode', () => {
   assert.equal(prepareOutgoing('[x](https://a.com) 😊', { parseMode: 'markdown' }), 'x (https://a.com) 😊');
   assert.equal(prepareOutgoing('[x](https://a.com)', { parseMode: 'none' }), '[x](https://a.com)');

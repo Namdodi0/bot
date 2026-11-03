@@ -46,6 +46,26 @@ export function resolveWebhookSecret(dataDir, mode, configured) {
   return generated;
 }
 
+/**
+ * The webhook path is matched verbatim against the request URL: a missing leading slash or
+ * a trailing slash makes every delivery 404 while startup still looks healthy.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function resolveWebhookPath(value) {
+  const pathValue = asString(value, 'config.webhook.path', '/zalo/webhook');
+  if (!pathValue || !pathValue.startsWith('/')) {
+    throw new ConfigError(`config.webhook.path must be a non-empty path starting with "/" (got: "${pathValue}")`);
+  }
+  if (pathValue.length > 1 && pathValue.endsWith('/')) {
+    throw new ConfigError(`config.webhook.path must not end with "/" (got: "${pathValue}")`);
+  }
+  if (/\s/.test(pathValue)) {
+    throw new ConfigError(`config.webhook.path must not contain whitespace (got: "${pathValue}")`);
+  }
+  return pathValue;
+}
+
 /** @param {Record<string, any>} root @param {string} [dataDir] */
 function resolveDataDir(root, dataDir) {
   if (dataDir) return dataDir;
@@ -72,6 +92,8 @@ export function parseZaloConfig(input) {
   }
 
   const resolvedDataDir = resolveDataDir(root, dataDir);
+  // Validate before resolving the secret: an invalid path must not leave a secret file behind.
+  const webhookPath = resolveWebhookPath(webhookSection.path);
   const webhookSecret = resolveWebhookSecret(
     resolvedDataDir,
     mode,
@@ -93,7 +115,7 @@ export function parseZaloConfig(input) {
     webhook: {
       port: /** @type {number} */ (asInt(webhookSection.port, 'config.webhook.port', 8787, { min: 1, max: 65535 })),
       host: asString(webhookSection.host, 'config.webhook.host', '127.0.0.1'),
-      path: asString(webhookSection.path, 'config.webhook.path', '/zalo/webhook'),
+      path: webhookPath,
       secret: webhookSecret,
       publicUrl: asString(webhookSection.publicUrl, 'config.webhook.publicUrl'),
     },

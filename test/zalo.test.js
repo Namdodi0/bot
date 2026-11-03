@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ConfigError } from '../src/core/config-helpers.js';
 import { createHttp } from '../src/core/http.js';
 import { createZaloClient, ZaloApiError } from '../src/platforms/zalo/client.js';
+import { parseZaloConfig } from '../src/platforms/zalo/config.js';
+import { createZaloPlatform } from '../src/platforms/zalo/index.js';
 import { createMetrics } from '../src/core/metrics.js';
-import { silentLogger } from '../test-utils/helpers.js';
+import { makeConfig, silentLogger } from '../test-utils/helpers.js';
 
 /**
  * @param {(url: string, opts: any) => any} handler
@@ -74,6 +77,49 @@ test('sendPhoto sends photo + caption', async () => {
   }));
   await zalo.sendPhoto('chat-1', 'https://x/a.png', 'cat photo');
   assert.deepEqual(http.calls[0].payload, { chat_id: 'chat-1', photo: 'https://x/a.png', caption: 'cat photo' });
+});
+
+test('sendPhoto formats the caption and truncates by code points', async () => {
+  const { zalo, http } = client(() => ({
+    status: 200,
+    data: { ok: true, result: {} },
+    latencyMs: 1,
+    headers: new Headers(),
+  }));
+  await zalo.sendPhoto('chat-1', 'https://x/a.png', 'see [here](https://a.com)');
+  assert.equal(http.calls[0].payload.caption, 'see here (https://a.com)');
+
+  await zalo.sendPhoto('chat-1', 'https://x/a.png', '😀'.repeat(2000));
+  const caption = /** @type {string} */ (http.calls[1].payload.caption);
+  assert.equal(Array.from(caption).length, 1900);
+  assert.doesNotMatch(caption, /[\uD800-\uDBFF]$/, 'must not end on a lone high surrogate');
+});
+
+test('config.webhook.path must be a root-relative path without a trailing slash', () => {
+  /** @param {string} webhookPath */
+  const parse = (webhookPath) => {
+    const root = makeConfig();
+    root.webhook = { ...root.webhook, path: webhookPath };
+    return parseZaloConfig({ root, env: {} });
+  };
+
+  assert.equal(parse('/zalo/hook').webhook.path, '/zalo/hook');
+  assert.equal(parse('/').webhook.path, '/');
+  for (const bad of ['zalo/webhook', '/zalo/webhook/', '', '/zalo webhook']) {
+    assert.throws(() => parse(bad), ConfigError, `expected ConfigError for ${JSON.stringify(bad)}`);
+  }
+});
+
+test('explainError surfaces auth failures reported in a 200 body', async () => {
+  const config = makeConfig();
+  config.sticker = { ...config.sticker, enabled: false };
+  const platform = await createZaloPlatform({
+    config,
+    boot: { logger: silentLogger, metrics: createMetrics(), http: createHttp({ logger: silentLogger }) },
+  });
+  const message = platform.explainError(new ZaloApiError('sendMessage', { status: 200, code: 401 }));
+  assert.match(String(message), /ZALO_BOT_TOKEN/);
+  assert.equal(platform.explainError(new ZaloApiError('sendMessage', { status: 500, code: 0 })), null);
 });
 
 test('dry-run does not call the send API', async () => {

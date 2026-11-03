@@ -73,7 +73,7 @@ export async function createZaloPlatform(input) {
     },
     healthServices: ['zalo', 'tavily'],
     explainError: (/** @type {any} */ error) =>
-      error instanceof ZaloApiError && error.status === 401
+      error instanceof ZaloApiError && (error.status === 401 || error.code === 401)
         ? 'Zalo rejected the bot token. Admin, please check ZALO_BOT_TOKEN.'
         : null,
     /**
@@ -122,7 +122,18 @@ export async function createZaloPlatform(input) {
         });
 
       if (config.mode === 'webhook') {
-        webhookServer = createWebhookServer({ config, logger, metrics, onEvent: dispatch });
+        /** @type {() => void} */
+        let resolveFatal = () => {};
+        const fatal = new Promise((resolve) => {
+          resolveFatal = () => resolve(undefined);
+        });
+        webhookServer = createWebhookServer({
+          config,
+          logger,
+          metrics,
+          onEvent: dispatch,
+          onFatal: () => resolveFatal(),
+        });
         const { port, url } = await webhookServer.start();
         logger.info('webhook server listening', { port, path: config.webhook.path, icon: '🌐' });
 
@@ -139,7 +150,7 @@ export async function createZaloPlatform(input) {
             icon: '🔗',
           });
         }
-        return { ready: { me, mode: 'webhook' }, done: aborted() };
+        return { ready: { me, mode: 'webhook' }, done: Promise.race([aborted(), fatal]) };
       }
 
       const once = startInput.once ?? config.once;
