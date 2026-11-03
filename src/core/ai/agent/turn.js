@@ -1,30 +1,25 @@
 import { assembleRequest } from '../../context/assembler.js';
-import {
-  searchEntry,
-  syncContexts,
-  toolCallEntry,
-  toolResultEntry,
-  turnEntry,
-} from '../../context/record.js';
+import { searchEntry, syncContexts, turnEntry } from '../../context/record.js';
 import { normalizeWhitespace, truncate } from '../../text/format.js';
 import { LLM_ERROR } from '../llm/errors.js';
 import { buildSearchContext, createPrompt } from '../prompt/index.js';
 import { pickStyleSeed } from '../prompt/sections.js';
 import {
   DEFAULT_MAX_TOOL_ROUNDS,
-  FALLBACK_MIN_MS,
   SLOW_CALL_WARN_MS,
   TOOL_ROUND_WARN,
   effectiveReasoning,
   fallbackMessages,
   findBreak,
   planAttemptBudget,
-  preview,
   providerTimeout,
   samplingFor,
-  sleep,
   timeoutSignal,
 } from './helpers.js';
+import { attemptFallback } from './turn/fallback.js';
+import { forceFinalAnswer } from './turn/final.js';
+import { reportTurn } from './turn/report.js';
+import { runToolRound } from './turn/tools.js';
 
 /**
  * @param {{config: any, logger: import('../../logger.js').Logger, metrics: any, platform: import('../../../platforms/contract.js').Platform, llm: ReturnType<typeof import('../router.js').createModelRouter>, tools: ReturnType<typeof import('../tools.js').createToolRuntime>, store: ReturnType<typeof import('../../context/store.js').createContextStore>, compaction: ReturnType<typeof import('../../context/compaction/engine.js').createCompactionEngine>, makeSender: ReturnType<typeof import('./sending.js').createSenderFactory>['makeSender'], sendText: ReturnType<typeof import('./sending.js').createSenderFactory>['sendText'], meter: ReturnType<typeof import('../../context/token-meter.js').createTokenMeter>, retryExecutor: ReturnType<typeof import('../llm/retry.js').createRetryExecutor>}} deps
@@ -38,13 +33,21 @@ export function createTurnRunner(deps) {
    * @param {any} record
    * @param {{forceSearch?: string}} [options]
    * @param {() => Promise<void>|void} [stopTyping]
+   * @param {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number, sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>}} [sink]
    */
-  async function run(event, record, options = {}, stopTyping = async () => {}) {
+  async function run(event, record, options = {}, stopTyping = async () => {}, sink = null) {
     const startedAt = Date.now();
     // config.responseTimeoutMs=0 means no deadline: wait for the model as long as it takes.
     const deadline =
       config.responseTimeoutMs > 0 ? startedAt + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
-    const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
+    const sender = sink ?? makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
+    const responseSink = sink ?? {
+      enqueue: (/** @type {string} */ text) => sender.enqueue(text),
+      wait: () => sender.wait(),
+      sent: () => sender.sent(),
+      sendPhoto: (/** @type {string} */ url, /** @type {string} */ caption, /** @type {any} */ asset) =>
+        platform.transport.sendPhoto(event.chatId, url, caption, asset),
+    };
 
     const rawText = normalizeWhitespace(event.text ?? '');
     // The model is text-only: images are only noted, image content is not sent to the API.
@@ -207,7 +210,7 @@ export function createTurnRunner(deps) {
       streamBuffer = streamBuffer.slice(cut);
       flushed = true;
       emitted = rawHead.length;
-      sendText(sender, head).catch((error) => {
+      sendText(responseSink, head).catch((error) => {
         logger.warn('progressive send failed', { error: String(error?.message ?? error), icon: '✂️' });
       });
     };
@@ -348,60 +351,13 @@ export function createTurnRunner(deps) {
       // Last-resort fallback with a DIFFERENT model: drop tools so we still get an answer.
       // `flushed` = the head was already sent to the user; calling fallback now would duplicate content.
       if (!response && !flushed) {
-        const fallbackAlias = llm.fallbackFor(record);
-        const fallbackEntry = fallbackAlias ? llm.find(fallbackAlias) : null;
-        let left = deadline - Date.now();
-        if (left > 6000) {
-          await sleep(800);
-          left = deadline - Date.now();
-        }
-        if (fallbackAlias && left > FALLBACK_MIN_MS) {
-          const fallbackStarted = Date.now();
-          // Respect the fallback provider's own timeout; 0 = no cap.
-          const providerLimit = providerTimeout(config, fallbackEntry?.provider ?? target.provider);
-          const timeLeft = Number.isFinite(left) ? Math.max(1500, left - 300) : 0;
-          const fallbackTimeout =
-            providerLimit > 0 ? (timeLeft > 0 ? Math.min(providerLimit, timeLeft) : providerLimit) : timeLeft;
-          try {
-            response = await llm.chatWith(fallbackAlias, {
-              messages: noToolsMessages(),
-              reasoning: 'none',
-              maxTokens: config.ai.maxTokens,
-              sampling: samplingFor(config, fallbackEntry?.provider ?? target.provider),
-              stream: false,
-              timeoutMs: fallbackTimeout,
-              signal: timeoutSignal(left),
-            });
-            llmMs += Date.now() - fallbackStarted;
-            answeredBy = {
-              model: fallbackEntry?.model ?? fallbackAlias,
-              alias: fallbackAlias,
-              provider: fallbackEntry?.provider ?? target.provider,
-            };
-            metrics.inc('llm.fallback');
-            logger.warn('llm fallback (no tools) succeeded', {
-              chatId: event.chatId,
-              fallback: fallbackAlias,
-              icon: '🛟',
-            });
-          } catch (error) {
-            llmMs += Date.now() - fallbackStarted;
-            lastError = error;
-            abortReason = String(/** @type {any} */ (error)?.message ?? error);
-          }
-        } else if (!fallbackAlias) {
-          logger.debug('fallback skipped: no other model available', {
-            chatId: event.chatId,
-            model: target.model,
-            icon: '⏭️',
-          });
-        } else {
-          logger.debug('fallback skipped: not enough time', {
-            chatId: event.chatId,
-            leftMs: left,
-            icon: '⏭️',
-          });
-        }
+        const fallback = await attemptFallback({
+          config, logger, metrics, llm, record, target,
+          chatId: event.chatId, noToolsMessages, deadline,
+        });
+        llmMs += fallback.llmMs;
+        if (fallback.response) ({ response, answeredBy } = fallback);
+        else if (fallback.lastError) ({ lastError, abortReason } = fallback);
       }
 
       if (!response) {
@@ -428,52 +384,10 @@ export function createTurnRunner(deps) {
       reasoningTokens += Number(response.usage?.completion_tokens_details?.reasoning_tokens ?? 0) || 0;
 
       if (response.toolCalls?.length) {
-        metrics.inc('llm.toolRounds');
-        messages.push({
-          role: 'assistant',
-          content: response.content || null,
-          tool_calls: response.toolCalls.map((call) => ({
-            id: call.id,
-            type: 'function',
-            function: { name: call.name, arguments: call.rawArguments || JSON.stringify(call.arguments) },
-          })),
+        await runToolRound({
+          logger, metrics, tools, store, chatId: event.chatId, senderId: event.senderId,
+          deadline, sendPhoto: responseSink.sendPhoto, response, messages, record,
         });
-        record.messages.push(
-          toolCallEntry({ content: response.content ?? '', toolCalls: response.toolCalls, ts: Date.now() }),
-        );
-
-        for (const call of response.toolCalls) {
-          const started = Date.now();
-          /** @type {{ok?: boolean, text: string}} */
-          let result;
-          try {
-            result = await tools.run(call.name, call.arguments, {
-              chatId: event.chatId,
-              senderId: event.senderId,
-              deadline,
-            });
-          } catch (error) {
-            // Every tool_call id needs a result, otherwise the stored transcript is
-            // invalid and every later request fails on the provider.
-            const reason = String(/** @type {any} */ (error)?.message ?? error);
-            logger.warn('tool call failed', {
-              chatId: event.chatId,
-              tool: call.name,
-              error: reason,
-              icon: '⚠️',
-            });
-            result = { ok: false, text: `Tool ${call.name} failed: ${reason}` };
-          }
-          metrics.observe(`tool.${call.name}`, Date.now() - started);
-          const text = truncate(result.text, 4000);
-          messages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: text,
-          });
-          record.messages.push(toolResultEntry({ toolCallId: call.id, text, ts: Date.now() }));
-        }
-        store.touch(event.chatId);
         // The head of this round was already sent: send the whole final-round content instead of
         // cutting by the previous round's `emitted` (which may be longer than the final answer).
         streamBuffer = '';
@@ -489,56 +403,18 @@ export function createTurnRunner(deps) {
     }
 
     // All tool rounds used: force one final answer without tools so fetched data is not lost.
-    if (!finalText.trim() && !aborted && messages.some((message) => message.role === 'tool')) {
-      const left = deadline - Date.now();
-      if (!Number.isFinite(left) || left >= 1500) {
-        const budget = planAttemptBudget({
-          remainingMs: left,
-          attempt: 1,
-          maxAttempts: 1,
-          streaming: false,
-          aiTimeoutMs: providerTimeout(config, target.provider),
-        });
-        const started = Date.now();
-        try {
-          const response = await llm.chat({
-            record,
-            messages: [
-              ...noToolsMessages(),
-              { role: 'user', content: 'Answer the user now using the tool results above. Do not call any tools.' },
-            ],
-            reasoning: 'none',
-            maxTokens: config.ai.maxTokens,
-            sampling: samplingFor(config, target.provider),
-            stream: false,
-            ttftMs: 0,
-            timeoutMs: budget.timeoutMs,
-            signal: timeoutSignal(budget.timeoutMs),
-          });
-          llmMs += Date.now() - started;
-          completionMs += Number(response?.completionMs ?? response?.latencyMs ?? 0) || 0;
-          completionTokens += Number(response?.completionTokens ?? response?.usage?.completion_tokens ?? 0) || 0;
-          if (typeof response?.content === 'string') finalText = response.content;
-          answeredBy = { model: target.model, alias: target.alias, provider: target.provider };
-        } catch (error) {
-          llmMs += Date.now() - started;
-          abortReason = String(/** @type {any} */ (error)?.message ?? error);
-          logger.warn('final answer after tool rounds failed', {
-            chatId: event.chatId,
-            error: abortReason,
-            icon: '🧩',
-          });
-        }
-      }
-    }
+    ({ finalText, llmMs, completionMs, completionTokens, answeredBy } = await forceFinalAnswer({
+      config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
+      finalText, aborted, llmMs, completionMs, completionTokens, answeredBy,
+    }));
 
-    await sender.wait();
+    await responseSink.wait();
 
     const remainder = finalText.slice(emitted);
     if (remainder.trim()) {
-      await sendText(sender, remainder);
+      await sendText(responseSink, remainder);
     } else if (!flushed && !finalText.trim()) {
-      await sendText(sender, 'I do not have an answer for this one yet — please ask again a bit more clearly.');
+      await sendText(responseSink, 'I do not have an answer for this one yet — please ask again a bit more clearly.');
     }
 
     record.messages.push(
@@ -550,46 +426,11 @@ export function createTurnRunner(deps) {
     );
     store.touch(event.chatId);
 
-    const duration = Date.now() - startedAt;
-    const tps =
-      completionTokens > 0 && completionMs > 0
-        ? Math.round((completionTokens / (completionMs / 1000)) * 10) / 10
-        : 0;
-    const attribution = answeredBy ?? { model: target.model, alias: target.alias, provider: target.provider };
-    metrics.observe('agent.reply', duration);
-    metrics.inc('messages.replied');
-    if (thinkingText && config.logThinking !== false) {
-      logger.info(`🧠 thinking: ${preview(thinkingText, 2000)}`, {
-        chatId: event.chatId,
-        model: attribution.model,
-        ...(reasoningTokens > 0 ? { tokens: reasoningTokens } : {}),
-      });
-    }
-    logger.info(`✅ replied · ${attribution.model} · ${tps || 0} tok/s`, {
-      chatId: event.chatId,
-      model: attribution.model,
-      alias: attribution.alias,
-      provider: attribution.provider,
-      tps,
-      tokens: completionTokens,
-      ms: duration,
-      llmMs,
-      chars: finalText.length,
-      ...(aborted ? { aborted: true } : {}),
-      messages: sender.sent(),
-      kept: built.keptMessages,
-      reasoning, // reasoning mode (none/low/...), not the thinking content
-      ...(reasoningTokens > 0 ? { thinkingTokens: reasoningTokens } : {}),
+    reportTurn({
+      config, logger, metrics, chatId: event.chatId, startedAt, finalText, built, responseSink,
+      reasoning, target, answeredBy, aborted, abortReason, thinkingText, reasoningTokens,
+      llmMs, completionMs, completionTokens,
     });
-
-    if (aborted) {
-      logger.warn('reply aborted', {
-        chatId: event.chatId,
-        partial: finalText.length,
-        reason: abortReason || 'deadline',
-        icon: '⏱️',
-      });
-    }
   }
 
   return run;

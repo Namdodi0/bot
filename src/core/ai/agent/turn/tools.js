@@ -1,0 +1,83 @@
+import { toolCallEntry, toolResultEntry } from '../../../context/record.js';
+import { truncate } from '../../../text/format.js';
+
+/**
+ * Append the assistant `tool_calls` message and one `role: "tool"` result per call to both
+ * the request messages and the durable chat record. Every call id gets a result, even when
+ * the tool throws, otherwise every later request fails on the provider.
+ *
+ * @param {{
+ *   logger: import('../../../logger.js').Logger,
+ *   metrics: any,
+ *   tools: ReturnType<typeof import('../../tools.js').createToolRuntime>,
+ *   store: ReturnType<typeof import('../../../context/store.js').createContextStore>,
+ *   chatId: string,
+ *   senderId: string,
+ *   deadline: number,
+ *   sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>,
+ *   response: any,
+ *   messages: any[],
+ *   record: any,
+ * }} input
+ */
+export async function runToolRound({
+  logger,
+  metrics,
+  tools,
+  store,
+  chatId,
+  senderId,
+  deadline,
+  sendPhoto,
+  response,
+  messages,
+  record,
+}) {
+  metrics.inc('llm.toolRounds');
+  messages.push({
+    role: 'assistant',
+    content: response.content || null,
+    tool_calls: response.toolCalls.map((/** @type {any} */ call) => ({
+      id: call.id,
+      type: 'function',
+      function: { name: call.name, arguments: call.rawArguments || JSON.stringify(call.arguments) },
+    })),
+  });
+  record.messages.push(
+    toolCallEntry({ content: response.content ?? '', toolCalls: response.toolCalls, ts: Date.now() }),
+  );
+
+  for (const call of response.toolCalls) {
+    const started = Date.now();
+    /** @type {{ok?: boolean, text: string}} */
+    let result;
+    try {
+      result = await tools.run(call.name, call.arguments, {
+        chatId,
+        senderId,
+        deadline,
+        sendPhoto,
+      });
+    } catch (error) {
+      const reason = String(/** @type {any} */ (error)?.message ?? error);
+      logger.warn('tool call failed', {
+        chatId,
+        tool: call.name,
+        error: reason,
+        icon: '⚠️',
+      });
+      result = { ok: false, text: `Tool ${call.name} failed: ${reason}` };
+    }
+    metrics.observe(`tool.${call.name}`, Date.now() - started);
+    const text = truncate(result.text, 4000);
+    messages.push({
+      role: 'tool',
+      tool_call_id: call.id,
+      content: text,
+    });
+    record.messages.push(toolResultEntry({ toolCallId: call.id, text, ts: Date.now() }));
+  }
+  store.touch(chatId);
+
+  return { calls: response.toolCalls.length };
+}
