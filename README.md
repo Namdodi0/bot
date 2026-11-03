@@ -1,379 +1,321 @@
-# zalo-group-bot
+# Discord AI Bot
 
-A chat bot for **Zalo group chats** and **Discord**, powered by **DeepSeek Flash** (primary) with **NVIDIA NIM** as fallback, and **Tavily** for web search. Two independent processes (`src/index.js` for Zalo, `src/discord.js` for Discord) share the same engine (agent, LLM, tools, commands, context) and prompt, but each has its own config, token, data directory and lifecycle. Written in plain Node.js (ESM); the only runtime dependency is `discord.js`, used by the Discord process.
+A Discord-native AI assistant powered by **DeepSeek Flash** (primary) with **NVIDIA NIM**
+fallback and **Tavily** web search. It is slash-command-first: native embeds, buttons,
+select menus, message context menus, ephemeral replies, optional answer threads and inline
+image uploads — no Zalo-style text commands or multi-message behavior.
 
-## Features
+The repository also still contains the older **Zalo** process (`src/index.js`), but the two
+run independently: separate entry points, configs, tokens, data directories and histories.
+Nothing in the Discord code imports the Zalo integration.
 
-- Replies to messages in the group when it is **@mentioned** or someone **replies** to one of its messages (a Zalo Bot limitation — see below).
-- **Multi-provider + model switching in chat**: `/model` to switch between DeepSeek Flash, DeepSeek Pro, Nemotron Super VL, **Nemotron 3 Ultra 550B**, Nemotron Lightning (stored per chat).
-- **Persistent context** per chat: JSON storage, **unlimited length by default**, `/reset` to wipe it; automatic **compaction** (shrink tool results → summarize older ranges) under high token pressure, `/compact` to compact right away.
-- **Web search** via Tavily (tool calling), answers come with source URLs.
-- **Image sending** (`sendPhoto`) via the `/image` command or when the model calls the `send_image` tool itself.
-- **Sticker sending** (`sendSticker`) via `/sticker`, the `send_sticker` tool, and echoing the sticker back when someone sends one to the bot (needs an official sticker ID — see below).
-- **Text-only model**: images sent by users are only noted in the context (a bracketed note saying the user attached an image the bot cannot view), image content is never sent to the API. The bot can still **send images** through `send_image`.
-- Zalo markdown formatting, long messages split into ≤ 1900 characters (Zalo's safe limit).
-- **Discord bot (separate process)**: slash commands, context menus, buttons, embeds, ephemeral
-  replies, optional answer threads and attachment uploads. It has its own `config.discord.json`
-  and `data/discord/`; run both processes if you want both platforms.
-- **Low latency**: no `max_tokens` cap, `reasoning_effort: none` by default (~0 thinking tokens), typing indicator, model warm-up, streaming + partial sends for slow answers, search/image cache, retry + circuit breaker.
-- **Concise by default**: about 1–3 sentences (roughly under 500 characters) for simple chat, 3–5 sentences or a short list for normal questions; answers expand only when the user asks for detail, steps, a comparison, or a specific length.
-- **Reminders** (`/remind 20:00 tomorrow team meeting`, or the model's `set_reminder` tool) persisted to `data/reminders.json`.
-- Commands: `/help`, `/reset`, `/status`, `/id`, `/summary`, `/search`, `/image`, `/sticker`, `/remind`, `/model`, `/think`, `/split`, `/compact`, `/ping`.
+- Node.js **>= 20.6**, ESM, no build step.
+- One runtime dependency: `discord.js`.
 
-## Language
+---
 
-The bot replies in the language the user is using; there is no forced default language or
-language lock. Commands, logs and documentation remain in English. Vietnamese input
-shortcuts such as `mai`/`mốt` for reminders remain supported.
+## Highlights
 
-## Requirements
+- **Slash-first UX** — `/ask`, `/help`, `/status`, `/ping`, `/model`, `/reset`, `/compact`,
+  `/summary`, `/search`, `/image`, `/remind`.
+- **Message menus** — right-click a message → Apps → **Explain message** / **Summarize message**.
+- **Answers in place** — embeds and attachments, with **Regenerate / Continue / Delete** buttons.
+- **Private or public** — `/ask private:true`, `/search private:true`, `/image private:true`.
+- **Threads** — `/ask thread:true` creates a thread and answers there.
+- **Model picker** — `/model` opens a select menu; `/model name:` autocompletes aliases.
+- **Persistent context** per channel/thread (JSON, atomic writes), `/reset` to wipe it,
+  `/compact` to compact now.
+- **Reminders** with Discord timestamps: `/remind add|list|cancel`.
+- **Web search and images** through Tavily; image bytes are validated (SSRF-safe, pinned DNS,
+  size/type checks) and uploaded as proper image attachments.
+- **Text-only model** — images posted by users are noted in context, never sent to the API.
+- **No artificial caps by default** — no `max_tokens` cap, no answer deadline, unlimited
+  context and tool rounds. Set limits in config if you want them.
+- **Reliability** — retry + per-provider circuit breaker, different-model fallback without
+  tools, tool-call/result pairing, graceful shutdown, token redaction in logs.
 
-- Node.js **>= 20.6** (tested on v24.19 and v26.12). **API keys live in `.env`**; all non-secret settings live in **`config.json`**. `.env` is **loaded in code** (`src/core/env.js`), so however you run `node index.js` the keys are there — the `--env-file-if-exists` flag is not required. `.env` / `.env.local` are looked up in the working directory first, then in the repo root (so a panel that starts the bot from another directory still finds the file).
-- A Zalo bot created in **Zalo Bot Creator**, a valid token, `can_join_groups = true`.
-- A **DeepSeek** key (`sk-...`) for the primary model and an **NVIDIA NIM** key (`nvapi-...`) for the fallback model, plus Tavily (`tvly-...`).
-- Optional: a **Discord** bot token (`DISCORD_BOT_TOKEN`) if you enable the Discord transport.
+---
 
-## Install
+## Quick start (Discord)
 
 ```powershell
-cd zalo-group-bot
-npm install          # runtime deps (discord.js); .npmrc sets omit=dev on the server
-npm install --include=dev   # adds typescript/@types/node for `npm run typecheck` and dev
+git clone https://github.com/Namdodi0/bot.git
+cd bot
+npm install                 # runtime dependency: discord.js
+npm install --include=dev   # only needed for npm run typecheck / development
 copy .env.example .env
-# .env: fill in ZALO_BOT_TOKEN, DEEPSEEK_API_KEY, NIM_API_KEY (fallback), TAVILY_API_KEY
-# config.json is tracked and already present; edit it if you need different settings
-# (config.example.json is a reference and may differ from the tracked config.json)
-npm run smoke        # checks token + DeepSeek + NIM + Tavily + image validation
 ```
 
-## Run
+1. Create an application at <https://discord.com/developers/applications> → **Bot** →
+   reset/copy the token. Put it in `.env`:
 
-```powershell
-npm start                        # Zalo bot: polling (default, no tunnel needed)
-node index.js                    # equivalent — .env loads itself, no env-file flag needed
-npm run start:discord            # Discord bot (separate process, config.discord.json)
-npm run dev                      # Zalo polling + watch
-npm run dev:discord              # Discord + watch
-node --env-file-if-exists=.env src/index.js --once   # take one update then exit
-npm test                         # unit tests (node --test)
-npm run typecheck                # tsc checkJs over src/
-npm run simulate -- "gold price today?"   # run the real agent (DeepSeek/NIM/Tavily) but do NOT send to Zalo
-```
-
-Environment precedence for **API keys**: variables already in `process.env` (hosting panel, pm2, terminal) **win** over the `.env` file; if a declared variable is **empty**, the `.env` value is filled in. If the token is missing, the error log also prints the working directory and which `.env` file was not found. Non-secret settings are read only from `config.json` (Zalo) or `config.discord.json` (Discord); `--config <path>` selects another file for **both** entry points (it overrides the default the entry would pick); old non-secret variables left in `.env` are ignored with a startup warning, and the bot refuses to start until they are moved if `config.json` is missing. Settings the code never reads (a typo such as `allowChatIds`) are also reported at startup.
-
-`simulate` prints the answer as if the bot were in the group, using its own context in `data/simulate/` — handy for trying out tool calling, memory, `/status` and `/reset` before letting the bot loose in a real group.
-
-### Webhook (optional, needs public HTTPS)
-
-```powershell
-# example with cloudflared / ngrok pointing at port 8787
-# config.json:
-#   "mode": "webhook",
-#   "webhook": { "publicUrl": "https://abc.example.com/zalo/webhook" }
-npm start
-```
-
-The bot calls `setWebhook` itself when `webhook.publicUrl` is set; otherwise register it manually with Zalo's `setWebhook`. The webhook secret comes from `webhook.secret` or is generated once and stored in `data/webhook-secret`, so restarts keep working. The webhook checks the `X-Bot-Api-Secret-Token` header and returns `200` immediately (< 100ms), then processes in the background.
-
-## Log
-
-Logs are **pretty** by default: time + icon + aligned columns, with color when running in a real terminal.
-
-```
-18:33:31 🚀 starting zalo-group-bot    version=1.0.3 mode=polling dryRun=false
-╭──────────────────────────────────────────────────────────────────────────────────────────────╮
-│ 🤖 Bot deepseek  ·  v1.0.3  ·  Zalo group chatbot                                            │
-│ 🧠 DeepSeek V4.1 Flash · deepseek/deepseek-flash  (fallback: nim-light)                      │
-│ ⚙️  polling · reasoning=none · max_tokens=unlimited                                          │
-│ 🔎 search=fast/4 · typing=on · progressive=auto                                              │
-│ 📚 context unlimited · unlimited messages per reply                                          │
-╰──────────────────────────────────────────────────────────────────────────────────────────────╯
-18:33:31 🤖 zalo bot ready             version=1.0.3 id=2214705736200876533 name="Bot deepseek" groups=true
-18:33:31 📡 polling started            mode=long-poll timeoutSec=30
-18:33:31 ⚡  nim warmup done            ms=394
-18:33:45 💬 Nam: @Bot gold price today?    chatId=g1 kind=text len=26
-18:33:46 🔍 web search                 query="gold price today" results=4
-18:33:47 🧠 thinking: The user asks about the gold price, needs the latest results...    chatId=g1 model=deepseek-v4-pro
-18:33:47 🤖 bot: The gold price rose today ...    chatId=g1 part=1
-18:33:47 ✅ replied · deepseek-v4-pro · 48.6 tok/s    chatId=g1 model=deepseek-v4-pro alias=deepseek provider=deepseek tps=48.6 tokens=83 ms=1840 llmMs=1712 chars=612 messages=1 kept=3 reasoning=none
-```
-
-Every log line carries `version=` (read from `package.json`) — the panel `git pull`s on its own, so the log tells you which build is running.
-
-The console log shows:
-
-| Line | Content |
-|---|---|
-| `💬 <name>: ...` | the message the user sent (with `chatId`, `kind`, `len`) |
-| `🧠 thinking: ...` | the model's thinking (`reasoning_content`), up to 2000 characters; turn it off with `config.logThinking=false` |
-| `🤖 bot: ...` | exactly what the bot sends, part by part if it was split |
-| `✅ replied · <model> · <tps> tok/s` | turn summary: actual model, speed, tokens, timing |
-
-Note: `thinking` only has content when `config.ai.reasoning` is not `none` (`low|medium|high|auto`). With `none` the model returns no thinking and the `🧠` line never appears.
-
-The `replied` line also carries:
-
-| Field | Meaning |
-|---|---|
-| `model` / `alias` / `provider` | the real model name (`deepseek-v4-pro`, `nvidia/...`), the alias and the provider in use |
-| `ms` | total turn processing time (from receiving the message to finishing the send) |
-| `llmMs` | time spent calling the LLM (all tool-call rounds summed), Zalo network excluded |
-| `tps` | generation speed: `completion tokens / actual generation time` (TTFT already subtracted) |
-| `tokens` | number of tokens the model generated (`usage.completion_tokens`) |
-| `thinkingTokens` | tokens spent on thinking (when the provider reports them) |
-| `chars` | answer length (characters) |
-| `reasoning` | reasoning mode (`none|low|medium|high`), not the thinking text |
-
-`config.logLevel=debug` (or `--verbose`) additionally prints `llm response` for every call: `ms`, `ttft`, `tps`, `promptTokens`, `completionTokens`, `finish`, `toolCalls`. The in-chat `/status` also shows the version plus the latest `~tok/s`.
-
-- `config.logFormat=json` (or the `--json` flag) → one JSON line per event, handy for writing to files or parsing.
-- `config.logColor=auto|always|never` → `auto` enables color when stdout is a terminal, disables it under pipe/CI.
-- `--verbose` → adds debug logs (retry, cache, tool, context).
-- Tokens/keys are always masked (`token=***`) in both modes; errors print only a short message, the full stack lives in JSON mode.
-
-## Adding the bot to a group
-
-Group chat is in **Beta**, and the bot **only receives** messages when:
-
-1. Someone **@mentions** the bot's name, or
-2. Someone **replies (quotes)** one of the bot's messages.
-
-Steps to add the bot (following the [Zalo docs](https://docs.zaloplatforms.com/docs/BOT/best-practices/build-bot-interaction-with-group)):
-
-1. Open the **Zalo Bot Creator** Mini App → pick the bot → the bot info page.
-2. In the **"Invite Bot to group"** section → tap share, send the link into the group.
-3. The group admin taps the link that was just sent.
-4. In the **"Add Bot to Group"** popup → **Confirm**.
-5. The bot sends a greeting → done.
-
-After the first run the log prints the `chatId` (or type `/id` in the group) — put it in `allowedChatIds` in `config.json` so the bot only works in that group.
-
-## Discord (separate process)
-
-The Discord bot is a **separate process** with its own config (`config.discord.json`) and
-data directory (`data/discord`). It is slash-command-first: `/ask`, `/help`, `/status`,
-`/ping`, `/model`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, plus
-the **Explain message** and **Summarize message** context menus. Answers use Discord
-embeds/attachments, buttons (Regenerate / Continue / Delete), ephemeral replies, and an
-optional thread. Zalo-only features (stickers, tone/split/think commands, text-command
-parser) do not exist here.
-
-1. Create an application at <https://discord.com/developers/applications> → **Bot** → reset/copy the token.
-2. In **Bot → Privileged Gateway Intents**, enable **Message Content** (needed for @mention/reply chat; slash commands work without it).
-3. Invite the bot with the `bot` + `applications.commands` scopes and View Channels / Send Messages / Embed Links / Attach Files / Read Message History / Send Messages in Threads / Create Public Threads:
-   `https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=292057893888&scope=bot%20applications.commands`
-4. Put the token in `.env`: `DISCORD_BOT_TOKEN=...`
-5. Use `config.discord.json` (tracked; copy `config.discord.example.json` if it is missing):
-   ```json
-   "platform": "discord",
-   "dataDir": "./data/discord",
-   "discord": { "guildId": "", "allowedChannelIds": [], "respondToAllChannelIds": [] }
+   ```env
+   DISCORD_BOT_TOKEN=...
+   DEEPSEEK_API_KEY=sk-...
+   NIM_API_KEY=nvapi-...
+   TAVILY_API_KEY=tvly-...
    ```
-   Set `guildId` to register slash commands instantly in that server (global commands can take up to an hour). When `guildId` is set the bot clears its global commands so the client does not show duplicates. `allowedChannelIds` empty = every channel; DMs are always allowed and a thread inherits its parent channel's entry. `respondToAllChannelIds` answers every message in those channels (also inherited by their threads). The engine settings (model, AI, search, context, tone) are in the same file.
-6. Start it with `npm run start:discord` (or pm2 `discord-bot`). The log shows `discord bot ready` and the command registration count.
 
-In a server the bot also answers when it is **@mentioned** or someone **replies** to its message; DMs work directly. Typed text commands are ignored — use the slash commands. Channel and thread histories are stored per Discord channel id. Admins are members with **Manage Server** (the admin commands are hidden from everyone else by default).
+   At least the primary provider key and Tavily (if search is enabled) are required.
+
+2. Enable **Message Content** under **Bot → Privileged Gateway Intents**. Slash commands work
+   without it, but @mention/reply chat needs it.
+
+3. Invite the bot with the `bot` + `applications.commands` scopes and these permissions:
+   View Channels, Send Messages, Embed Links, Attach Files, Read Message History,
+   Send Messages in Threads, Create Public Threads:
+
+   ```
+   https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&permissions=292057893888&scope=bot%20applications.commands
+   ```
+
+4. Edit `config.discord.json` (tracked; `config.discord.example.json` is a reference):
+
+   ```json
+   {
+     "platform": "discord",
+     "dataDir": "./data/discord",
+     "discord": {
+       "guildId": "",
+       "allowedChannelIds": [],
+       "respondToAllChannelIds": []
+     }
+   }
+   ```
+
+   - `guildId` — register commands instantly in one server; empty = global (can take ~1h).
+   - `allowedChannelIds` — empty = every channel. DMs are always allowed, and a thread
+     inherits its parent channel's entry.
+   - `respondToAllChannelIds` — answer every message in these channels (threads inherit too).
+
+5. Start it:
+
+   ```powershell
+   npm run start:discord      # or: node src/discord.js
+   ```
+
+   The log shows `discord commands registered ... count=13`.
+
+The bot also answers when it is **@mentioned** or someone **replies** to one of its messages.
+DMs work as normal chat. **Typed text commands are ignored** — use the slash commands.
+With `guildId` set, slash commands are server-scoped and do not appear in DMs; DM text chat
+still works.
+
+---
 
 ## Commands
 
-| Command | Description |
+| Command | What it does |
 |---|---|
-| `/help` | Command list + @mention instructions |
-| `/status` | Model, mode, uptime, context, latency p50/p95, errors, breaker |
-| `/id` | `chat.id`, `chat_type`, sender id |
-| `/reset` | Clears the current chat context but **keeps the settings** (`model`/`tone`/`think`); `/reset all` clears the settings too (admin-gated when `adminIds` is set) |
-| `/search <question>` | Forces a web search for the question |
-| `/image <keyword>` | Find and send an image |
-| `/sticker [emotion]` | Send a sticker (a sample sticker by default, or by an added name/tag) |
-| `/sticker add <id> [name]` | (Admin) Sends a test + saves the official sticker ID to `data/stickers.json` |
-| `/sticker remove <id\|name>` | (Admin) Remove a sticker from the self-added list |
-| `/remind <time> <text>` | Set a reminder in this chat: `HH:MM`, `HH:MM tomorrow`, `HH:MM 25/12`, `+10m`, `+2h`, `+1d` (Vietnam time) |
-| `/remind list` | List this chat's reminders (max 5 per chat); `/remind remove <id>` deletes one |
-| `/model` | Show the current model + the list to switch from |
-| `/model <alias>` | Switch the model for this chat: `deepseek`, `pro`, `nim`, `ultra`, `nim-light` |
-| `/tone [roast\|hard\|friendly\|default]` | Change the tone for this chat: `roast` (mocking), `hard` (blunt, heavy swearing), `friendly`, `default` = follow `config.tone` |
-| `/think on\|off\|low\|medium\|high\|auto` | Turn reasoning on/off for this chat |
-| `/split on\|off\|auto` | Control splitting replies into several messages for this chat (`off` = merge into one message, `auto` = follow `config.progressive`) |
-| `/summary [N]` | Summarize the last N messages (2–200, default 30) without changing the context |
-| `/compact` | Compact the context right away (admin): shrink tool results → summarize older ranges |
-| `/ping` | Measure the platform API round-trip |
+| `/ask <prompt> [private] [thread]` | Ask the AI; answer in the channel, ephemeral, or a new thread. Includes Regenerate / Continue / Delete buttons. |
+| `/help` | Ephemeral command list. |
+| `/status` | Model, transport, uptime, context size, latency, traffic. |
+| `/ping` | Gateway and interaction round-trip latency. |
+| `/model [name]` | Admin: show a select menu or switch the channel model. Autocomplete for aliases. |
+| `/reset [all]` | Admin: clear the channel context; `all` also clears per-channel settings. |
+| `/compact` | Admin: compact the context now. |
+| `/summary [count]` | Summarize the last 2–200 messages (default 30). |
+| `/search <query> [private]` | Web search, answered with an embed. |
+| `/image <query> [count] [private]` | Find and upload images (default 1, max 25). |
+| `/remind add <when> <text>` | Set a reminder (`20:00`, `20:00 tomorrow`, `20:00 25/12`, `+10m`, `+2h`, `+1d`; Vietnam time input). |
+| `/remind list` | List this channel's reminders. |
+| `/remind cancel <id>` | Cancel a reminder. |
 
-Discord uses its own slash commands (`/ask`, `/help`, `/status`, `/model`, `/reset`, `/compact`, `/summary`, `/search`, `/image`, `/remind`, `/ping`) and context menus; the Zalo command table above does not apply to it.
+**Message context menus:** `Explain message`, `Summarize message`.
+
+Admin commands (`/model`, `/reset`, `/compact`) are hidden from non-admins by default
+(Manage Server). In DMs, slash commands only exist when commands are registered globally
+(no `guildId`); otherwise DM text chat still works.
+
+Removed on purpose: `/sticker`, `/tone`, `/split`, `/think`, `/id`, and the typed text-command
+parser. Those were Zalo-shaped and do not fit Discord.
+
+---
+
+## How answers work
+
+1. The gateway routes slash commands and message events.
+2. `/ask`, `/search`, `/image` and the context menus call the shared engine through a
+   **capture runner**: the engine produces text/images, then Discord renders them natively
+   (embed/edit reply, attachments, buttons) instead of posting its own messages.
+3. Ordinary @mention/reply chat goes through the same shared agent and replies in-channel.
+4. Context is stored per **channel or thread id** under `data/discord/`.
+5. Long answers are split at 2000 characters. A fence-aware split leaves room for code-fence
+   balancing so a message never exceeds Discord's limit.
+6. If the primary model fails, the engine retries and then falls back to a different model
+   without tools; the bot still answers.
+
+---
 
 ## Configuration
 
-There are only two files:
+Only two files matter:
 
 | File | Contents |
 |---|---|
-| `.env` (gitignored) | **API keys/tokens only**: `ZALO_BOT_TOKEN`, `NIM_API_KEY`, `DEEPSEEK_API_KEY`, `TAVILY_API_KEY`, `DISCORD_BOT_TOKEN` (Discord process only) |
-| `config.json` (tracked) | Settings committed with the repo; `config.example.json` is a reference copy and may differ from the tracked file. Do **not** put API keys or a real `webhook.secret` in it |
+| `.env` (gitignored) | API keys/tokens only: `DISCORD_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `NIM_API_KEY`, `TAVILY_API_KEY` (and `ZALO_BOT_TOKEN` for the legacy process). |
+| `config.discord.json` (tracked) | Non-secret Discord settings. Never put API keys or a real `webhook.secret` here. |
 
-`.env` variables already set in the host panel/CI win over the file. Non-secret settings are
-read **only** from `config.json` (use `--config <path>` for another file). If an old `.env`
-still contains non-secret settings, the bot ignores them and prints a startup warning listing
-the ignored names.
+Variables already set in the host panel/CI win over `.env`; an empty variable is filled from
+the file. Unknown config keys (for example a typo such as `allowChatId`) are reported at
+startup instead of being silently ignored. `--config <path>` overrides the default config
+file for either entry point.
 
-Main `config.json` groups:
+Important settings:
 
-- **Zalo / transport**: `mode` (`polling|webhook`), `zalo.botId`, `zalo.baseUrl`, `zalo.parseMode`, `allowedChatIds`, `adminIds`, `webhook.port`, `webhook.host`, `webhook.path`, `webhook.secret` (optional, ≥ 8 chars; empty = auto-generated), `webhook.publicUrl`.
-- **Allow lists**: `allowedChatIds` empty = **every chat** is served (the bot warns at startup — set the group chat IDs in real deployments). For Discord, `discord.allowedChannelIds` empty = every channel; DMs are always allowed, and a **thread inherits its parent channel's entry** (allow the parent and its threads work too).
-- **Two configs**: `config.json` (Zalo, `platform: "zalo"` by default) and `config.discord.json` (Discord, `platform: "discord"`). The engine settings (model, ai, search, context, tone, limits) are per file so each bot can be tuned and deployed independently.
-- **Discord**: `discord.guildId` (instant slash-command registration for one server; empty = global), `discord.allowedChannelIds` (empty = all channels; DMs always allowed; threads inherit the parent entry), `dataDir` (default `./data/discord`). The token is secret: `DISCORD_BOT_TOKEN` in `.env`. `allowedChatIds`/`adminIds` in the Zalo config do not apply to Discord (admin = Manage Server).
-- **Models**: `model.defaultAlias` (`deepseek|pro|nim|ultra|nim-light`), `model.fallbackAlias`, `ai.reasoning` (`none|low|medium|high|auto`), `ai.maxTokens` (`null`/`0` = unlimited), `ai.maxToolRounds` (`0` = unlimited tool rounds; default `3`), `responseTimeoutMs` (`0` = no deadline).
-- **DeepSeek**: `deepseek.baseUrl`, `deepseek.model`, `deepseek.proModel`, `deepseek.temperature` (0–2), `deepseek.timeoutMs` (`0` = no limit), `deepseek.topP`, `deepseek.frequencyPenalty`, `deepseek.presencePenalty`, `deepseek.seed`.
-- **NIM**: `nim.baseUrl`, `nim.model`, `nim.ultraModel`, `nim.fallbackModel`, `nim.temperature` (0–2), `nim.timeoutMs` (`0` = no limit), `nim.topP`, `nim.topK`, `nim.minP`, `nim.repetitionPenalty`, `nim.frequencyPenalty`, `nim.presencePenalty`, `nim.seed` (only non-null values are sent).
-- **Context**: `context.maxTokens` (**0 = unlimited**), `context.maxMessages` (**0**), `context.maxCharsPerMessage` (default `12000`, **0 = no truncation**), `context.ttlHours` (**0 = never delete**), `context.summary`, `dataDir` (relative → repo root; use a persistent volume, never `/tmp`).
-- **Compaction**: `context.modelWindow` (**0 = unknown; compact only on provider overflow**), `context.compactThreshold` (`0.8`), `context.keepRecent` (`8`), `context.summaryMaxChars` (`1200`), `context.toolResultKeepChars` (`600`).
-- **Tavily**: `search.enabled`, `search.auto` (**false = the model never searches on its own; `/search` still works**), `search.depth` (`fast|basic|advanced|ultra-fast`), `search.maxResults`, `search.country`, `search.cacheTtlMs` (`0` = no cache).
-- **Behavior**: `tone` (`friendly|roast|roast-hard|roast-extreme`; default `roast-hard`), `typing`, `typingIntervalMs`, `progressive` (`auto|on|off`), `progressiveAfterMs`, `maxMessagesPerReply` (**0 = unlimited**), `maxQueueDepth` (`50`), `userRateLimitPerMinute` (`12`; `0` = off), `image.enabled`, `sticker.enabled`, `sticker.echo`, `sticker.ids` (`id1,id2:name two`).
-- **Log / ops**: `logLevel`, `logThinking`, `logFormat` (`pretty|json`), `logColor` (`auto|always|never`), `opsPort` (`null` = disabled).
+| Setting | Meaning |
+|---|---|
+| `discord.guildId` | Instant guild command registration; empty = global. |
+| `discord.allowedChannelIds` | Empty = all channels; DMs always allowed; threads inherit the parent. |
+| `discord.respondToAllChannelIds` | Answer every message in these channels. |
+| `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`. |
+| `ai.reasoning` | `none`, `low`, `medium`, `high`, `auto`. |
+| `ai.maxTokens` / `ai.maxToolRounds` | `null`/`0` = unlimited. |
+| `responseTimeoutMs` | `0` = no deadline. |
+| `context.maxTokens` / `maxMessages` | `0` = unlimited; compaction then runs on provider overflow. |
+| `context.ttlHours` | `0` = keep context forever. |
+| `search.enabled` / `search.auto` | Tavily on/off; `auto:false` disables model-initiated search. |
+| `tone` | `friendly`, `roast`, `roast-hard`, `roast-extreme`. |
+| `typing` | Typing indicator for message chat. |
+| `logLevel` / `logFormat` / `logColor` | Pretty or JSON logs, with secret redaction. |
 
-CLI flags: `--config <path> --model <alias> --mode --think --max-tokens --progressive --no-progressive --no-search --no-typing --dry-run --once --verbose --json --help`. `--config` applies to both entry points (Zalo and Discord).
+`config.discord.example.json` documents the full schema.
 
-### Sampling defaults
+### CLI flags
 
-The defaults are tuned for coherent, moderately creative replies. Higher temperatures
-(1.2+) made Nemotron Ultra output multilingual token salad, so the tracked config stays
-lower. There is no language-lock prompt rule; if a model starts mixing languages, lower the
-temperature further.
-
-```json
-{
-  "nim": {
-    "temperature": 0.5,
-    "topP": 0.9,
-    "frequencyPenalty": 0.3,
-    "presencePenalty": 0.3
-  },
-  "deepseek": {
-    "temperature": 0.5,
-    "topP": 0.9,
-    "frequencyPenalty": 0.3,
-    "presencePenalty": 0.3
-  }
-}
+```text
+--config <path> --model <alias> --think <mode> --max-tokens <n>
+--no-search --no-typing --dry-run --verbose --json --help
 ```
 
-- If the model still mixes languages or rambles, lower `temperature` to `0.4–0.5` and `topP` to `0.85`; the prompt already asks for 1–3 sentence replies by default.
-- Penalties are `0.3` to break repeated insults; raise to `0.4–0.5` only if it still repeats — higher values can push rare/foreign tokens.
-- `topK: -1`, `minP: 0`, `repetitionPenalty: 1.0–1.05` are NIM-only extras; leave them unset if your hosted endpoint rejects them.
+`--config` applies to both processes. `--dry-run` does not connect the gateway.
 
-## Design & optimizations
+---
+
+## Deployment
+
+PM2 config is included (`ecosystem.config.cjs`) with two independent apps:
+
+```powershell
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup
+```
+
+- `discord-bot` → `src/discord.js` → `config.discord.json` / `data/discord/`
+- `zalo-bot`   → `src/index.js`   → `config.json` / `data/` (legacy process)
+
+Use a persistent data directory; never point `dataDir` at a temp folder.
+
+---
+
+## Logs
+
+Pretty logs by default; JSON with `--json` or `logFormat: "json"`.
 
 ```
-Zalo API ──► polling/webhook ──► agent (per-chat queue, 4 chats in parallel)
-                                     │
-                     ┌───────────────┼─────────────────┐
-                     ▼               ▼                 ▼
-              context store    model router       tools (Tavily, images)
-              (JSON + trim)   (DeepSeek/NIM)      (cache + validate)
+18:33:43 🤖 discord bot ready          version=1.2.0 id=... name=... guilds=1
+18:33:44 🛠️ discord commands registered version=1.2.0 scope="guild ..." count=13
+18:33:45 💬 Nam: how do I center a div? chatId=... kind=text len=24
+18:33:46 🔍 web search                 query="center a div" results=4
+18:33:47 🤖 bot: ...                   chatId=... part=1
+18:33:47 ✅ replied · nim/... · 48.6 tok/s
 ```
 
-- **Platform contract**: `src/platforms/contract.js` defines what the engine needs from a platform (transport, output limits, markdown dialect, admin rule, prompt sections, tools, command specs/handlers, lifecycle). Zalo and Discord implement it in `src/platforms/zalo` and `src/platforms/discord`; `src/core` never branches on the platform name. Discord's native layer (`bot.js`, `commands.js`, `ask.js`, `ui.js`, `specs.js`) owns slash commands, context menus, buttons/selects, embeds and ephemeral replies; it does not import any Zalo module.
-- **Model selection**: each chat has a `meta.model` (set by `/model`) → the router picks the matching provider/model; `config.model.defaultAlias` by default (deepseek-flash, reasoning off).
-- **No `max_tokens` cap**: the model generates until it is done. The prompt asks for compact replies by default; there is **no answer deadline by default** (`config.responseTimeoutMs=0`), long answers are split at the platform's message limit (Zalo 1900, Discord 2000 characters), with **no limit on the number of messages** (`config.maxMessagesPerReply=0`).
-- **Lower latency**: `reasoning_effort: none` (DeepSeek returns no `reasoning_content`, measured ~600–900ms), typing indicator, warm-up at boot, Tavily cache (10 minutes by default), image validation result cache, `fetch` keep-alive, only `search_depth=fast`.
-- **Model fault tolerance**: no request timeout by default (`config.nim.timeoutMs=0`, `config.deepseek.timeoutMs=0`) and no answer deadline (`config.responseTimeoutMs=0`), so a slow model is waited for instead of being cut off. Set a positive value to restore limits: the bot then retries once (sharing the budget) and falls back **to a different model** (`config.model.fallbackAlias`) without tools — so the bot doesn't "die" when DeepSeek/NIM returns 500/timeout. If the fallback provider has no API key, that alias is skipped and the catalog picks another available model. Warmup runs **sequentially**, exactly 1 request per provider+model pair (before v1.1.1 it ran 2 aliases of the same provider in parallel → the second request was queued by NIM and then timed out after 20s), with an 8s timeout, and failures are logged at `debug` only — no impact on real messages.
-- **Prompt / context / LLM follow the DeepSeek Harness architecture** (porting the contract, not the plugin kernel):
-  - The **system prompt** is a set of `PromptSection`s with an `order` (identity, rules, chat shape, formatting, image, tool guidance, tone, commands) assembled by `src/core/ai/prompt/` (shared sections) plus `src/platforms/*/prompt.js` (identity, formatting, command list); the registry supports `complete`, strict `{{...}}` variables, runtime context and the provider's tool schema. Tool guidance only appears when the matching tool is actually sent (even with `config.search.auto=false`).
-  - **Model-visible means logged**: timestamps and `/search` results are **persistent user messages** in the record (refreshed every turn), tool calls/results are written to the record, and the summary is **a single user message** replacing the old range — no more mutating a copy of the request.
-  - **Token meter + compaction**: estimates `system + tool schemas + messages`, calibrated with `usage.prompt_tokens`; exceeding `config.context.compactThreshold` or the provider reporting context overflow → shrink tool results → summarize older ranges (keeping `config.context.keepRecent`, always balancing tool-call/result pairs). `/compact` compacts manually (admin).
-  - **LLM service**: a shared OpenAI-compatible adapter for DeepSeek/NIM, a per-provider registry (duplicate routes are rejected), immutable requests, stable error codes (`NO_ADAPTER`, `AUTH`, `RATE_LIMIT`, `CONTEXT_WINDOW_EXCEEDED`, `TIMEOUT`, `ABORTED`, ...), a separate retry executor, and a model catalog that carries `contextWindow`.
-  - **Context**: **no truncation** by default; trimming only happens with `config.context.maxTokens`/`maxMessages` > 0 (always keeping the summary). The request sent to the model is **text-only**: images sent by the user are never turned into image content, only a single note line in the text.
-- **Typing indicator**: sends `typing` as soon as a message arrives, refreshes every `config.typingIntervalMs`, and **turns it off before sending the first message** (waiting for the last typing request to finish) so Zalo no longer shows "typing" after the bot has replied.
-- **Progressive**: `auto` = only split when the wait is > `config.progressiveAfterMs` and a chunk is ≥ 160 characters; `on` = split early as soon as there is a sentence ≥ 80 characters; `off` = merge into a single send.
-- **Failure handling**: no retry when sending messages (avoids duplicates), retries for read calls (getMe/getUpdates/Tavily), a separate circuit breaker per **provider+model** at 5 failures/30s (one slow model doesn't lock out another model on the same provider), `message_id` dedupe (RAM + persisted in the context so a restart doesn't answer twice), a bounded queue (`config.maxQueueDepth`), graceful shutdown that waits for in-flight messages to finish and then flushes the context.
-- **Webhook**: binds `config.webhook.host` (localhost by default, a tunnel still works); the secret is generated once and stored in `data/webhook-secret` so restarts don't change it; a broken JSON body returns 400 so Zalo retries.
+Every line carries `version=` (read from `package.json`). Tokens and keys are always masked;
+the full stack appears only in JSON mode. `--verbose` adds retry/cache/tool/context debug logs.
 
-## Structure
-
-```
-src/
-  config.js        shared config schema + .env keys + CLI flags (util.parseArgs)
-  index.js         Zalo entry point: config -> platform -> runtime
-  discord.js       Discord entry point: config -> platform -> runtime
-  core/            platform-neutral engine (no Zalo/Discord branches)
-    runtime.js     store, models, tools, commands, agent, lifecycle
-    ai/
-      prompt/      registry + shared sections + runtime context
-      llm/         service, adapter OpenAI-compatible, catalog, retry, errors
-      router.js    pick the model per chat from the catalog
-      summarize.js summarizer used for compaction
-      agent.js     reply pipeline, tool rounds, progressive, queue
-    context/
-      store.js     atomic JSON storage + TTL/LRU
-      record.js    schema v2, message/context/summary/tool constructors
-      assembler.js record -> messages (trim, tool pairing)
-      token-meter.js token estimate + calibrator
-      compaction/  engine + pruner + summarizer
-    commands/      command router + shared command metadata
-    search/        tavily client + format
-    media/         validate image URL / download bytes
-    text/          chunk, strip mention, time/format helpers
-    logger.js      JSON log, token/key redaction
-    http.js        fetch wrapper: timeout, retry, breaker, SSE
-    metrics.js     counters + p50/p95
-    env.js         .env loading + hints
-    version.js     package.json version
-  platforms/
-    contract.js    platform interface: transport, limits, prompt, tools, commands
-    zalo/          REST client, events, polling, webhook, stickers,
-                   prompt, tools, commands, formatting, lifecycle
-    discord/       native Discord bot: slash specs, command handlers, capture
-                   runner, UI builders, gateway transport, prompt
-scripts/smoke.js     checks token + DeepSeek + NIM + Tavily
-scripts/simulate.js  runs the real agent, sends nothing to Zalo
-test/                unit tests (node --test)
-test-utils/          shared test helpers (incl. platform doubles)
-```
+---
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
+| Symptom | Fix |
 |---|---|
-| Bot doesn't answer in the group | Zalo only sends events when the bot is **@mentioned** or someone **replies** to its message. Check for `chat_type=GROUP` in the log and check `allowedChatIds` in `config.json`. |
-| Discord bot doesn't answer in a server | It only answers when **@mentioned** or **replied to** (or in DMs). Enable the **Message Content** intent and check `discord.allowedChannelIds`. |
-| Discord bot isn't running | It is a separate process: `npm start` only starts Zalo. Run `npm run start:discord` (or pm2 `discord-bot`) as well. |
-| Discord bot uses the wrong settings | It loads `config.discord.json` (not `config.json`) unless `--config <path>` is given; check `platform: "discord"` there. |
-| Discord slash commands are missing | Invite with the `applications.commands` scope; global commands can take up to an hour — set `discord.guildId` for instant registration. |
-| Discord ignores a typed `/ask` | The Discord bot is slash-only: pick the command from Discord's command picker. Typed text commands are not parsed. |
-| `/ask thread:true` fails | The bot needs **Create Public Threads** and **Send Messages in Threads** in that channel, and the channel must allow threads. |
-| Discord image upload fails | Discord's default attachment limit is 8MB; the validator rejects larger images. |
-| Log `zalo.getUpdates.empty` / `error_code 408` | Normal: the long-poll timed out with no new messages. The client treats it as "no messages" and does not back off. |
-| `LLM HTTP 500` / hangs for a few seconds | DeepSeek/NIM occasionally returns 500 or hangs. With the default `config.responseTimeoutMs=0` the bot simply waits; if you set a positive deadline it retries once then falls back to a different model (`config.model.fallbackAlias`). If the errors persist: lower `config.context.maxTokens` or `/model` to a different model. |
-| `Zalo getMe failed` | Wrong/expired token. Create a new bot token in the Bot Creator. |
-| Tavily `country parameter is not supported` | The API does not support `country` with `search_depth=fast`; the client already drops `country` when the depth is fast/ultra-fast. |
-| Images won't send | `sendPhoto` needs a **public URL**; the validator rejects URLs that return 403, are not images, or are over 8MB. The bot only sends images through the `send_image` tool; the prompt forbids the model from inventing image URLs, and if it can't find one the bot says so. |
-| Images sent by users can't be read | The model is text-only: the bot only sees a note saying the user sent an image whose content it cannot see; it never receives the image itself. |
-| `429` | Zalo quota or Tavily credits exhausted; the bot backs off on its own. Use `/status` to check the breaker. |
-| Sticker fails with `425 The sticker is invalid` | You are using a pack (category) ID instead of the official sticker ID. Use `/sticker` to see the IDs you have, or `/sticker add <id>` with an ID taken from Zalo's instructions. |
-| `/sticker add` says Zalo rejected it | Wrong/nonexistent ID. A sticker ID must be exactly 20 hex characters and an official sticker; this command sends a test before saving. |
-| DeepSeek `422` with `reasoning_effort: "off"` | The API only accepts `none|low|high|max`. The bot already maps `off` → `none`; if you call the API yourself, use `none`. |
-| `/model deepseek` doesn't switch | The command requires admin rights when `adminIds` is set; valid aliases: `deepseek`, `pro`, `nim`, `ultra`, `nim-light`. |
-| `llm warmup failed` / `llm warmup skipped` | Normal, not a bot failure: warmup only exists to cut the cold start on the first message. NIM often returns 500 or queues slowly → it is skipped and real messages still work. Since v1.1.1 warmup runs sequentially, 1 request per provider+model pair, and logs at `debug` only, so at `config.logLevel=info` you no longer see it. |
-| DeepSeek 400 `model not found` | The real model names are `deepseek-flash` / `deepseek-v4-pro` (not `deepseek-v4.1-flash`). Fix `config.deepseek.model` if needed. |
-| Context grows huge (if you set limits yourself) | Set `config.context.maxTokens`/`maxMessages` to 0 to drop the limit, or `/reset`. |
-| Zalo still shows "typing" after the bot replies | The bot turns typing off before the first message; if you still see it, lower `config.typingIntervalMs` or set `config.typing` to false. Zalo's indicator can expire slowly on its own (a few seconds). |
-| Webhook returns `403` after a restart | It used to generate a new secret on every run; the secret is now stored in `data/webhook-secret` so it stays the same. If you change `config.dataDir`, keep/move that file or re-register the webhook (the bot calls `setWebhook` again when `config.webhook.publicUrl` is set). |
-| Messages dropped while the bot is busy | The queue is bounded by `config.maxQueueDepth` (50 by default); the bot sends a "handling a lot of messages" notice instead of queueing forever. Raise it if needed. |
-| Webhook doesn't receive requests from other machines | `config.webhook.host` defaults to `127.0.0.1` (safe). A tunnel running on the same machine still works; only change it if you really need to. |
+| Bot does not answer a server message | It only answers when **@mentioned** or **replied to** (or uses `/ask`). Enable **Message Content** and check `discord.allowedChannelIds`. |
+| Slash commands are missing | Invite with `applications.commands`; global commands can take up to an hour — set `discord.guildId`. |
+| Typed `/ask` does nothing | The Discord bot is slash-only; use Discord's command picker. |
+| `/ask thread:true` fails | Grant **Create Public Threads** and **Send Messages in Threads**, and use a channel that supports threads. |
+| Images arrive as files | Fixed in 1.2.0 by giving uploads an image extension. If it still happens, the source format (e.g. AVIF) may not preview on Discord. |
+| Image upload rejected | The validator rejects non-images, private/internal URLs and files over 8 MB. |
+| Admin commands missing | They are hidden from non-admins (Manage Server) by default. |
+| Wrong settings are used | The Discord process loads `config.discord.json`, not `config.json`. Check `platform: "discord"`. |
+| Context disappeared after upgrade | 1.2.0 uses raw channel/thread ids; contexts saved under the old `discord:` prefix are not reused. |
+| Model errors / slow provider | With `responseTimeoutMs: 0` the bot waits; set a positive deadline to enable retry + different-model fallback. Run `/status` to inspect. |
+| `429` | Provider or Tavily quota. The circuit breaker backs off automatically. |
+| Warmup skipped at boot | Normal: warmup is an optimization only and does not affect real replies. |
+
+---
 
 ## Security
 
-- Tokens/keys live only in `.env` (gitignored) and are always redacted in logs; `config.json` is tracked and must never contain API keys. Keep `webhook.secret` empty in the tracked file; the bot generates and stores it in `data/webhook-secret`.
-- **Keys that were sent over chat should be considered leaked — rotate them** (create new tokens/keys) once the bot runs reliably.
-- The webhook compares the secret timing-safe; set `webhook.secret` or let the bot generate and store it in `data/webhook-secret` (not committed).
-- The webhook binds localhost by default; `setWebhook`/`sendMessage` are not retried, to avoid duplicate sends.
-- Set `allowedChatIds` and `adminIds` in `config.json` when running for real in a group.
+- Secrets live only in `.env` (gitignored) and are redacted from logs.
+- `config.discord.json` is tracked and must never contain tokens or real secrets.
+- **Rotate any token/key that was pasted into chat.**
+- Set `discord.allowedChannelIds` in real deployments; DMs are always allowed by design.
+- Admin commands require **Manage Server**; they are hidden from other members.
+- Image URLs are SSRF-checked with pinned DNS, redirect re-validation and a size limit.
+- Mutating sends are never retried blindly; message dedupe prevents double answers.
+
+---
+
+## Architecture
+
+```
+Discord gateway ──► bot.js ──► native commands (commands.js, ui.js)
+        │                └──► capture runner (ask.js) ──► shared engine (src/core)
+        └──► messageCreate ──► event normalization ──► shared agent ──► transport
+                                                      │
+                                        context store · model router · tools
+```
+
+| Path | Role |
+|---|---|
+| `src/discord.js` | Discord entry: config, platform, runtime, bot lifecycle. |
+| `src/platforms/discord/specs.js` | Slash/context-menu surface. |
+| `src/platforms/discord/commands.js` | Native handlers, buttons, select menu, ephemeral replies. |
+| `src/platforms/discord/ask.js` | Capture runner over the shared engine, per-channel ordering. |
+| `src/platforms/discord/ui.js` | Embeds, buttons, select menu, attachments, chunking. |
+| `src/platforms/discord/bot.js` | Gateway events, admission, command registration. |
+| `src/platforms/discord/transport.js` | Send/edit/react/typing/attachments. |
+| `src/platforms/discord/events.js` | Message/interaction normalization and allow-list helpers. |
+| `src/platforms/discord/prompt.js` | Discord prompt sections. |
+| `src/core/` | Platform-neutral engine: agent/queue, LLM service, context, tools, HTTP, logs. |
+| `src/platforms/zalo/` | Legacy Zalo process; not imported by Discord. |
+
+---
+
+## Development
+
+```powershell
+npm test          # node --test, no network
+npm run typecheck # tsc checkJs over src/ and scripts/
+```
+
+- 301 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
+- `scripts/smoke.js` and `scripts/simulate.js` belong to the Zalo process and use real APIs.
+- Keep platform behavior in `src/platforms/*`; `src/core` must not branch on platform names.
+- No new runtime dependencies without approval.
+
+---
+
+## Legacy Zalo process
+
+The Zalo bot still runs separately (`npm start`, `config.json`, `data/`). It keeps its own
+command surface (`/help`, `/status`, `/id`, `/reset`, `/compact`, `/summary`, `/search`,
+`/image`, `/sticker`, `/remind`, `/model`, `/tone`, `/think`, `/split`, `/ping`), polling or
+webhook mode, stickers and Zalo markdown. Zalo group chat is in beta and only delivers
+@mentions/replies. See `config.example.json` for its settings. Discord and Zalo never share
+config, tokens, context or reminders.
+
+---
 
 ## Known limitations
 
-- Zalo Bot group chat is in **Beta** and there is no "listen to every message in the group" feature.
-- `getUpdates` (polling) should only be used during development; in production use a webhook so you don't miss events.
-- There is no voice message support; stickers can only be sent with an **official sticker ID** (20 hex). Pack IDs on stickers.zaloapp.com do **not** work (Zalo returns `425 The sticker is invalid`) — use `/sticker add <id>` with an ID obtained from Zalo's instructions ([video](https://vimeo.com/649330161)).
-- You can't "cancel" the typing indicator on Zalo's side: the bot stops sending typing before replying, and the rest expires on Zalo's client (~a few seconds).
-- NIM reports `cached_tokens = 0` even for an identical request → there is no real prefix cache; the system prompt is still kept static so nothing breaks if NVIDIA enables caching later.
-- DeepSeek only accepts `reasoning_effort` as `none|low|high|max` (`off` returns 422) — the bot maps it for you. The API model names are `deepseek-flash` (V4.1 Flash) and `deepseek-v4-pro`.
-- Discord: Zalo stickers are unavailable (`/sticker` is absent) and Discord's own stickers are ignored; messages split at Discord's 2000-character limit. Zalo and Discord are separate processes with separate configs/data; they do not share chat history.
+- No voice messages, no Discord stickers, no vision input (images from users are noted only).
+- No token-by-token streaming into a Discord message; `/ask` shows a deferred reply and then
+  the final answer.
+- Slash commands are guild-scoped when `guildId` is set, so they are unavailable in DMs;
+  DM text chat still works.
+- Only the first image attachment of an incoming message is considered.
+- Reminder input is parsed in Vietnam time; Discord displays local timestamps.
+- The Zalo integration remains in the repository but is legacy and independent.
