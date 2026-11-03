@@ -136,6 +136,11 @@ test('invalid enum values are rejected', () => {
   assert.throws(() => load({ tone: 'shouty' }), /config\.tone/);
 });
 
+test('visionAlias must point at a vision-capable model', () => {
+  assert.throws(() => load({ model: { visionAlias: 'ultra' } }), /vision-capable/);
+  assert.equal(load({ model: { visionAlias: 'nim' } }).model.visionAlias, 'nim');
+});
+
 test('context.compactThreshold must be within (0, 1]', () => {
   assert.equal(load({ context: { compactThreshold: 0.5 } }).context.compactThreshold, 0.5);
   assert.throws(() => load({ context: { compactThreshold: 0 } }), /compactThreshold/);

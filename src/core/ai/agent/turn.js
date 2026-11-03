@@ -3,7 +3,6 @@ import { searchEntry, syncContexts, turnEntry } from '../../context/record.js';
 import { normalizeWhitespace, truncate } from '../../text/format.js';
 import { LLM_ERROR } from '../llm/errors.js';
 import { buildSearchContext, createPrompt } from '../prompt/index.js';
-import { pickStyleSeed } from '../prompt/sections.js';
 import {
   DEFAULT_MAX_TOOL_ROUNDS,
   SLOW_CALL_WARN_MS,
@@ -49,14 +48,35 @@ export function createTurnRunner(deps) {
     };
 
     const rawText = normalizeWhitespace(event.text ?? '');
-    // The model is text-only: images are only noted, image content is not sent to the API.
-    const imageNote = 'the user attached an image — the bot cannot see its content';
+    const image = event.imageData?.data ? event.imageData : null;
+    const selectedTarget = llm.resolve(record);
+    // Image turns use a vision-capable alias (config.model.visionAlias) when the selected
+    // model cannot see images. If none is configured, the turn stays text-only.
+    const visionTarget = image && !selectedTarget.vision ? llm.find(config.model?.visionAlias ?? 'nim') : null;
+    const target =
+      image && selectedTarget.vision ? selectedTarget : visionTarget?.vision ? visionTarget : selectedTarget;
+    const useImage = Boolean(image && target?.vision);
+    const hasImage = Boolean(event.imageUrl || image);
+    const imageNote = useImage
+      ? 'the user attached an image'
+      : 'the user attached an image — the bot cannot see its content';
     const effectiveText =
-      rawText || (event.imageUrl ? 'The user sent an image — the bot cannot see its content.' : '');
+      rawText ||
+      (hasImage
+        ? useImage
+          ? 'The user sent an image.'
+          : 'The user sent an image — the bot cannot see its content.'
+        : '');
     if (!effectiveText) return;
+    if (image && !useImage) {
+      logger.debug('image attached but the selected model is text-only', {
+        chatId: event.chatId,
+        model: target.model,
+        icon: '🖼️',
+      });
+    }
 
-    const textWithImage =
-      rawText && event.imageUrl ? `${rawText}\n[${imageNote}]` : effectiveText;
+    const textWithImage = rawText && hasImage ? `${rawText}\n[${imageNote}]` : effectiveText;
     const isGroup = event.chatType !== 'PRIVATE';
     const storedText = isGroup && textWithImage ? `${event.senderName}: ${textWithImage}` : textWithImage;
 
@@ -70,14 +90,14 @@ export function createTurnRunner(deps) {
 
     const tone = record?.meta?.tone ?? config.tone;
     const toolDefs = tools.definitions();
+    const toolNames = new Set(toolDefs.map((tool) => tool?.function?.name).filter(Boolean));
     const promptOptions = {
       platform,
       botName: event.botName || transport.displayName || 'AI assistant',
       chatType: isGroup ? 'GROUP' : 'PRIVATE',
-      imageEnabled: config.image.enabled,
+      // Only advertise the image tool when its schema is actually sent.
+      imageEnabled: toolNames.has('send_image'),
       tone,
-      // Rotates every turn so the roast reaches for different imagery instead of repeating itself.
-      styleSeed: pickStyleSeed((record?.turns ?? 0) + 1),
     };
     const promptRegistry = createPrompt({
       ...promptOptions,
@@ -87,26 +107,12 @@ export function createTurnRunner(deps) {
     const promptAssembly = promptRegistry.assemble({ text: effectiveText, now: new Date() });
     const systemPrompt = promptRegistry.render(promptAssembly);
     // Same prompt without tool guidance, for the calls that send no tool schemas.
-    const noToolsRegistry = createPrompt({ ...promptOptions, tools: [] });
+    const noToolsRegistry = createPrompt({ ...promptOptions, imageEnabled: false, tools: [] });
     const noToolsSystemPrompt = noToolsRegistry.render(
       noToolsRegistry.assemble({ text: effectiveText, now: new Date() }),
     );
 
     const reasoning = effectiveReasoning(config, record, effectiveText);
-    const selectedTarget = llm.resolve(record);
-    const image = event.imageData?.data ? event.imageData : null;
-    // Image turns use a vision-capable alias (config.model.visionAlias) when the selected
-    // model cannot see images. If none is configured, the turn stays text-only.
-    const visionTarget = image && !selectedTarget.vision ? llm.find(config.model?.visionAlias ?? 'nim') : null;
-    const target = image && selectedTarget.vision ? selectedTarget : visionTarget ?? selectedTarget;
-    const useImage = Boolean(image && target?.vision);
-    if (image && !useImage) {
-      logger.debug('image attached but the selected model is text-only', {
-        chatId: event.chatId,
-        model: target.model,
-        icon: '🖼️',
-      });
-    }
     // `/split` is per chat and takes priority over config.progressive.
     const splitMode = ['auto', 'on', 'off'].includes(record?.meta?.split)
       ? record.meta.split
@@ -425,15 +431,19 @@ export function createTurnRunner(deps) {
       // so do not use them for calibration (it would skew the ratio).
       if (round === 0) {
         const promptTokens = Number(response.usage?.prompt_tokens ?? 0);
-        // The calibrator needs the RAW estimate, not the already calibrated one.
-        if (promptTokens > 0) meter.observe(built.rawEstimatedTokens ?? built.estimatedTokens, promptTokens);
+        // Only calibrate a request that was actually sent: fallback uses a different
+        // transcript, and image tokens are appended after `built` was measured.
+        const fromPrimary = answeredBy?.alias === target.alias && answeredBy?.model === target.model;
+        if (promptTokens > 0 && fromPrimary && !useImage) {
+          meter.observe(built.rawEstimatedTokens ?? built.estimatedTokens, promptTokens);
+        }
       }
       if (typeof response.reasoning === 'string' && response.reasoning.trim()) {
         thinkingText += `${thinkingText ? '\n\n' : ''}${response.reasoning.trim()}`;
       }
       reasoningTokens += Number(response.usage?.completion_tokens_details?.reasoning_tokens ?? 0) || 0;
 
-      if (response.toolCalls?.length) {
+      if (!response.aborted && response.toolCalls?.length) {
         await runToolRound({
           logger, metrics, tools, store, chatId: event.chatId, senderId: event.senderId,
           deadline, sendPhoto: responseSink.sendPhoto, response, messages, record,
@@ -458,6 +468,9 @@ export function createTurnRunner(deps) {
       config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
       finalText, aborted, llmMs, completionMs, completionTokens, answeredBy,
     }));
+    // A tool round can set `answeredBy` before a final answer exists; drop it when the
+    // forced final call produced no text.
+    if (!finalText.trim()) answeredBy = null;
 
     await responseSink.wait();
 

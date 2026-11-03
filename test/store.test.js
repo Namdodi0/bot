@@ -64,6 +64,29 @@ test('reset keepMeta preserves settings when the chat is not cached', async () =
   assert.deepEqual(loaded.meta, { thinking: 'low', model: 'nim' });
 });
 
+test('private messages are never written to disk', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
+  await store.init();
+
+  const record = await store.get('private-chat', { chatType: 'GROUP' });
+  record.messages.push(
+    { role: 'user', kind: 'turn', text: 'public question', ts: 1 },
+    { role: 'assistant', kind: 'turn', text: 'private answer', private: true, ts: 2 },
+  );
+  store.touch('private-chat');
+  await store.flush();
+
+  const raw = JSON.parse(await fsp.readFile(store.fileFor('private-chat'), 'utf8'));
+  assert.deepEqual(raw.messages.map((message) => message.text), ['public question']);
+  assert.equal(record.messages.length, 2, 'the in-memory turn still sees its private entries');
+
+  const reloaded = createContextStore({ dir, logger: silentLogger, ttlHours: 72 });
+  await reloaded.init();
+  const fromDisk = await reloaded.get('private-chat');
+  assert.deepEqual(fromDisk.messages.map((message) => message.text), ['public question']);
+});
+
 test('store prune deletes files past TTL', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 1 });

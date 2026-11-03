@@ -85,7 +85,12 @@ export function createContextStore(options) {
     try {
       const raw = await fsp.readFile(fileFor(chatId), 'utf8');
       const parsed = JSON.parse(raw);
-      if (isRecord(parsed)) return normalizeRecord(parsed);
+      if (isRecord(parsed)) {
+        const record = normalizeRecord(parsed);
+        // Old builds may have persisted private entries; never reload them into shared context.
+        record.messages = record.messages.filter((message) => !message.private);
+        return record;
+      }
     } catch (error) {
       const code = /** @type {any} */ (error)?.code;
       if (code !== 'ENOENT') logger?.warn('read context failed, starting fresh', { chatId, error });
@@ -96,7 +101,12 @@ export function createContextStore(options) {
   /** @param {ChatRecord} record */
   function persist(record) {
     const chatId = record.chatId;
-    const payload = JSON.stringify(record);
+    // Private turns are needed only while the current turn runs; never let a debounced
+    // save or shutdown flush write them to shared disk context.
+    const payload = JSON.stringify({
+      ...record,
+      messages: (record.messages ?? []).filter((message) => !message.private),
+    });
     // A reset between "write temp" and "rename" must not resurrect the old file.
     const epoch = epochs.get(chatId) ?? 0;
     const previous = writeChains.get(chatId) ?? Promise.resolve();

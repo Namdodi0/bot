@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { __test__ as agentTest, createAgent } from '../src/core/ai/agent.js';
+import { forceFinalAnswer } from '../src/core/ai/agent/turn/final.js';
 import { LLM_ERROR, LlmError } from '../src/core/ai/llm/errors.js';
 import { createToolRuntime } from '../src/core/ai/tools.js';
 import { createCommands } from '../src/core/commands/index.js';
@@ -228,8 +229,30 @@ test('vision turns send the image as an image_url block', async () => {
   assert.ok(Array.isArray(lastUser.content));
   const image = lastUser.content.find((part) => part.type === 'image_url');
   assert.match(image.image_url.url, /^data:image\/png;base64,/);
+  assert.equal(lastUser.content.some((part) => /cannot see/.test(String(part.text ?? ''))), false);
   const record = await store.get('chat-1');
   assert.match(String(record.messages[0].text), /attached an image/);
+  assert.doesNotMatch(String(record.messages[0].text), /cannot see/);
+});
+
+test('imageData without an imageUrl still leaves a durable image note', async () => {
+  const { agent, nimCalls, store } = await setup({ replies: [{ content: 'I see it' }] });
+  await agent.handle(
+    textEvent('what is this', {
+      imageData: { data: Buffer.from('png-bytes'), contentType: 'image/png' },
+      messageId: 'vision-2',
+    }),
+  );
+  assert.equal(nimCalls[0].alias, 'nim');
+  const record = await store.get('chat-1');
+  assert.match(String(record.messages[0].text), /attached an image/);
+});
+
+test('streaming a long answer returns every chunk', async () => {
+  const content = 'A'.repeat(2500);
+  const { agent } = await setup({ replies: [{ content }] });
+  const result = await agent.stream(textEvent('give me a long answer'));
+  assert.equal(result.text, content);
 });
 
 test('private turns are never kept in the shared record', async () => {
@@ -438,6 +461,21 @@ test('USER_RATE_LIMIT_PER_MINUTE blocks spam per sender', async () => {
   assert.equal(sent.length, 1);
 });
 
+test('rate-limited collected turns return a visible notice', async () => {
+  const { agent } = await setup({ configOverrides: { userRateLimitPerMinute: 1 } });
+  await agent.collect(textEvent('one'));
+  const second = await agent.collect(textEvent('two'));
+  assert.match(second.text, /too quickly/);
+});
+
+test('send_image is not advertised when its schema is absent', async () => {
+  const { agent, nimCalls } = await setup({ tavily: null });
+  await agent.handle(textEvent('hello'));
+  const system = String(nimCalls[0].messages[0].content);
+  assert.match(system, /Image sending is disabled/);
+  assert.equal(system.includes('Send pictures only through'), false);
+});
+
 test('drain waits for in-flight messages to finish sending', async () => {
   const { agent, sent } = await setup({ delayMs: 60 });
   const task = agent.enqueue(textEvent('wait for me'));
@@ -500,6 +538,27 @@ test('a full queue also rejects collected turns with a busy answer', async () =>
   assert.match(second.text, /too many messages/);
   await first;
   assert.equal(sent.length, 0);
+});
+
+test('forceFinalAnswer does not credit a model for an empty response', async () => {
+  const result = await forceFinalAnswer({
+    config: makeConfig(),
+    logger: silentLogger,
+    llm: { chat: async () => ({ content: '', usage: {} }) },
+    chatId: 'chat-1',
+    record: {},
+    target: { model: 'deepseek-flash', alias: 'deepseek', provider: 'deepseek' },
+    messages: [{ role: 'tool', content: 'result' }],
+    noToolsMessages: () => [{ role: 'user', content: 'result' }],
+    deadline: Date.now() + 5000,
+    finalText: '',
+    aborted: false,
+    llmMs: 0,
+    completionMs: 0,
+    completionTokens: 0,
+    answeredBy: { model: 'deepseek-flash', alias: 'deepseek', provider: 'deepseek' },
+  });
+  assert.equal(result.answeredBy, null);
 });
 
 test('planAttemptBudget: non-streaming reserves 25% of the deadline for fallback', () => {

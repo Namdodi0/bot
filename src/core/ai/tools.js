@@ -239,10 +239,13 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender}} ctx
+   * @param {{chatId: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender, suppressDirectSend?: boolean}} ctx
    */
   async function sendImage(args, ctx) {
     if (!config.image.enabled) return { ok: false, text: 'Image sending is disabled.' };
+    if (ctx?.suppressDirectSend && typeof ctx.sendPhoto !== 'function') {
+      return { ok: false, text: 'Images cannot be sent directly from a private answer.' };
+    }
     if (!tavily) return { ok: false, text: 'Tavily is required to search for images.' };
     if (ctx.deadline && Date.now() > ctx.deadline) {
       return { ok: false, text: 'Ran out of time before the image search could run.' };

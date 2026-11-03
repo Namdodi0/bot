@@ -148,6 +148,17 @@ test('no send_image tool when Tavily (search) is disabled', () => {
   assert.equal(names.includes('send_image'), false);
 });
 
+test('send_image refuses a direct private send without a sink', async () => {
+  const { tools } = runtime(baseConfig(), fakeStickers);
+  const result = await tools.run(
+    'send_image',
+    { query: 'cat' },
+    { chatId: 'c1', suppressDirectSend: true },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.text, /private answer/);
+});
+
 test('set_reminder tool: definition, add and validation', async () => {
   /** @type {any[]} */
   const added = [];

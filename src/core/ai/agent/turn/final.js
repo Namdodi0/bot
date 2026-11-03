@@ -81,8 +81,10 @@ export async function forceFinalAnswer({
     llmMs += Date.now() - started;
     completionMs += Number(response?.completionMs ?? response?.latencyMs ?? 0) || 0;
     completionTokens += Number(response?.completionTokens ?? response?.usage?.completion_tokens ?? 0) || 0;
-    if (typeof response?.content === 'string') finalText = response.content;
-    answeredBy = { model: target.model, alias: target.alias, provider: target.provider };
+    if (typeof response?.content === 'string' && response.content.trim()) {
+      finalText = response.content;
+      answeredBy = { model: target.model, alias: target.alias, provider: target.provider };
+    }
   } catch (error) {
     llmMs += Date.now() - started;
     const reason = String(/** @type {any} */ (error)?.message ?? error);
@@ -93,5 +95,6 @@ export async function forceFinalAnswer({
     });
   }
 
+  if (!finalText.trim()) answeredBy = null;
   return { finalText, llmMs, completionMs, completionTokens, answeredBy };
 }

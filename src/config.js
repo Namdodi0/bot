@@ -457,6 +457,11 @@ export function loadConfig(input = {}) {
       `config.model.visionAlias is invalid (got: "${visionAlias}"). Choose: ${Object.keys(MODEL_ALIASES).join(', ')}`,
     );
   }
+  if (MODEL_ALIASES[visionAlias].vision !== true) {
+    throw new ConfigError(
+      `config.model.visionAlias must point to a vision-capable alias (got: "${visionAlias}"). Choose: ${Object.keys(MODEL_ALIASES).filter((alias) => MODEL_ALIASES[alias].vision === true).join(', ')}`,
+    );
+  }
   if (fallbackAlias === defaultAlias) {
     fallbackAlias = defaultAlias === 'nim-light' ? 'deepseek' : 'nim-light';
   }

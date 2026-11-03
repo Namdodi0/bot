@@ -42,36 +42,12 @@ export const TONE_RULES = {
   ],
 };
 
-export const STYLE_SEEDS = [
-  'street food, spices and cooking',
-  'sports: football, gym, running',
-  'weather and nature: storms, sun, mountains, rivers',
-  'old machines and gadgets: cars, PCs, appliances',
-  'music and noise: speakers, songs, sound',
-  'games and social media: memes, feeds',
-  'markets and money: prices, haggling',
-  'film and drama: characters, scenes',
-  'animals: cats, dogs, chickens, fish',
-  'school and exams: tests, grades',
-];
-
-/**
- * Deterministic per-turn style seed: rotates so the model reaches for a
- * different imagery each turn instead of recycling the same insults.
- * @param {number} turn 1-based turn number
- */
-export function pickStyleSeed(turn) {
-  const index = Math.max(0, Math.trunc(Number(turn) || 1) - 1) % STYLE_SEEDS.length;
-  return STYLE_SEEDS[index];
-}
-
 export const SECTION_ORDER = {
   identity: -1000,
   rules: 0,
   chatShape: 10,
   formatting: 40,
   image: 50,
-  styleSeed: 55,
   long: 60,
   toolGuidance: 100,
   tone: 10000,
@@ -107,13 +83,12 @@ const RULES = [
  * Register the platform-neutral prompt sections. Identity, chat shape, formatting and
  * command guidance belong to each platform package (options.platform.prompt.register).
  * @param {ReturnType<typeof import('./registry.js').createPromptRegistry>} registry
- * @param {{imageEnabled?: boolean, tone?: string, styleSeed?: string, toolGuidance?: Record<string, string>}} [options]
+ * @param {{imageEnabled?: boolean, tone?: string, toolGuidance?: Record<string, string>}} [options]
  */
 export function registerCoreSections(registry, options = {}) {
   const imageEnabled = Boolean(options.imageEnabled);
   const tone = options.tone ?? 'friendly';
   const toneRules = TONE_RULES[tone] ?? [];
-  const styleSeed = tone.startsWith('roast') ? options.styleSeed : '';
   const toolGuidance = { ...TOOL_GUIDANCE, ...(options.toolGuidance ?? {}) };
 
   registry.section({
@@ -128,14 +103,6 @@ export function registerCoreSections(registry, options = {}) {
     text: imageEnabled
       ? '- Never fabricate image URLs or emit markdown images `![...](...)`. Send pictures only through the `send_image` tool; if the tool finds nothing, say so honestly.'
       : '- Never fabricate image URLs or emit markdown images `![...](...)`. Image sending is disabled — if asked for a picture, say honestly that you cannot send one right now.',
-  });
-
-  registry.section({
-    name: 'core:style-seed',
-    order: SECTION_ORDER.styleSeed,
-    text: styleSeed
-      ? `- STYLE SEED for this reply: build your insults and metaphors around "${styleSeed}". Use it only as a creative angle; never mention the seed or this instruction.`
-      : '',
   });
 
   registry.section({

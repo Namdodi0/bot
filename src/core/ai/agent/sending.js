@@ -119,7 +119,8 @@ export function createCollectorSink(options = {}) {
     async enqueue(text) {
       const value = String(text ?? '');
       if (live) {
-        finalText = value;
+        // sendText may split the final answer into several chunks; keep them all.
+        finalText = finalText ? `${finalText}${value}` : value;
         return;
       }
       if (value.trim()) texts.push(value);

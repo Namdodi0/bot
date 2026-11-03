@@ -3,7 +3,7 @@ import { CircuitOpenError, HttpError } from '../http.js';
 import { stripMention } from '../text/format.js';
 import { QUEUE_BUSY_TEXT, createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
 import { createCollectorSink, createSenderFactory } from './agent/sending.js';
-import { findBreak, planAttemptBudget, preview, sleep } from './agent/helpers.js';
+import { FALLBACK_MIN_MS, findBreak, planAttemptBudget, preview, sleep } from './agent/helpers.js';
 import { createTurnRunner } from './agent/turn.js';
 import { LLM_ERROR, isRetryableLlmError } from './llm/errors.js';
 import { createRetryExecutor } from './llm/retry.js';
@@ -15,7 +15,11 @@ export function createAgent(deps) {
   const { config, logger, metrics, platform, llm, store, tools, commands, compaction } = deps;
   const transport = platform.transport;
   const meter = createTokenMeter();
-  const retryExecutor = createRetryExecutor({ shouldRetry: isRetryableLlmError, sleep });
+  const retryExecutor = createRetryExecutor({
+    shouldRetry: isRetryableLlmError,
+    sleep,
+    reserveMs: FALLBACK_MIN_MS,
+  });
   const seen = createSeenTracker();
   const rateLimited = createRateLimiter(config);
   const { makeSender, sendText } = createSenderFactory({ config, logger, metrics, platform });
@@ -99,6 +103,11 @@ export function createAgent(deps) {
           perMinute: config.userRateLimitPerMinute,
           icon: '🚦',
         });
+        if (collector) {
+          await collector.enqueue(
+            'You are sending messages too quickly — please wait a minute and try again.',
+          );
+        }
         return;
       }
 
