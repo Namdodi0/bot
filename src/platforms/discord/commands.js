@@ -7,6 +7,7 @@ import { eventFromInteraction } from './events.js';
 import { COMMANDS, HELP_NOTE } from './specs.js';
 import {
   answerButtons,
+  catchupEmbed,
   chunkContent,
   COLORS,
   errorEmbed,
@@ -14,11 +15,20 @@ import {
   modelSelect,
   photoAttachment,
   reminderEmbed,
+  settingsEmbed,
+  settingsRows,
   statusEmbed,
+  streamPreview,
   textEmbed,
+  TONES,
 } from './ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
+const PREVIEW_INTERVAL_MS = 1000;
+const MAX_VISION_BYTES = 8 * 1024 * 1024;
+const CATCHUP_MAX_MESSAGES = 500;
+const CATCHUP_PAGE_SIZE = 100;
+const CATCHUP_MAX_TRANSCRIPT = 12_000;
 
 /**
  * Native Discord command handlers. Slash commands do not go through the shared text-command
@@ -89,6 +99,83 @@ export function createCommandRuntime(deps) {
   }
 
   /**
+   * Serialized, throttled message preview. A failed edit disables previews for the rest of
+   * the turn; the final answer still replaces the message.
+   * @param {(text: string) => Promise<unknown>} edit
+   * @param {number} [intervalMs]
+   */
+  function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
+    let chain = Promise.resolve();
+    let disabled = false;
+    let lastAt = 0;
+    return {
+      /** @param {string} text */
+      push(text) {
+        if (disabled) return;
+        const now = Date.now();
+        if (lastAt && now - lastAt < intervalMs) return;
+        const previewText = streamPreview(text);
+        if (!previewText) return;
+        lastAt = now;
+        chain = chain
+          .then(async () => {
+            if (disabled) return;
+            await edit(previewText);
+          })
+          .catch(() => {
+            disabled = true;
+          });
+      },
+      async flush() {
+        await chain;
+      },
+    };
+  }
+
+  /**
+   * Validate and download the optional `/ask` image. Discord's CDN is not SSRF-safe to trust
+   * directly: the shared validator pins DNS and enforces the size cap.
+   * @param {any} interaction
+   * @returns {Promise<{ok: true, imageData: any}|{ok: false, reason: string}>}
+   */
+  async function askImage(interaction) {
+    const attachment = interaction.options.getAttachment?.('image');
+    if (!attachment) return { ok: true, imageData: null };
+    const contentType = String(attachment.contentType ?? '').toLowerCase();
+    if (!contentType.startsWith('image/')) {
+      return { ok: false, reason: 'The attachment must be an image.' };
+    }
+    if (Number(attachment.size) > MAX_VISION_BYTES) {
+      return { ok: false, reason: 'That image is too large (max 8 MB).' };
+    }
+    const downloaded = await runtime.validator?.download?.(String(attachment.url ?? ''));
+    if (!downloaded?.ok || !downloaded.data) {
+      return { ok: false, reason: `Could not download that image${downloaded?.reason ? ` (${downloaded.reason})` : ''}.` };
+    }
+    return { ok: true, imageData: { data: downloaded.data, contentType: downloaded.contentType ?? contentType } };
+  }
+
+  /** @param {any} record */
+  function settingsPayload(record) {
+    const current = chat.currentModel(record);
+    return {
+      embeds: [settingsEmbed(record, config, current)],
+      components: settingsRows(chat.listModels(), record, current),
+    };
+  }
+
+  /** @param {any} interaction @param {string} prompt @param {{chatId?: string, chatType?: string, imageData?: any, onDelta?: (delta: string) => void}} [extra] */
+  function streamAsk(interaction, prompt, extra = {}) {
+    const event = askEvent(
+      interaction,
+      prompt,
+      extra.chatId ? { chatId: extra.chatId, chatType: extra.chatType ?? 'GROUP' } : undefined,
+    );
+    if (extra.imageData) event.imageData = extra.imageData;
+    return runtime.agent.stream(event, { skipCommands: true, onDelta: extra.onDelta });
+  }
+
+  /**
    * @param {any} interaction
    * @param {{text: string, photos: any[]}} result
    * @param {string} token
@@ -120,11 +207,14 @@ export function createCommandRuntime(deps) {
    * @param {any} channel
    * @param {{text: string, photos: any[]}} result
    * @param {string} token
+   * @param {any} [existing] a preview message to edit instead of sending the first chunk
    */
-  async function sendChannelAnswer(channel, result, token) {
+  async function sendChannelAnswer(channel, result, token, existing = null) {
     const chunks = result.text ? chunkContent(result.text) : [];
     const first = chunks.shift() ?? (result.photos.length ? 'Here are the images.' : 'I do not have an answer for that yet.');
-    await channel.send({ content: first, components: answerButtons(token) });
+    const payload = { content: first, components: answerButtons(token) };
+    if (existing?.edit) await existing.edit(payload);
+    else await channel.send(payload);
     for (const chunk of chunks) await channel.send({ content: chunk });
     for (let index = 0; index < result.photos.length; index += 10) {
       const group = result.photos.slice(index, index + 10);
@@ -133,14 +223,6 @@ export function createCommandRuntime(deps) {
         content: group[0].caption?.slice(0, 2000) || undefined,
       });
     }
-  }
-
-  /** @param {any} interaction @param {string} prompt @param {string} [chatId] */
-  async function runAsk(interaction, prompt, chatId) {
-    return runtime.agent.collect(
-      askEvent(interaction, prompt, chatId ? { chatId, chatType: 'GROUP' } : undefined),
-      { skipCommands: true },
-    );
   }
 
   /**
@@ -170,15 +252,34 @@ export function createCommandRuntime(deps) {
   const handlers = {
     async ask(interaction) {
       const prompt = String(interaction.options.getString('prompt', true)).trim();
-      const priv = interaction.options.getBoolean('private') === true;
-      const inThread = interaction.options.getBoolean('thread') === true;
       if (!prompt) {
         await replyEphemeral(interaction, { content: 'Ask me something first.' });
         return;
       }
+      const chatId = String(interaction.channelId);
+      const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
+      const record = await chat.getRecord(chatId, chatType);
+      const privOption = interaction.options.getBoolean('private');
+      const threadOption = interaction.options.getBoolean('thread');
+      const priv = privOption ?? record?.meta?.privateDefault === true;
+      const inThread = threadOption ?? record?.meta?.autoThread === true;
+      // Acknowledge BEFORE the image download: downloading up to 8 MB can exceed the
+      // 3-second interaction window.
+      const useThread = inThread && Boolean(interaction.guild);
+      await interaction.deferReply(useThread ? ephemeral : privateReply(priv));
 
-      if (inThread && interaction.guild) {
-        await interaction.deferReply(ephemeral);
+      const image = await askImage(interaction);
+      if (!image.ok) {
+        await interaction.editReply({ content: String(/** @type {any} */ (image).reason ?? 'That image is not usable.') });
+        return;
+      }
+
+      let streamed = '';
+      const accumulate = (delta) => {
+        streamed += delta;
+      };
+
+      if (useThread) {
         const channel = /** @type {any} */ (interaction.channel);
         if (!channel?.threads?.create) {
           await interaction.editReply({ content: 'Threads are not available in this channel.' });
@@ -186,23 +287,121 @@ export function createCommandRuntime(deps) {
         }
         const name = prompt.replace(/\s+/g, ' ').slice(0, 90) || 'AI answer';
         const thread = await channel.threads.create({ name, autoArchiveDuration: 1440, reason: `AI answer for ${interaction.user.username}` });
-        const result = await runAsk(interaction, prompt, thread.id);
+        const placeholder = await thread.send({ content: '…' });
+        const previewer = createPreviewer((text) => placeholder.edit({ content: text }));
+        const result = await streamAsk(interaction, prompt, {
+          chatId: thread.id,
+          imageData: image.imageData,
+          onDelta: (delta) => {
+            accumulate(delta);
+            previewer.push(streamed);
+          },
+        });
+        await previewer.flush();
         const token = makeToken({ prompt, chatId: thread.id, chatType: 'GROUP', userId: interaction.user.id, ephemeral: false });
-        await sendChannelAnswer(thread, result, token);
+        await sendChannelAnswer(thread, result, token, placeholder);
         await interaction.editReply({ content: `Answered in ${thread}.` });
         return;
       }
 
-      await interaction.deferReply(privateReply(priv));
-      const result = await runAsk(interaction, prompt);
+      const previewer = createPreviewer((text) => interaction.editReply({ content: text }));
+      const result = await streamAsk(interaction, prompt, {
+        imageData: image.imageData,
+        onDelta: (delta) => {
+          accumulate(delta);
+          previewer.push(streamed);
+        },
+      });
+      await previewer.flush();
       const token = makeToken({
         prompt,
-        chatId: String(interaction.channelId),
-        chatType: interaction.guildId ? 'GROUP' : 'PRIVATE',
+        chatId,
+        chatType,
         userId: interaction.user.id,
         ephemeral: priv,
       });
       await sendInteractionAnswer(interaction, result, token, priv);
+    },
+
+    async settings(interaction) {
+      if (!isAdmin(interaction)) {
+        await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can change channel settings.')] });
+        return;
+      }
+      const record = await chat.getRecord(String(interaction.channelId), interaction.guildId ? 'GROUP' : 'PRIVATE');
+      await replyEphemeral(interaction, settingsPayload(record));
+    },
+
+    async catchup(interaction) {
+      await interaction.deferReply(ephemeral);
+      const hours = interaction.options.getInteger('hours') ?? 24;
+      const channel = /** @type {any} */ (interaction.channel);
+      if (!channel?.messages?.fetch) {
+        await interaction.editReply({ content: 'I cannot read messages in this channel.' });
+        return;
+      }
+
+      const cutoff = Date.now() - hours * 3_600_000;
+      /** @type {Array<{name: string, text: string}>} */
+      const collected = [];
+      /** @type {string|undefined} */
+      let before;
+      let scanned = 0;
+      try {
+        while (scanned < CATCHUP_MAX_MESSAGES) {
+          const batch = await channel.messages.fetch({ limit: CATCHUP_PAGE_SIZE, ...(before ? { before } : {}) });
+          const messages = [...(batch?.values?.() ?? [])];
+          if (!messages.length) break;
+          let reachedCutoff = false;
+          for (const message of messages) {
+            if (scanned >= CATCHUP_MAX_MESSAGES) break;
+            scanned += 1;
+            if (Number(message.createdTimestamp) < cutoff) {
+              reachedCutoff = true;
+              continue;
+            }
+            if (message.author?.bot) continue;
+            const content = String(message.content ?? '').trim();
+            if (content.startsWith('/')) continue;
+            const attachmentCount = Number(message.attachments?.size ?? message.attachments?.length ?? 0);
+            const text = content ? (attachmentCount > 0 ? `${content} [attachment]` : content) : attachmentCount > 0 ? '[attachment]' : '';
+            if (!text) continue;
+            collected.push({
+              name: String(message.member?.displayName ?? message.author?.username ?? 'Member'),
+              text,
+            });
+          }
+          if (reachedCutoff || scanned >= CATCHUP_MAX_MESSAGES) break;
+          before = messages[messages.length - 1]?.id;
+          if (!before) break;
+        }
+      } catch (error) {
+        logger?.warn('discord catchup fetch failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
+        await interaction.editReply({
+          content: 'I could not read this channel. I need the Read Message History permission here.',
+        });
+        return;
+      }
+
+      if (!collected.length) {
+        await interaction.editReply({
+          content: `No messages in the last ${hours} hour${hours === 1 ? '' : 's'} to catch up on.`,
+        });
+        return;
+      }
+
+      const transcript = collected
+        .slice()
+        .reverse()
+        .map((item) => `${item.name}: ${item.text}`)
+        .join('\n')
+        .slice(0, CATCHUP_MAX_TRANSCRIPT);
+      const summary = await chat.summarizeText(transcript);
+      if (!summary.ok) {
+        await interaction.editReply({ content: 'I could not summarize those messages right now.' });
+        return;
+      }
+      await interaction.editReply({ embeds: [catchupEmbed(hours, collected.length, summary.text)] });
     },
 
     async help(interaction) {
@@ -450,20 +649,57 @@ export function createCommandRuntime(deps) {
 
   /** @param {any} interaction */
   async function handleSelect(interaction) {
-    if (interaction.customId !== 'model:select') return;
+    const customId = String(interaction.customId ?? '');
+    if (customId === 'model:select') {
+      if (!isAdmin(interaction)) {
+        await interaction.reply({ content: 'Only server admins can change the model.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+      const alias = interaction.values?.[0];
+      const picked = alias ? chat.findModel(alias) : null;
+      if (!picked) {
+        await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
+        return;
+      }
+      const chatId = String(interaction.channelId);
+      await chat.setModel(chatId, picked.alias, interaction.guildId ? 'GROUP' : 'PRIVATE');
+      await interaction.update({ embeds: [textEmbed('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`)], components: [] });
+      return;
+    }
+
+    if (!customId.startsWith('settings:')) return;
     if (!isAdmin(interaction)) {
-      await interaction.reply({ content: 'Only server admins can change the model.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: 'Only server admins can change channel settings.', flags: MessageFlags.Ephemeral });
       return;
     }
-    const alias = interaction.values?.[0];
-    const picked = alias ? chat.findModel(alias) : null;
-    if (!picked) {
-      await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
-      return;
-    }
+
+    const field = customId.slice('settings:'.length);
+    const value = String(interaction.values?.[0] ?? '');
     const chatId = String(interaction.channelId);
-    await chat.setModel(chatId, picked.alias, interaction.guildId ? 'GROUP' : 'PRIVATE');
-    await interaction.update({ embeds: [textEmbed('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`)], components: [] });
+    const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
+    const record = await chat.getRecord(chatId, chatType);
+    if (!record.meta) record.meta = {};
+
+    if (field === 'model') {
+      const picked = chat.findModel(value);
+      if (!picked) {
+        await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
+        return;
+      }
+      await chat.setModel(chatId, picked.alias, chatType, record);
+    } else if (field === 'tone') {
+      record.meta.tone = value !== '__default' && TONES.some((item) => item.value === value) ? value : null;
+    } else if (field === 'privacy') {
+      record.meta.privateDefault = value === 'private';
+    } else if (field === 'thread') {
+      record.meta.autoThread = value === 'on';
+    } else {
+      await interaction.deferUpdate();
+      return;
+    }
+
+    runtime.store.touch?.(chatId);
+    await interaction.update(settingsPayload(record));
   }
 
   /** @param {any} interaction */

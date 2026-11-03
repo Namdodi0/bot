@@ -15,9 +15,11 @@ test('Discord exposes a slash-first command surface', () => {
     'status',
     'ping',
     'model',
+    'settings',
     'reset',
     'compact',
     'summary',
+    'catchup',
     'search',
     'image',
     'remind',
@@ -27,12 +29,13 @@ test('Discord exposes a slash-first command surface', () => {
   for (const legacy of ['sticker', 'tone', 'split', 'think', 'id']) {
     assert.equal(names.includes(legacy), false, legacy);
   }
-  assert.equal(COMMANDS.filter((command) => command.type === 1).length, 11);
+  assert.equal(COMMANDS.filter((command) => command.type === 1).length, 13);
   assert.equal(COMMANDS.filter((command) => command.type === 3).length, 2);
+  assert.equal(COMMANDS.length, 15);
 });
 
 test('Discord admin commands are hidden behind Manage Server by default', () => {
-  for (const name of ['model', 'reset', 'compact']) {
+  for (const name of ['model', 'settings', 'reset', 'compact']) {
     assert.equal(COMMANDS.find((command) => command.name === name)?.default_member_permissions, '32', name);
   }
 });
@@ -41,12 +44,17 @@ test('Discord command options cover the native interactions', () => {
   const ask = COMMANDS.find((command) => command.name === 'ask');
   assert.deepEqual(
     ask?.options?.map((option) => option.name),
-    ['prompt', 'private', 'thread'],
+    ['prompt', 'private', 'thread', 'image'],
   );
+  assert.equal(ask?.options?.find((option) => option.name === 'image')?.type, 11);
   const image = COMMANDS.find((command) => command.name === 'image');
   const count = image?.options?.find((option) => option.name === 'count');
   assert.equal(count?.min_value, 1);
   assert.equal(count?.max_value, 25);
+  const catchup = COMMANDS.find((command) => command.name === 'catchup');
+  const hours = catchup?.options?.find((option) => option.name === 'hours');
+  assert.equal(hours?.min_value, 1);
+  assert.equal(hours?.max_value, 168);
   const remind = COMMANDS.find((command) => command.name === 'remind');
   assert.deepEqual(
     remind?.options?.map((option) => option.name),
@@ -57,7 +65,7 @@ test('Discord command options cover the native interactions', () => {
 test('Discord help has no Zalo-only features', () => {
   const bullets = helpBullets(COMMANDS, {}).join('\n');
   assert.match(bullets, /`\/ask`/);
-  assert.doesNotMatch(bullets, /sticker|tone|split|think/i);
+  assert.doesNotMatch(bullets, /`\/(sticker|tone|split|think)`/);
   assert.match(HELP_NOTE, /Explain message/);
   assert.match(HELP_NOTE, /Summarize message/);
 });

@@ -9,11 +9,12 @@ export const COMMANDS = [
     type: ApplicationCommandType.ChatInput,
     name: 'ask',
     description: 'Ask the AI in this channel',
-    help: '`/ask` — ask the AI (options: private answer, answer in a new thread)',
+    help: '`/ask` — ask the AI (options: private answer, new thread, image)',
     options: [
       { name: 'prompt', description: 'What do you want to ask?', type: 3, required: true },
       { name: 'private', description: 'Only you can see the answer', type: 5 },
       { name: 'thread', description: 'Answer in a new thread', type: 5 },
+      { name: 'image', description: 'An image for the bot to look at (max 8 MB)', type: 11 },
     ],
   },
   {
@@ -44,6 +45,13 @@ export const COMMANDS = [
   },
   {
     type: ApplicationCommandType.ChatInput,
+    name: 'settings',
+    description: 'Channel settings: model, style, privacy, threads (admin)',
+    help: '`/settings` — model, style, privacy and thread defaults (admin)',
+    default_member_permissions: String(PermissionFlagsBits.ManageGuild),
+  },
+  {
+    type: ApplicationCommandType.ChatInput,
     name: 'reset',
     description: 'Clear this channel context (admin)',
     help: '`/reset` — clear this channel context (admin)',
@@ -64,6 +72,15 @@ export const COMMANDS = [
     help: '`/summary` — summarize the last N messages',
     options: [
       { name: 'count', description: 'Messages to summarize (2-200, default 30)', type: 4, min_value: 2, max_value: 200 },
+    ],
+  },
+  {
+    type: ApplicationCommandType.ChatInput,
+    name: 'catchup',
+    description: 'Summarize what you missed in this channel',
+    help: '`/catchup` — summarize the last N hours',
+    options: [
+      { name: 'hours', description: 'How far back to look (1-168, default 24)', type: 4, min_value: 1, max_value: 168 },
     ],
   },
   {

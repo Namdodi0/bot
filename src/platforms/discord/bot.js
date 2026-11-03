@@ -50,6 +50,17 @@ export function createDiscordBot(deps) {
     if (!event) return;
     // Slash-only command surface: a typed "/ask ..." is not a command.
     if (String(event.text ?? '').trimStart().startsWith('/')) return;
+    if (event.imageUrl && runtime.validator?.download) {
+      // Vision bytes are optional: if the download fails the text note still reaches the model.
+      try {
+        const downloaded = await runtime.validator.download(event.imageUrl);
+        if (downloaded?.ok && downloaded.data) {
+          event.imageData = { data: downloaded.data, contentType: downloaded.contentType };
+        }
+      } catch (error) {
+        logger?.debug('discord image download failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
+      }
+    }
     metrics?.inc('discord.messages.in');
     await runtime.agent.enqueue(event);
   }

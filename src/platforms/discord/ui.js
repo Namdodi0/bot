@@ -17,6 +17,26 @@ export function chunkContent(text, limit = 2000) {
   return chunkText(text, { limit }).chunks;
 }
 
+/**
+ * Clamp a streaming delta to the Discord limit and balance an unterminated code fence so a
+ * half-written answer still renders. Never throws: a broken preview must not kill the turn.
+ * @param {string} text
+ * @param {number} [limit]
+ */
+export function streamPreview(text, limit = 1900) {
+  try {
+    let value = String(text ?? '');
+    if (!value.trim()) return '';
+    if (value.length > limit) value = value.slice(0, limit);
+    if ((value.match(/```/g) ?? []).length % 2 === 1) {
+      value = `${value.slice(0, Math.max(0, limit - 4))}\n\`\`\``;
+    }
+    return value;
+  } catch {
+    return '';
+  }
+}
+
 /** @param {string} message */
 export function errorEmbed(message) {
   return new EmbedBuilder().setColor(COLORS.error).setDescription(String(message ?? 'Something went wrong.'));
@@ -123,4 +143,111 @@ export function reminderEmbed(items) {
     .sort((a, b) => a.at - b.at)
     .map((item) => `**#${item.id}** — <t:${Math.floor(item.at / 1000)}:f> (<t:${Math.floor(item.at / 1000)}:R>)\n${item.text}`);
   return new EmbedBuilder().setColor(COLORS.info).setTitle(`Reminders (${items.length})`).setDescription(lines.join('\n\n').slice(0, 4000));
+}
+
+/** @type {Array<{value: string, label: string}>} */
+export const TONES = [
+  { value: '__default', label: 'Default' },
+  { value: 'friendly', label: 'Friendly' },
+  { value: 'roast', label: 'Roast' },
+  { value: 'roast-hard', label: 'Roast hard' },
+  { value: 'roast-extreme', label: 'Roast extreme' },
+];
+
+/**
+ * Channel settings summary. Reads the same `record.meta` fields the handlers write.
+ * @param {any} record
+ * @param {any} config
+ * @param {{alias: string, label: string}} currentModel
+ */
+export function settingsEmbed(record, config, currentModel) {
+  const meta = record?.meta ?? {};
+  const tone = typeof meta.tone === 'string' && meta.tone ? meta.tone : `default (${config?.tone ?? 'friendly'})`;
+  return new EmbedBuilder()
+    .setColor(COLORS.info)
+    .setTitle('Channel settings')
+    .addFields(
+      { name: 'Model', value: `\`${currentModel.alias}\` — ${currentModel.label}`, inline: true },
+      { name: 'Tone', value: tone, inline: true },
+      { name: 'Default privacy', value: meta.privateDefault ? 'private' : 'public', inline: true },
+      { name: 'Auto-thread', value: meta.autoThread ? 'on' : 'off', inline: true },
+    )
+    .setFooter({ text: 'Changes apply to this channel only.' });
+}
+
+/**
+ * @param {{customId: string, placeholder: string, options: Array<{label: string, value: string, description?: string, default?: boolean}>}} input
+ */
+function selectRow(input) {
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(input.customId)
+    .setPlaceholder(input.placeholder)
+    .addOptions(
+      input.options.slice(0, 25).map((option) => {
+        const builder = new StringSelectMenuOptionBuilder()
+          .setLabel(option.label.slice(0, 100))
+          .setValue(option.value)
+          .setDefault(option.default === true);
+        return option.description ? builder.setDescription(option.description.slice(0, 100)) : builder;
+      }),
+    );
+  return new ActionRowBuilder().addComponents(select);
+}
+
+/**
+ * At most four action rows (Discord's limit): model, tone, default privacy, auto-thread.
+ * @param {Array<{alias: string, label: string, provider: string, model: string}>} models
+ * @param {any} record
+ * @param {{alias: string}} currentModel
+ */
+export function settingsRows(models, record, currentModel) {
+  const meta = record?.meta ?? {};
+  const model = typeof meta.model === 'string' && meta.model ? meta.model : currentModel.alias;
+  const tone = typeof meta.tone === 'string' && meta.tone ? meta.tone : '__default';
+  return [
+    selectRow({
+      customId: 'settings:model',
+      placeholder: 'Choose a model',
+      options: models.slice(0, 25).map((item) => ({
+        label: item.label,
+        value: item.alias,
+        description: `${item.provider}/${item.model}`,
+        default: item.alias === model,
+      })),
+    }),
+    selectRow({
+      customId: 'settings:tone',
+      placeholder: 'Choose a tone',
+      options: TONES.map((item) => ({ ...item, default: item.value === tone })),
+    }),
+    selectRow({
+      customId: 'settings:privacy',
+      placeholder: 'Default privacy for /ask',
+      options: [
+        { value: 'public', label: 'Public', default: !meta.privateDefault },
+        { value: 'private', label: 'Private', default: meta.privateDefault === true },
+      ],
+    }),
+    selectRow({
+      customId: 'settings:thread',
+      placeholder: 'Answer /ask in a new thread',
+      options: [
+        { value: 'off', label: 'Off', default: meta.autoThread !== true },
+        { value: 'on', label: 'On', default: meta.autoThread === true },
+      ],
+    }),
+  ];
+}
+
+/**
+ * @param {number} hours
+ * @param {number} count
+ * @param {string} text
+ */
+export function catchupEmbed(hours, count, text) {
+  return new EmbedBuilder()
+    .setColor(COLORS.info)
+    .setTitle(`Catch-up — last ${hours} hour${hours === 1 ? '' : 's'}`)
+    .setDescription(String(text ?? '').slice(0, 4000) || 'Nothing to summarize.')
+    .setFooter({ text: `${count} message${count === 1 ? '' : 's'} summarized` });
 }
