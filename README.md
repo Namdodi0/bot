@@ -135,9 +135,10 @@ parser. Those were Zalo-shaped and do not fit Discord.
 ## How answers work
 
 1. The gateway routes slash commands and message events.
-2. `/ask`, `/search`, `/image` and the context menus call the shared engine through a
-   **capture runner**: the engine produces text/images, then Discord renders them natively
-   (embed/edit reply, attachments, buttons) instead of posting its own messages.
+2. `/ask`, `/search`, `/image` and the context menus call the shared engine through
+   `agent.collect()`: the turn runs against a **response sink** that captures text/images,
+   then Discord renders them natively (embed/edit reply, attachments, buttons) instead of
+   posting its own messages.
 3. Ordinary @mention/reply chat goes through the same shared agent and replies in-channel.
 4. Context is stored per **channel or thread id** under `data/discord/`.
 5. Long answers are split at 2000 characters. A fence-aware split leaves room for code-fence
@@ -262,10 +263,10 @@ the full stack appears only in JSON mode. `--verbose` adds retry/cache/tool/cont
 
 ```
 Discord gateway ──► bot.js ──► native commands (commands.js, ui.js)
-        │                └──► capture runner (ask.js) ──► shared engine (src/core)
+        │                └──► agent.collect() response sink ──► shared engine (src/core)
         └──► messageCreate ──► event normalization ──► shared agent ──► transport
                                                       │
-                                        context store · model router · tools
+                                        chat services · context store · model router · tools
 ```
 
 | Path | Role |
@@ -273,7 +274,8 @@ Discord gateway ──► bot.js ──► native commands (commands.js, ui.js)
 | `src/discord.js` | Discord entry: config, platform, runtime, bot lifecycle. |
 | `src/platforms/discord/specs.js` | Slash/context-menu surface. |
 | `src/platforms/discord/commands.js` | Native handlers, buttons, select menu, ephemeral replies. |
-| `src/platforms/discord/ask.js` | Capture runner over the shared engine, per-channel ordering. |
+| `src/core/services/` | Shared chat settings/context/summary and reminder operations. |
+| `src/core/ai/agent/turn/` | Turn fallback, tool round, final answer and reporting helpers. |
 | `src/platforms/discord/ui.js` | Embeds, buttons, select menu, attachments, chunking. |
 | `src/platforms/discord/bot.js` | Gateway events, admission, command registration. |
 | `src/platforms/discord/transport.js` | Send/edit/react/typing/attachments. |
