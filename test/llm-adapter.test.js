@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEEPSEEK_REASONING_MAP, createOpenAiCompatAdapter } from '../src/core/ai/llm/adapter-openai.js';
+import { planAttemptBudget } from '../src/core/ai/agent/helpers.js';
+import { HttpError, createHttp } from '../src/core/http.js';
 import { createSilentLogger } from '../src/core/logger.js';
 
 const logger = createSilentLogger();
@@ -244,4 +246,125 @@ test('warmup: a network error returns ok:false and does NOT throw', async () => 
   const result = await client.warmup();
   assert.equal(result.ok, false);
   assert.match(result.error, /timeout after nim request/);
+});
+
+test('planAttemptBudget clamps the streaming attempt to the provider timeout', () => {
+  const result = planAttemptBudget({
+    remainingMs: 60_000,
+    attempt: 0,
+    maxAttempts: 2,
+    streaming: true,
+    aiTimeoutMs: 5_000,
+  });
+  assert.equal(result.reserveMs, 8_000);
+  assert.equal(result.primaryMs, 52_000);
+  assert.equal(result.timeoutMs, 5_000);
+});
+
+test('planAttemptBudget keeps the streaming attempt unlimited when aiTimeoutMs <= 0', () => {
+  const result = planAttemptBudget({
+    remainingMs: 60_000,
+    attempt: 0,
+    maxAttempts: 2,
+    streaming: true,
+    aiTimeoutMs: 0,
+  });
+  assert.equal(result.timeoutMs, 52_000);
+});
+
+test('stream: a completed stream records a breaker success', async () => {
+  const encoder = new TextEncoder();
+  const service = 'nim:nvidia/nemotron-3.5-super-vl-120b-a12b';
+  const http = createHttp({
+    sleep: async () => {},
+    fetchImpl: async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'));
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  http.recordStreamFailure(service);
+  const client = makeClient(http);
+  const result = await client.chat({
+    messages: [{ role: 'user', content: 'hi' }],
+    reasoning: 'none',
+    stream: true,
+    ttftMs: 0,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.content, 'Hi');
+  assert.equal(http.stateOf(service).failures, 0);
+});
+
+test('stream: a mid-stream failure is recorded on the breaker', async () => {
+  const service = 'nim:nvidia/nemotron-3.5-super-vl-120b-a12b';
+  const http = createHttp({
+    sleep: async () => {},
+    fetchImpl: async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError('terminated'));
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  const client = makeClient(http);
+  await assert.rejects(
+    () =>
+      client.chat({
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning: 'none',
+        stream: true,
+        ttftMs: 0,
+        timeoutMs: 5000,
+      }),
+    (error) => {
+      assert.equal(error instanceof HttpError, true);
+      assert.equal(error.service, service);
+      assert.equal(error.retryable, true);
+      assert.match(error.message, /before first token/);
+      return true;
+    },
+  );
+  assert.equal(http.stateOf(service).failures, 1);
+});
+
+test('stream: a caller abort is not recorded as a breaker failure', async () => {
+  const service = 'nim:nvidia/nemotron-3.5-super-vl-120b-a12b';
+  const controller = new AbortController();
+  const http = createHttp({
+    sleep: async () => {},
+    fetchImpl: async (_url, opts) =>
+      new Response(
+        new ReadableStream({
+          start(streamController) {
+            opts?.signal?.addEventListener('abort', () => streamController.error(/** @type {any} */ (opts.signal).reason));
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  const client = makeClient(http);
+  setTimeout(() => controller.abort(), 10);
+  await assert.rejects(
+    () =>
+      client.chat({
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning: 'none',
+        stream: true,
+        ttftMs: 0,
+        timeoutMs: 5000,
+        signal: controller.signal,
+      }),
+    (error) => error.name === 'AbortError',
+  );
+  assert.equal(http.stateOf(service).failures, 0);
 });

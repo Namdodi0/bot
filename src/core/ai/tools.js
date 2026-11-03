@@ -110,11 +110,14 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number}} ctx
+   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number, suppressDirectSend?: boolean}} ctx
    * @returns {Promise<{ok: boolean, text: string}>}
    */
   async function setReminder(args, ctx) {
     if (!reminders) return { ok: false, text: 'Reminders are not enabled.' };
+    if (ctx?.suppressDirectSend) {
+      return { ok: false, text: 'Reminders cannot be set from a private answer.' };
+    }
     const when = String(args?.when ?? '').trim();
     const text = String(args?.text ?? args?.content ?? '').trim();
     if (!when) return { ok: false, text: 'Missing the reminder time (when).' };

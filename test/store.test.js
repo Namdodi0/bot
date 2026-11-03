@@ -32,6 +32,38 @@ test('store saves, reloads, resets', async () => {
   assert.equal(fresh.messages.length, 0);
 });
 
+test('concurrent loads of the same chat share one record instance', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72 });
+  await store.init();
+
+  const [first, second] = await Promise.all([store.get('race-chat'), store.get('race-chat')]);
+  assert.equal(first, second);
+  first.messages.push({ role: 'user', text: 'kept', ts: Date.now() });
+  assert.equal(second.messages.length, 1);
+});
+
+test('reset keepMeta preserves settings when the chat is not cached', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
+  await store.init();
+
+  const record = await store.get('cold-chat', { chatType: 'GROUP' });
+  record.meta = { thinking: 'low', model: 'nim' };
+  record.messages.push({ role: 'user', text: 'old', ts: Date.now() });
+  store.touch('cold-chat');
+  await store.flush();
+
+  const cold = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
+  await cold.init();
+  const reset = await cold.reset('cold-chat', { keepMeta: true });
+  assert.deepEqual(reset.meta, { thinking: 'low', model: 'nim' });
+
+  const loaded = await cold.get('cold-chat');
+  assert.equal(loaded.messages.length, 0);
+  assert.deepEqual(loaded.meta, { thinking: 'low', model: 'nim' });
+});
+
 test('store prune deletes files past TTL', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 1 });

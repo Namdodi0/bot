@@ -189,6 +189,8 @@ test('isPrivateAddress blocks IPv4-mapped/NAT64/6to4/Teredo forms', () => {
     '::ffff:7f00:1', // 127.0.0.1 in hex
     '::ffff:a9fe:a9fe', // 169.254.169.254 in hex
     '::ffff:c0a8:105', // 192.168.1.5
+    '::ffff:0:7f00:1', // IPv4-translated 127.0.0.1
+    '::ffff:0:a9fe:a9fe', // IPv4-translated metadata address
     '64:ff9b::7f00:1', // NAT64
     '2002:7f00:1::1', // 6to4
     '2001:0:0:0:0:0:0:1', // Teredo

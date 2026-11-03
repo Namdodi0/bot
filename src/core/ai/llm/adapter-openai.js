@@ -330,16 +330,32 @@ export function createOpenAiCompatAdapter(options) {
       }
     }
 
+    const service = routeKey(payload.model);
+    // The circuit breaker only learns the outcome of a stream once its body is finished.
+    if (streamError) {
+      if (!input.signal?.aborted) http.recordStreamFailure?.(service);
+    } else {
+      http.recordStreamSuccess?.(service);
+    }
+
     if (streamError && !content && callMap.size === 0) {
-      // Same split as above: guard fired → retryable; caller's deadline → no time left.
+      // Guard fired (provider stalled before the first token) → retryable.
       if (ttftController?.signal.aborted && !input.signal?.aborted) {
-        throw new HttpError(`${routeKey(payload.model)} first token timeout`, {
-          service: routeKey(payload.model),
+        throw new HttpError(`${service} first token timeout`, {
+          service,
           retryable: true,
           cause: streamError,
         });
       }
-      throw streamError;
+      // Caller/deadline abort: no time left, keep the original abort classification.
+      if (input.signal?.aborted) throw streamError;
+      // Network reset before any token arrived: the provider may work on a retry.
+      throw new HttpError(`${service} stream failed before first token`, {
+        service,
+        status: 0,
+        retryable: true,
+        cause: streamError,
+      });
     }
 
     /** @type {NimToolCall[]} */

@@ -17,6 +17,13 @@ test('htmlToText extracts title, text, lists and entities', () => {
   assert.doesNotMatch(text, /alert|no|\.x/);
 });
 
+test('htmlToText keeps out-of-range numeric entities literal', () => {
+  const { text } = htmlToText('<p>&#x110000; &#99999999; ok</p>', 'text/html');
+  assert.match(text, /&#x110000;/);
+  assert.match(text, /&#99999999;/);
+  assert.match(text, /ok/);
+});
+
 test('htmlToText leaves plain text untouched', () => {
   const { title, text } = htmlToText('just plain text', 'text/plain');
   assert.equal(title, '');

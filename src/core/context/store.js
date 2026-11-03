@@ -13,6 +13,7 @@ import { freshRecord, normalizeRecord } from './record.js';
  * @property {number} ts
  * @property {string} [messageId]
  * @property {string} [toolCallId]
+ * @property {boolean} [private]
  * @property {Array<{id: string, name: string, arguments: any, rawArguments?: string}>} [toolCalls]
  */
 
@@ -72,20 +73,56 @@ export function createContextStore(options) {
 
   /** @type {Map<string, number>} */
   const epochs = new Map();
+  /** @type {Map<string, Promise<ChatRecord>>} */
+  const loads = new Map();
+  /** @type {Map<string, Promise<void>>} */
+  const writeChains = new Map();
 
   let writeSeq = 0;
 
+  /** @param {string} chatId */
+  async function readRecord(chatId) {
+    try {
+      const raw = await fsp.readFile(fileFor(chatId), 'utf8');
+      const parsed = JSON.parse(raw);
+      if (isRecord(parsed)) return normalizeRecord(parsed);
+    } catch (error) {
+      const code = /** @type {any} */ (error)?.code;
+      if (code !== 'ENOENT') logger?.warn('read context failed, starting fresh', { chatId, error });
+    }
+    return null;
+  }
+
   /** @param {ChatRecord} record */
-  async function persist(record) {
-    const file = fileFor(record.chatId);
+  function persist(record) {
+    const chatId = record.chatId;
+    const payload = JSON.stringify(record);
     // A reset between "write temp" and "rename" must not resurrect the old file.
-    const epoch = epochs.get(record.chatId) ?? 0;
-    // Unique tmp name: debounce and flush() can write the same chat concurrently.
+    const epoch = epochs.get(chatId) ?? 0;
+    const previous = writeChains.get(chatId) ?? Promise.resolve();
+    const task = previous
+      .catch(() => {})
+      .then(() => writePayload(chatId, payload, epoch));
+    const guarded = task.catch(() => {});
+    writeChains.set(chatId, guarded);
+    guarded.then(() => {
+      if (writeChains.get(chatId) === guarded) writeChains.delete(chatId);
+    });
+    return task;
+  }
+
+  /**
+   * @param {string} chatId
+   * @param {string} payload
+   * @param {number} epoch
+   */
+  async function writePayload(chatId, payload, epoch) {
+    const file = fileFor(chatId);
+    // Unique tmp name: debounce and flush() can queue the same chat concurrently.
     writeSeq += 1;
     const tmp = `${file}.${process.pid}.${writeSeq}.tmp`;
-    const payload = JSON.stringify(record);
     await fsp.writeFile(tmp, payload, 'utf8');
-    if ((epochs.get(record.chatId) ?? 0) !== epoch) {
+    if ((epochs.get(chatId) ?? 0) !== epoch) {
       try {
         await fsp.unlink(tmp);
       } catch {
@@ -126,24 +163,29 @@ export function createContextStore(options) {
       return cached;
     }
 
-    /** @type {ChatRecord|null} */
-    let loaded = null;
-    try {
-      const raw = await fsp.readFile(fileFor(chatId), 'utf8');
-      const parsed = JSON.parse(raw);
-      if (isRecord(parsed)) loaded = normalizeRecord(parsed);
-    } catch (error) {
-      const code = /** @type {any} */ (error)?.code;
-      if (code !== 'ENOENT') {
-        logger?.warn('read context failed, starting fresh', { chatId, error });
-      }
+    // Concurrent callers must share one record instance; otherwise the later memory.set
+    // orphans the first caller's writes (a whole turn can vanish).
+    const inflight = loads.get(chatId);
+    if (inflight) {
+      const shared = await inflight;
+      if (meta.chatType) shared.chatType = meta.chatType;
+      return shared;
     }
 
-    const record = normalizeRecord(loaded ?? freshRecord(chatId, meta.chatType ?? 'UNKNOWN', now()));
-    if (meta.chatType) record.chatType = meta.chatType;
-    memory.set(chatId, record);
-    evictIfNeeded();
-    return record;
+    const task = (async () => {
+      const loaded = await readRecord(chatId);
+      const record = normalizeRecord(loaded ?? freshRecord(chatId, meta.chatType ?? 'UNKNOWN', now()));
+      if (meta.chatType) record.chatType = meta.chatType;
+      memory.set(chatId, record);
+      evictIfNeeded();
+      return record;
+    })();
+    loads.set(chatId, task);
+    try {
+      return await task;
+    } finally {
+      if (loads.get(chatId) === task) loads.delete(chatId);
+    }
   }
 
   function evictIfNeeded() {
@@ -191,6 +233,16 @@ export function createContextStore(options) {
    *   keep `meta` (tone/model/thinking). By default the whole file is removed as before.
    */
   async function reset(chatId, options = {}) {
+    const inflight = loads.get(chatId);
+    if (inflight) {
+      try {
+        await inflight;
+      } catch {
+        // start the reset regardless of a failed load
+      }
+    }
+    // keepMeta on a cold chat must still preserve the settings stored on disk.
+    const loaded = options.keepMeta && !memory.has(chatId) ? await readRecord(chatId) : null;
     epochs.set(chatId, (epochs.get(chatId) ?? 0) + 1);
     const timer = timers.get(chatId);
     if (timer) {
@@ -198,7 +250,7 @@ export function createContextStore(options) {
       timers.delete(chatId);
     }
     dirty.delete(chatId);
-    const removed = memory.get(chatId) ?? null;
+    const removed = memory.get(chatId) ?? loaded;
 
     if (options.keepMeta && removed) {
       removed.messages = [];

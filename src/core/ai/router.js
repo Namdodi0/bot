@@ -35,12 +35,14 @@ export function createModelRouter(options) {
 
   /**
    * Fallback alias for a chat. Must resolve to a DIFFERENT model: retrying the same hung
-   * model only burns the deadline that the fallback needs.
+   * model only burns the deadline that the fallback needs. `attempted` is the model that
+   * actually failed (e.g. the vision alias), which may differ from the record's model.
    * @param {any} record
+   * @param {{alias?: string, model?: string}|null} [attempted]
    * @returns {string|null}
    */
-  function fallbackFor(record) {
-    const primary = resolve(record);
+  function fallbackFor(record, attempted = null) {
+    const primary = attempted?.alias && attempted?.model ? attempted : resolve(record);
     const usable = (item) => Boolean(item) && item.alias !== primary.alias && item.model !== primary.model;
     const preferred = catalog.specFor(catalog.fallbackAlias);
     if (usable(preferred)) return catalog.fallbackAlias;

@@ -68,8 +68,13 @@ export function createRateLimiter(config) {
   return rateLimited;
 }
 
+export const QUEUE_BUSY_TEXT =
+  'I am handling too many messages right now, please try again in a few seconds.';
+
 /**
  * Queue per chat (preserving order) + a global concurrency limit.
+ * All work that mutates a chat record (messages, slash turns, reset/compact) must go
+ * through `schedule` so it cannot interleave with another turn in the same chat.
  * @param {{config: any, logger: import('../../logger.js').Logger, metrics: any, transport: any, handle: (event: any) => Promise<void>}} deps
  */
 export function createQueue({ config, logger, metrics, transport, handle }) {
@@ -98,13 +103,50 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     if (next) next();
   }
 
+  /** @param {string} chatId @param {() => Promise<any>} task */
+  function chain(chatId, task) {
+    const previous = chatQueues.get(chatId) ?? Promise.resolve();
+    const run = previous.then(task);
+    const guarded = run.catch(() => {});
+    chatQueues.set(chatId, guarded);
+    guarded.then(() => {
+      if (chatQueues.get(chatId) === guarded) chatQueues.delete(chatId);
+    });
+    return run;
+  }
+
+  /**
+   * Run a task in the chat's FIFO chain and under the global concurrency limit.
+   * @param {string} chatId
+   * @param {() => Promise<any>} task
+   */
+  function schedule(chatId, task) {
+    queueDepth += 1;
+    let acquired = false;
+    return chain(chatId, async () => {
+      await acquire();
+      acquired = true;
+      try {
+        return await task();
+      } finally {
+        queueDepth = Math.max(0, queueDepth - 1);
+        if (acquired) release();
+        notifyDrainWaiters();
+      }
+    });
+  }
+
+  function isFull() {
+    return queueDepth >= config.maxQueueDepth;
+  }
+
   /**
    * @param {import('../../../platforms/contract.js').BotEvent} event
    */
   function enqueue(event) {
     const chatId = event?.chatId ?? 'unknown';
 
-    if (queueDepth >= config.maxQueueDepth) {
+    if (isFull()) {
       metrics.inc('queue.dropped');
       logger.warn('queue is full, skipping message', {
         chatId,
@@ -114,32 +156,23 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
       });
       // notify the user briefly without putting it in the queue; platforms filter unwanted chats
       transport
-        .sendMessage(chatId, 'I am handling too many messages right now, please try again in a few seconds.')
+        .sendMessage(chatId, QUEUE_BUSY_TEXT)
         .catch((error) => logger.debug('busy notice failed', { error: String(error?.message ?? error) }));
       return Promise.resolve();
     }
 
-    queueDepth += 1;
-    let acquired = false;
-    const previous = chatQueues.get(chatId) ?? Promise.resolve();
-    const task = previous
-      .then(() => acquire())
-      .then(() => {
-        acquired = true;
-        return handle(event);
-      })
-      .catch((error) => logger.error('queued handler crashed', { error }))
-      .finally(() => {
-        queueDepth = Math.max(0, queueDepth - 1);
-        if (acquired) release();
-        notifyDrainWaiters();
-      });
+    return schedule(chatId, () => handle(event)).catch((error) =>
+      logger.error('queued handler crashed', { error }),
+    );
+  }
 
-    chatQueues.set(chatId, task);
-    task.finally(() => {
-      if (chatQueues.get(chatId) === task) chatQueues.delete(chatId);
-    });
-    return task;
+  /**
+   * Serialize arbitrary record-mutating work (slash turns, reset/compact) with turns.
+   * @param {string} chatId
+   * @param {() => Promise<any>} task
+   */
+  function exclusive(chatId, task) {
+    return schedule(chatId, task);
   }
 
   function pending() {
@@ -181,5 +214,5 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     return queueDepth;
   }
 
-  return { enqueue, pending, drain };
+  return { enqueue, exclusive, isFull, pending, drain };
 }

@@ -57,6 +57,17 @@ test('router: fallbackFor skips the model the chat is already using', () => {
   assert.notEqual(router.find(chatOnFallback).model, router.find('nim-light').model);
 });
 
+test('router: fallbackFor skips the model that actually failed', () => {
+  const config = makeConfig();
+  const router = createModelRouter({ config, service: makeService(), logger: silentLogger });
+  const attempted = router.find('nim');
+
+  const alias = router.fallbackFor({ meta: { model: 'deepseek' } }, attempted);
+  assert.notEqual(alias, null);
+  assert.notEqual(alias, 'nim');
+  assert.notEqual(router.find(alias).model, attempted.model);
+});
+
 test('router: the ultra alias points at Nemotron 3 Ultra and is switchable in chat', async () => {
   const config = makeConfig();
   const service = makeService();

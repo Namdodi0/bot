@@ -79,7 +79,14 @@ test('errors: map status/body to stable codes', () => {
   assert.equal(asLlmError(new HttpError('x', { status: 408 })).code, LLM_ERROR.TIMEOUT);
   assert.equal(asLlmError(new HttpError('x', { status: 503 })).code, LLM_ERROR.PROVIDER_ERROR);
   assert.equal(asLlmError(new HttpError('x', { status: 400 })).code, LLM_ERROR.BAD_REQUEST);
-  assert.equal(asLlmError(new HttpError('x', { status: 0 })).code, LLM_ERROR.TIMEOUT);
+  assert.equal(asLlmError(new HttpError('x', { status: 0 })).code, LLM_ERROR.PROVIDER_ERROR);
+  assert.equal(asLlmError(new HttpError('x', { status: 0 })).retryable, false);
+  assert.equal(asLlmError(new HttpError('x', { status: 0, retryable: true })).code, LLM_ERROR.TIMEOUT);
+  assert.equal(asLlmError(new HttpError('x', { status: 0, retryable: true })).retryable, true);
+
+  const rateLimited = asLlmError(new HttpError('x', { status: 429, retryAfterMs: 2500 }));
+  assert.equal(rateLimited.code, LLM_ERROR.RATE_LIMIT);
+  assert.equal(rateLimited.retryAfterMs, 2500);
 
   const abortedByCaller = asLlmError(new HttpError('x aborted by caller', { status: 0, aborted: true }));
   assert.equal(abortedByCaller.code, LLM_ERROR.ABORTED);
@@ -125,6 +132,26 @@ test('retry: does not retry a non-retryable error and keeps the last error', asy
     (error) => error.code === LLM_ERROR.AUTH,
   );
   assert.equal(attempts, 1);
+});
+
+test('retry: honors retryAfterMs over the configured backoff', async () => {
+  /** @type {number[]} */
+  const delays = [];
+  let attempts = 0;
+  const executor = createRetryExecutor({
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+    backoffMs: () => 10,
+    shouldRetry: (error) => error instanceof LlmError && error.retryable,
+  });
+  const result = await executor.execute(async () => {
+    attempts += 1;
+    if (attempts < 2) throw new LlmError(LLM_ERROR.RATE_LIMIT, 'slow down', { retryable: true, retryAfterMs: 2500 });
+    return 'ok';
+  });
+  assert.equal(result, 'ok');
+  assert.deepEqual(delays, [2500]);
 });
 
 test('retry: stops when the deadline runs out', async () => {

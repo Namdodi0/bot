@@ -22,6 +22,7 @@
  * @property {'zalo'|'discord'} [platform]
  * @property {string} [botName]
  * @property {boolean} [isAdmin]
+ * @property {boolean} [private] the answer is visible only to the sender; keep it out of shared context
  * @property {any} [rawMessage]
  * @property {any} [rawInteraction]
  *

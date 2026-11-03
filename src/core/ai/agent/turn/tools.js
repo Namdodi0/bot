@@ -18,6 +18,7 @@ import { truncate } from '../../../text/format.js';
  *   response: any,
  *   messages: any[],
  *   record: any,
+ *   privateTurn?: boolean,
  * }} input
  */
 export async function runToolRound({
@@ -32,6 +33,7 @@ export async function runToolRound({
   response,
   messages,
   record,
+  privateTurn = false,
 }) {
   metrics.inc('llm.toolRounds');
   messages.push({
@@ -44,7 +46,12 @@ export async function runToolRound({
     })),
   });
   record.messages.push(
-    toolCallEntry({ content: response.content ?? '', toolCalls: response.toolCalls, ts: Date.now() }),
+    toolCallEntry({
+      content: response.content ?? '',
+      toolCalls: response.toolCalls,
+      ts: Date.now(),
+      private: privateTurn,
+    }),
   );
 
   for (const call of response.toolCalls) {
@@ -57,6 +64,7 @@ export async function runToolRound({
         senderId,
         deadline,
         sendPhoto,
+        ...(privateTurn ? { suppressDirectSend: true } : {}),
       });
     } catch (error) {
       const reason = String(/** @type {any} */ (error)?.message ?? error);
@@ -75,7 +83,9 @@ export async function runToolRound({
       tool_call_id: call.id,
       content: text,
     });
-    record.messages.push(toolResultEntry({ toolCallId: call.id, text, ts: Date.now() }));
+    record.messages.push(
+      toolResultEntry({ toolCallId: call.id, text, ts: Date.now(), private: privateTurn }),
+    );
   }
   store.touch(chatId);
 

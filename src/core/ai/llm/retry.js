@@ -28,7 +28,13 @@ export function createRetryExecutor(options = {}) {
         lastError = error;
         if (attempt === maxAttempts - 1 || !shouldRetry(error)) break;
         context.onRetry?.(error, attempt + 1);
-        await sleep(backoffMs(attempt + 1));
+        const backoff = backoffMs(attempt + 1);
+        // Provider Retry-After hint (LlmError/HttpError/CircuitOpenError) wins over backoff.
+        const hint = Number(/** @type {any} */ (error)?.retryAfterMs);
+        const waitMs = Number.isFinite(hint) && hint > 0 ? Math.max(backoff, hint) : backoff;
+        const remaining = deadline - Date.now();
+        const delay = Number.isFinite(remaining) ? Math.min(waitMs, Math.max(0, remaining)) : waitMs;
+        await sleep(delay);
       }
     }
 

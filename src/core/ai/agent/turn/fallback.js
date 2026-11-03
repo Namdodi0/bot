@@ -1,4 +1,4 @@
-import { FALLBACK_MIN_MS, providerTimeout, samplingFor, sleep, timeoutSignal } from '../helpers.js';
+import { FALLBACK_MIN_MS, providerTimeout, samplingFor, sleep } from '../helpers.js';
 
 /**
  * Last-resort attempt with a DIFFERENT model. Tools are dropped so the call is valid and
@@ -34,7 +34,7 @@ export async function attemptFallback({
   noToolsMessages,
   deadline,
 }) {
-  const fallbackAlias = llm.fallbackFor(record);
+  const fallbackAlias = llm.fallbackFor(record, target);
   const fallbackEntry = fallbackAlias ? llm.find(fallbackAlias) : null;
   let left = deadline - Date.now();
   if (left > 6000) {
@@ -56,7 +56,6 @@ export async function attemptFallback({
         sampling: samplingFor(config, fallbackEntry?.provider ?? target.provider),
         stream: false,
         timeoutMs: fallbackTimeout,
-        signal: timeoutSignal(left),
       });
       const llmMs = Date.now() - fallbackStarted;
       const answeredBy = {

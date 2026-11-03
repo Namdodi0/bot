@@ -65,8 +65,8 @@ export function createCommands(deps) {
       config.maxMessagesPerReply > 0 ? `${config.maxMessagesPerReply} msg` : 'unlimited';
     const generationSpeed = Number(snapshot.gauges?.['llm.tokensPerSec'] ?? 0);
     const contextFiles = typeof store.count === 'function' ? await store.count() : null;
-    const contextStore = `• Context storage: \`${config.context.dir}\`${
-      contextFiles === null ? '' : ` · ${contextFiles} file`
+    const contextStore = `• Context storage: ${
+      contextFiles === null ? 'unknown' : `${contextFiles} file${contextFiles === 1 ? '' : 's'}`
     } · TTL ${config.context.ttlHours > 0 ? `${config.context.ttlHours}h` : 'never'}`;
     const estimated = createTokenMeter().messages(record?.messages ?? []);
     const window = Number(current.contextWindow ?? config.context.modelWindow ?? 0);

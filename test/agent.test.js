@@ -67,6 +67,13 @@ async function setup(options = {}) {
     provider: 'deepseek',
     model: 'deepseek-flash',
     label: 'DeepSeek V4.1 Flash',
+    vision: false,
+  };
+  const visionTarget = {
+    alias: 'nim',
+    provider: 'nim',
+    model: 'nemotron-vl',
+    label: 'Nemotron VL',
     vision: true,
   };
   async function reply(input, viaFallback = false) {
@@ -111,7 +118,7 @@ async function setup(options = {}) {
   }
   const llm = {
     resolve: () => target,
-    find: () => target,
+    find: (alias) => (alias === 'nim' ? visionTarget : target),
     list: () => [target],
     fallbackAlias: 'nim-light',
     fallbackFor: () => 'nim-light',
@@ -216,12 +223,22 @@ test('vision turns send the image as an image_url block', async () => {
       messageId: 'vision-1',
     }),
   );
+  assert.equal(nimCalls[0].alias, 'nim', 'the vision alias must be the one actually called');
   const lastUser = [...nimCalls[0].messages].reverse().find((message) => message.role === 'user');
   assert.ok(Array.isArray(lastUser.content));
   const image = lastUser.content.find((part) => part.type === 'image_url');
   assert.match(image.image_url.url, /^data:image\/png;base64,/);
   const record = await store.get('chat-1');
   assert.match(String(record.messages[0].text), /attached an image/);
+});
+
+test('private turns are never kept in the shared record', async () => {
+  const { agent, sent, store } = await setup();
+  await agent.handle(textEvent('my secret', { private: true, messageId: 'private-1' }));
+  assert.equal(sent.length, 1);
+  const record = await store.get('chat-1');
+  assert.equal(record.messages.length, 0);
+  assert.deepEqual(record.seen, ['private-1']);
 });
 
 test('dedupes by message_id', async () => {
@@ -249,6 +266,17 @@ test('splits a long reply into several messages, at most maxMessagesPerReply', a
   await agent.handle(textEvent('write something long'));
   assert.equal(sent.length, 3);
   for (const message of sent) assert.ok(message.text.length <= 1910, `long ${message.text.length}`);
+});
+
+test('a truncated final chunk stays within the platform limit', async () => {
+  const { agent, sent } = await setup({
+    replies: [{ content: 'A'.repeat(5000) }],
+    configOverrides: { maxMessagesPerReply: 1 },
+  });
+  await agent.handle(textEvent('write something long'));
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].text.length <= 1900, `truncated ${sent[0].text.length}`);
+  assert.match(sent[0].text, /…$/);
 });
 
 test('/help is handled before the model', async () => {
@@ -419,6 +447,15 @@ test('drain waits for in-flight messages to finish sending', async () => {
   assert.equal(sent.length, 1);
 });
 
+test('drain waits for an in-flight collected turn', async () => {
+  const { agent } = await setup({ delayMs: 60 });
+  const task = agent.collect(textEvent('collected wait'));
+  const left = await agent.drain(5000);
+  assert.equal(left, 0);
+  const result = await task;
+  assert.equal(result.text, 'Hello 👋');
+});
+
 test('a tool round does not lose the final part of the reply', async () => {
   const head = `${'a'.repeat(140)}. `;
   const { agent, sent } = await setup({
@@ -456,6 +493,15 @@ test('a full queue drops the message and reports busy', async () => {
   assert.ok(sent.some((message) => /too many messages/.test(message.text)));
 });
 
+test('a full queue also rejects collected turns with a busy answer', async () => {
+  const { agent, sent } = await setup({ delayMs: 40, configOverrides: { maxQueueDepth: 1 } });
+  const first = agent.collect(textEvent('one'));
+  const second = await agent.collect(textEvent('two'));
+  assert.match(second.text, /too many messages/);
+  await first;
+  assert.equal(sent.length, 0);
+});
+
 test('planAttemptBudget: non-streaming reserves 25% of the deadline for fallback', () => {
   const first = agentTest.planAttemptBudget({
     remainingMs: 30_000,
@@ -480,7 +526,7 @@ test('planAttemptBudget: non-streaming reserves 25% of the deadline for fallback
   assert.ok(second.reserveMs >= 2500);
 });
 
-test('planAttemptBudget: streaming still reserves room for the fallback', () => {
+test('planAttemptBudget: streaming clamps to the provider cap and keeps the fallback reserve', () => {
   const plan = agentTest.planAttemptBudget({
     remainingMs: 30_000,
     attempt: 1,
@@ -490,7 +536,7 @@ test('planAttemptBudget: streaming still reserves room for the fallback', () => 
   });
   assert.equal(plan.reserveMs, 7500);
   assert.equal(plan.primaryMs, 22_500);
-  assert.equal(plan.timeoutMs, 22_500);
+  assert.equal(plan.timeoutMs, 15_000);
   assert.equal(plan.ttftMs, 9000);
 });
 

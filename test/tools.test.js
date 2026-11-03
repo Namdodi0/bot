@@ -182,6 +182,34 @@ test('set_reminder tool: definition, add and validation', async () => {
   assert.equal(result.ok, false);
 });
 
+test('set_reminder refuses to schedule from a private answer', async () => {
+  let added = 0;
+  const reminders = {
+    add: async () => {
+      added += 1;
+      return { ok: true, item: { id: 5, at: Date.now() + 60_000, text: 'x' } };
+    },
+  };
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
+    validator: { validate: async () => ({ ok: true }) },
+    reminders,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+
+  const result = await tools.run(
+    'set_reminder',
+    { when: '+10m', text: 'secret reminder' },
+    { chatId: 'c1', suppressDirectSend: true },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.text, /private answer/);
+  assert.equal(added, 0);
+});
+
 test('set_reminder tool: reports the per-chat limit and is absent without a store', async () => {
   const make = (reminders) =>
     createToolRuntime({

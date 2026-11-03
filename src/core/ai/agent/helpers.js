@@ -5,7 +5,6 @@ export const FALLBACK_RESERVE_MAX_MS = 8000;
 export const FALLBACK_MIN_MS = 2500;
 export const MIN_ATTEMPT_MS = 1500;
 export const SLOW_CALL_WARN_MS = 120_000;
-export const MAX_TIMER_MS = 2_147_483_647;
 
 /**
  * Split the budget of one attempt, always keeping part of the deadline for the fallback.
@@ -23,7 +22,9 @@ export function planAttemptBudget(input) {
     : 0;
 
   if (input.streaming) {
-    const timeoutMs = Math.min(remaining, Math.max(MIN_ATTEMPT_MS, primaryMs));
+    // The provider timeout bounds the whole streaming attempt (AI_TIMEOUT_MS), while the
+    // reserve and MIN_ATTEMPT_MS floor still apply. aiCap is Infinity when unlimited.
+    const timeoutMs = Math.min(aiCap, remaining, Math.max(MIN_ATTEMPT_MS, primaryMs));
     return { reserveMs, primaryMs, timeoutMs, ttftMs };
   }
 
@@ -34,14 +35,6 @@ export function planAttemptBudget(input) {
 
 /** @param {number} ms */
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** AbortSignal.timeout overflows (fires immediately) above 2^31-1 ms. */
-/** @param {number} ms */
-export function timeoutSignal(ms) {
-  const value = Number(ms);
-  if (!Number.isFinite(value) || value <= 0) return undefined;
-  return AbortSignal.timeout(Math.min(value, MAX_TIMER_MS));
-}
 
 /**
  * Turn a tool-call transcript into messages a fallback model without tools can read.

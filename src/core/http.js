@@ -1,9 +1,31 @@
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
+/** Never sleep longer than this between attempts, even when the server asks for more. */
+const MAX_RETRY_WAIT_MS = 30_000;
+
+/**
+ * Parse a Retry-After header: delta-seconds ("120") or an HTTP-date.
+ * @param {string|null|undefined} value
+ * @param {number} nowMs
+ * @returns {number|undefined} wait hint in milliseconds
+ */
+function parseRetryAfter(value, nowMs) {
+  if (!value) return undefined;
+  const text = String(value).trim();
+  if (!text) return undefined;
+  if (/^\d+(?:\.\d+)?$/.test(text)) {
+    const seconds = Number(text);
+    return Number.isFinite(seconds) ? Math.max(0, Math.round(seconds * 1000)) : undefined;
+  }
+  const at = Date.parse(text);
+  if (!Number.isFinite(at)) return undefined;
+  return Math.max(0, at - nowMs);
+}
+
 export class HttpError extends Error {
   /**
    * @param {string} message
-   * @param {{status?: number, body?: string, service?: string, url?: string, retryable?: boolean, aborted?: boolean, cause?: unknown}} [meta]
+   * @param {{status?: number, body?: string, service?: string, url?: string, retryable?: boolean, aborted?: boolean, retryAfterMs?: number, cause?: unknown}} [meta]
    */
   constructor(message, meta = {}) {
     super(message);
@@ -15,6 +37,10 @@ export class HttpError extends Error {
     this.retryable = meta.retryable ?? false;
     // Deliberately cancelled by the caller (budget/deadline): retrying is pointless.
     this.aborted = Boolean(meta.aborted);
+    // Server-provided wait hint (Retry-After), used to space out retries.
+    this.retryAfterMs = Number.isFinite(Number(meta.retryAfterMs))
+      ? Math.max(0, Number(meta.retryAfterMs))
+      : undefined;
     this.cause = meta.cause;
   }
 }
@@ -71,6 +97,33 @@ function withTimeout(signal, timeoutMs) {
   if (!signal) return timeout;
   // @ts-ignore AbortSignal.any is available since Node 20.3
   return AbortSignal.any([signal, timeout]);
+}
+
+/**
+ * An aborted signal is not automatically a caller cancellation: attempt/deadline budgets
+ * abort through `AbortSignal.timeout()` (reason `TimeoutError`), which must stay retryable.
+ * @param {AbortSignal|undefined} signal
+ * @param {unknown} error
+ */
+function callerAborted(signal, error) {
+  if (!signal?.aborted) return false;
+  const reason = /** @type {any} */ (signal.reason);
+  if (reason?.name === 'TimeoutError') return false;
+  const name = error instanceof Error ? error.name : '';
+  return name !== 'TimeoutError';
+}
+
+/**
+ * Exponential backoff, raised to the server's Retry-After hint and capped for sanity.
+ * @param {number} attempt
+ * @param {number|undefined} retryAfterMs
+ * @returns {number}
+ */
+function retryDelay(attempt, retryAfterMs) {
+  const backoff = Math.min(5000, 400 * 2 ** (attempt - 1)) * (0.7 + Math.random() * 0.6);
+  const hint = Number(retryAfterMs);
+  const waitMs = Number.isFinite(hint) && hint > 0 ? Math.max(backoff, hint) : backoff;
+  return Math.round(Math.min(MAX_RETRY_WAIT_MS, waitMs));
 }
 
 /**
@@ -214,44 +267,46 @@ export function createHttp(options = {}) {
             service,
             url,
             retryable: RETRYABLE_STATUS.has(response.status),
+            retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after'), now()),
           });
         }
 
-        recordSuccess(service);
+        // Parse before declaring the breaker healthy: a 200 with a broken body is not a success.
         const data = text ? JSON.parse(text) : null;
+        recordSuccess(service);
         return { status: response.status, data, latencyMs: latency, headers: response.headers };
       } catch (error) {
-        // Caller aborted deliberately (deadline reached) → no retry, not counted by the circuit breaker.
-        if (opts.signal?.aborted) {
-          const aborted = new HttpError(`${service} aborted by caller`, {
+        if (error instanceof SyntaxError) {
+          throw new HttpError(`${service} returned invalid JSON`, {
+            service,
+            url,
+            body: String(error.message).slice(0, 200),
+            retryable: false,
+          });
+        }
+        // Genuine caller cancellation (deadline reached) → no retry, not counted by the breaker.
+        if (callerAborted(opts.signal, error)) {
+          throw new HttpError(`${service} aborted by caller`, {
             service,
             url,
             retryable: false,
             aborted: true,
             cause: error,
           });
-          throw aborted;
         }
         const err = normalize(error, { service, url });
-        if (error instanceof SyntaxError) {
-          throw new HttpError(`${service} returned invalid JSON`, {
-            service,
-            url,
-            body: String(error.message).slice(0, 200),
-          });
-        }
         if (attempt >= retries || !err.retryable) {
           // Client errors (4xx) are not service outages: do not let them trip the breaker.
           if (err.retryable) recordFailure(service);
           throw err;
         }
         attempt += 1;
-        const delay = Math.min(5000, 400 * 2 ** (attempt - 1)) * (0.7 + Math.random() * 0.6);
+        const delay = retryDelay(attempt, err.retryAfterMs);
         logger?.debug('retry http request', {
           service,
           label: opts.label,
           attempt,
-          delayMs: Math.round(delay),
+          delayMs: delay,
           reason: err.message,
           icon: '🔁',
         });
@@ -289,13 +344,15 @@ export function createHttp(options = {}) {
             service,
             url,
             retryable: RETRYABLE_STATUS.has(response.status),
+            retryAfterMs: parseRetryAfter(response.headers?.get?.('retry-after'), now()),
           });
         }
-        recordSuccess(service);
+        // Headers alone are not a healthy call: the stream can still fail mid-body, so the
+        // breaker is updated by the consumer through recordStreamSuccess/recordStreamFailure.
         metrics?.recordRequest({ service, ms: now() - started, ok: true, status: response.status });
         return response;
       } catch (error) {
-        if (opts.signal?.aborted) {
+        if (callerAborted(opts.signal, error)) {
           throw new HttpError(`${service} aborted by caller`, {
             service,
             url,
@@ -310,12 +367,20 @@ export function createHttp(options = {}) {
           throw err;
         }
         attempt += 1;
-        const delay = Math.min(5000, 400 * 2 ** (attempt - 1)) * (0.7 + Math.random() * 0.6);
-        logger?.debug('retry stream open', { service, attempt, delayMs: Math.round(delay), reason: err.message, status: err.status, icon: '🔁' });
+        const delay = retryDelay(attempt, err.retryAfterMs);
+        logger?.debug('retry stream open', { service, attempt, delayMs: delay, reason: err.message, status: err.status, icon: '🔁' });
         await sleep(delay);
       }
     }
   }
 
-  return { requestJson, openStream, stateOf, listStates };
+  return {
+    requestJson,
+    openStream,
+    stateOf,
+    listStates,
+    // Streaming calls report their outcome after the body finishes, not on headers.
+    recordStreamSuccess: recordSuccess,
+    recordStreamFailure: recordFailure,
+  };
 }

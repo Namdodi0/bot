@@ -17,7 +17,7 @@ export class LlmError extends Error {
   /**
    * @param {string} code
    * @param {string} message
-   * @param {{retryable?: boolean, status?: number, provider?: string, model?: string, cause?: unknown, body?: string}} [meta]
+   * @param {{retryable?: boolean, status?: number, provider?: string, model?: string, cause?: unknown, body?: string, retryAfterMs?: number}} [meta]
    */
   constructor(code, message, meta = {}) {
     super(message);
@@ -29,6 +29,8 @@ export class LlmError extends Error {
     this.model = meta.model;
     this.cause = meta.cause;
     this.body = meta.body;
+    // Server-provided wait hint, so a retry executor can back off accordingly.
+    this.retryAfterMs = Number.isFinite(Number(meta.retryAfterMs)) ? Number(meta.retryAfterMs) : undefined;
   }
 }
 
@@ -75,34 +77,52 @@ export function asLlmError(error, meta = {}) {
   const body = bodyOf(error);
 
   if (error instanceof CircuitOpenError) {
-    return new LlmError(LLM_ERROR.PROVIDER_ERROR, message, { ...meta, retryable: false, cause: error, body });
+    return new LlmError(LLM_ERROR.PROVIDER_ERROR, message, {
+      ...meta,
+      retryable: false,
+      cause: error,
+      body,
+      retryAfterMs: error.retryAfterMs,
+    });
   }
 
   if (error instanceof HttpError) {
     const status = Number(error.status ?? 0);
+    const base = {
+      ...meta,
+      status,
+      cause: error,
+      body,
+      retryAfterMs: Number.isFinite(Number(error.retryAfterMs)) ? Number(error.retryAfterMs) : undefined,
+    };
     // Deliberate cancellation by the caller: there is no time left, so never retry.
     if (error.aborted) {
-      return new LlmError(LLM_ERROR.ABORTED, message, { ...meta, status, retryable: false, cause: error, body });
+      return new LlmError(LLM_ERROR.ABORTED, message, { ...base, retryable: false });
     }
     if (status === 401 || status === 403) {
-      return new LlmError(LLM_ERROR.AUTH, message, { ...meta, status, retryable: false, cause: error, body });
+      return new LlmError(LLM_ERROR.AUTH, message, { ...base, retryable: false });
     }
     if (looksLikeContextOverflow(`${body} ${message}`)) {
-      return new LlmError(LLM_ERROR.CONTEXT_WINDOW_EXCEEDED, message, { ...meta, status, retryable: false, cause: error, body });
+      return new LlmError(LLM_ERROR.CONTEXT_WINDOW_EXCEEDED, message, { ...base, retryable: false });
     }
     if (status === 408) {
-      return new LlmError(LLM_ERROR.TIMEOUT, message, { ...meta, status, retryable: true, cause: error, body });
+      return new LlmError(LLM_ERROR.TIMEOUT, message, { ...base, retryable: true });
     }
     if (status === 429) {
-      return new LlmError(LLM_ERROR.RATE_LIMIT, message, { ...meta, status, retryable: true, cause: error, body });
+      return new LlmError(LLM_ERROR.RATE_LIMIT, message, { ...base, retryable: true });
     }
     if (status >= 500) {
-      return new LlmError(LLM_ERROR.PROVIDER_ERROR, message, { ...meta, status, retryable: true, cause: error, body });
+      return new LlmError(LLM_ERROR.PROVIDER_ERROR, message, { ...base, retryable: true });
     }
     if (status === 0) {
-      return new LlmError(LLM_ERROR.TIMEOUT, message, { ...meta, status, retryable: true, cause: error, body });
+      // No HTTP response was produced. Transport timeouts are marked retryable by http.js;
+      // a non-retryable status-0 error is a protocol/provider failure (e.g. invalid JSON).
+      if (error.retryable === false) {
+        return new LlmError(LLM_ERROR.PROVIDER_ERROR, message, { ...base, retryable: false });
+      }
+      return new LlmError(LLM_ERROR.TIMEOUT, message, { ...base, retryable: true });
     }
-    return new LlmError(LLM_ERROR.BAD_REQUEST, message, { ...meta, status, retryable: false, cause: error, body });
+    return new LlmError(LLM_ERROR.BAD_REQUEST, message, { ...base, retryable: false });
   }
 
   if (name === 'AbortError') {

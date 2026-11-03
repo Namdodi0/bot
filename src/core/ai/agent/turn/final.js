@@ -1,4 +1,4 @@
-import { planAttemptBudget, providerTimeout, samplingFor, timeoutSignal } from '../helpers.js';
+import { planAttemptBudget, providerTimeout, samplingFor } from '../helpers.js';
 
 /**
  * All tool rounds were used: force one final no-tools answer so fetched data is not lost.
@@ -66,6 +66,7 @@ export async function forceFinalAnswer({
   try {
     const response = await llm.chat({
       record,
+      alias: target.alias,
       messages: [
         ...noToolsMessages(),
         { role: 'user', content: 'Answer the user now using the tool results above. Do not call any tools.' },
@@ -76,7 +77,6 @@ export async function forceFinalAnswer({
       stream: false,
       ttftMs: 0,
       timeoutMs: budget.timeoutMs,
-      signal: timeoutSignal(budget.timeoutMs),
     });
     llmMs += Date.now() - started;
     completionMs += Number(response?.completionMs ?? response?.latencyMs ?? 0) || 0;

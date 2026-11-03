@@ -14,7 +14,6 @@ import {
   planAttemptBudget,
   providerTimeout,
   samplingFor,
-  timeoutSignal,
 } from './helpers.js';
 import { attemptFallback } from './turn/fallback.js';
 import { forceFinalAnswer } from './turn/final.js';
@@ -66,6 +65,7 @@ export function createTurnRunner(deps) {
       name: event.senderName,
       ts: Date.now(),
       messageId: event.messageId,
+      private: event.private === true,
     });
 
     const tone = record?.meta?.tone ?? config.tone;
@@ -324,6 +324,7 @@ export function createTurnRunner(deps) {
         try {
           return await llm.chat({
             record,
+            alias: target.alias,
             messages,
             tools: toolDefs.length ? toolDefs : undefined,
             reasoning,
@@ -333,7 +334,6 @@ export function createTurnRunner(deps) {
             onDelta,
             ttftMs: budget.ttftMs,
             timeoutMs: budget.timeoutMs,
-            signal: timeoutSignal(budget.timeoutMs),
           });
         } finally {
           clearTimeout(slowTimer);
@@ -437,6 +437,7 @@ export function createTurnRunner(deps) {
         await runToolRound({
           logger, metrics, tools, store, chatId: event.chatId, senderId: event.senderId,
           deadline, sendPhoto: responseSink.sendPhoto, response, messages, record,
+          privateTurn: event.private === true,
         });
         // The head of this round was already sent: send the whole final-round content instead of
         // cutting by the previous round's `emitted` (which may be longer than the final answer).
@@ -472,6 +473,7 @@ export function createTurnRunner(deps) {
         role: 'assistant',
         text: truncate(normalizeWhitespace(finalText), 4000),
         ts: Date.now(),
+        private: event.private === true,
       }),
     );
     store.touch(event.chatId);

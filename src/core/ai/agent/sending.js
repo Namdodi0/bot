@@ -68,7 +68,15 @@ export function createSenderFactory({ config, logger, metrics, platform }) {  co
         : Number.POSITIVE_INFINITY;
     const remaining = Math.max(0, limit);
     if (remaining <= 0) return 0;
-    const { chunks, truncated } = chunkText(text, { limit: platform.limits.text, maxChunks: remaining });
+    const truncationSuffix = '\n\n…';
+    let result = chunkText(text, { limit: platform.limits.text, maxChunks: remaining });
+    // The truncation marker is appended after chunking: reserve room so the last chunk
+    // cannot exceed the platform hard limit.
+    if (result.truncated && Number.isFinite(remaining)) {
+      const limit = Math.max(1, platform.limits.text - truncationSuffix.length);
+      result = chunkText(text, { limit, maxChunks: remaining });
+    }
+    const { chunks, truncated } = result;
     if (!chunks.length) return 0;
     for (let index = 0; index < chunks.length; index += 1) {
       const isLast = index === chunks.length - 1;

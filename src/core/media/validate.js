@@ -67,6 +67,10 @@ export function isPrivateAddress(address) {
     const zeroPrefix = a === 0 && b === 0 && c === 0 && d === 0 && e === 0;
     // IPv4-mapped ::ffff:0:0/96 — judge by the embedded IPv4 address.
     if (zeroPrefix && f === 0xffff) return isPrivateAddress(embeddedIpv4(g, h));
+    // IPv4-translated ::ffff:0:0:0/96 (SIIT) — same embedded-address rule.
+    if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0xffff && f === 0) {
+      return isPrivateAddress(embeddedIpv4(g, h));
+    }
     // ::/96 covers the unspecified address, ::1 and the deprecated IPv4-compatible forms.
     if (zeroPrefix && f === 0) return true;
     // NAT64 well-known prefix 64:ff9b::/96 wraps an IPv4 address.

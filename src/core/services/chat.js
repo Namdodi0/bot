@@ -6,6 +6,24 @@ const SUMMARY_MAX_TRANSCRIPT = 12_000;
 const SUMMARY_TIMEOUT_MS = 15_000;
 
 /**
+ * Keep the newest whole lines within the character cap; summaries must not silently
+ * drop the most recent part of a busy channel.
+ * @param {string[]} lines
+ * @param {number} maxChars
+ */
+function tailTranscript(lines, maxChars) {
+  const kept = [];
+  let total = 0;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const cost = lines[index].length + 1;
+    if (total + cost > maxChars) break;
+    kept.unshift(lines[index]);
+    total += cost;
+  }
+  return { text: kept.join('\n'), count: kept.length };
+}
+
+/**
  * Shared chat settings/context operations used by both the Zalo text commands and the
  * native Discord commands. Keeping this in one place prevents the two command layers from
  * drifting on model selection, reset, compaction and summarisation.
@@ -71,7 +89,7 @@ export function createChatServices({ config, store, models, compaction }) {
       ...(options.record ? { record: options.record } : {}),
       messages: [
         { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-        { role: 'user', content: String(transcript ?? '').slice(0, SUMMARY_MAX_TRANSCRIPT) },
+        { role: 'user', content: String(transcript ?? '').slice(-SUMMARY_MAX_TRANSCRIPT) },
       ],
       reasoning: 'none',
       temperature: 0.3,
@@ -97,17 +115,23 @@ export function createChatServices({ config, store, models, compaction }) {
     const target = record ?? (await getRecord(chatId, chatType));
     const limit = Number.isInteger(count) ? Math.min(SUMMARY_MAX_COUNT, Math.max(2, count)) : SUMMARY_DEFAULT_COUNT;
     const history = (target.messages ?? [])
-      .filter((message) => (message.kind ?? 'turn') === 'turn' && String(message.text ?? '').trim())
+      .filter(
+        (message) =>
+          (message.kind ?? 'turn') === 'turn' &&
+          !message.private &&
+          String(message.text ?? '').trim(),
+      )
       .slice(-limit);
     if (history.length < 2) return { ok: false, reason: 'not-enough' };
 
-    const transcript = history
-      .map((message) => `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${String(message.text).trim()}`)
-      .join('\n')
-      .slice(0, SUMMARY_MAX_TRANSCRIPT);
-    const result = await summarizeText(transcript, { record: target, ...options });
+    const lines = history.map(
+      (message) =>
+        `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${String(message.text).trim()}`,
+    );
+    const transcript = tailTranscript(lines, SUMMARY_MAX_TRANSCRIPT);
+    const result = await summarizeText(transcript.text, { record: target, ...options });
     if (!result.ok) return { ok: false, reason: /** @type {any} */ (result).reason };
-    return { ok: true, count: history.length, text: result.text };
+    return { ok: true, count: transcript.count, text: result.text };
   }
 
   return {

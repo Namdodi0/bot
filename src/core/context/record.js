@@ -50,7 +50,7 @@ export function normalizeRecord(record) {
 }
 
 /**
- * @param {{role?: string, text: string, name?: string, ts?: number, messageId?: string}} input
+ * @param {{role?: string, text: string, name?: string, ts?: number, messageId?: string, private?: boolean}} input
  */
 export function turnEntry(input) {
   return {
@@ -60,6 +60,7 @@ export function turnEntry(input) {
     ...(input.name ? { name: input.name } : {}),
     ts: input.ts ?? Date.now(),
     ...(input.messageId ? { messageId: input.messageId } : {}),
+    ...(input.private ? { private: true } : {}),
   };
 }
 
@@ -95,7 +96,7 @@ export function searchEntry(text, ts = Date.now()) {
 }
 
 /**
- * @param {{content?: string, toolCalls: Array<{id: string, name: string, arguments: any, rawArguments?: string}>, ts?: number}} input
+ * @param {{content?: string, toolCalls: Array<{id: string, name: string, arguments: any, rawArguments?: string}>, ts?: number, private?: boolean}} input
  */
 export function toolCallEntry(input) {
   return {
@@ -104,11 +105,12 @@ export function toolCallEntry(input) {
     text: input.content ?? '',
     toolCalls: input.toolCalls,
     ts: input.ts ?? Date.now(),
+    ...(input.private ? { private: true } : {}),
   };
 }
 
 /**
- * @param {{toolCallId: string, text: string, ts?: number}} input
+ * @param {{toolCallId: string, text: string, ts?: number, private?: boolean}} input
  */
 export function toolResultEntry(input) {
   return {
@@ -117,6 +119,7 @@ export function toolResultEntry(input) {
     toolCallId: input.toolCallId,
     text: input.text,
     ts: input.ts ?? Date.now(),
+    ...(input.private ? { private: true } : {}),
   };
 }
 

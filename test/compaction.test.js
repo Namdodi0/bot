@@ -68,6 +68,50 @@ test('summarizer moves the boundary back so it never splits a tool-call/tool-res
   assert.equal(record.messages[0].kind, 'summary');
 });
 
+test('summarizer repairs a leading unpaired tool call instead of deadlocking', async () => {
+  const messages = [
+    toolCallEntry({
+      toolCalls: [
+        { id: 'c1', name: 'web_search', arguments: {} },
+        { id: 'c2', name: 'read_url', arguments: {} },
+      ],
+      ts: 1,
+    }),
+    toolResultEntry({ toolCallId: 'c1', text: 'partial result', ts: 2 }),
+    ...turns(6),
+  ];
+  const record = recordWith(messages);
+
+  const result = await summarizeRange(record, {
+    keepRecent: 2,
+    summaryMaxChars: 200,
+    summarize: async (range) => {
+      assert.equal(range.some((message) => message.kind === 'tool-call'), false);
+      return 'T';
+    },
+  });
+  assert.equal(result.changed, true);
+  assert.equal(record.messages[0].kind, 'summary');
+  assert.equal(record.messages.some((message) => message.kind === 'tool-call'), false);
+});
+
+test('summarizer excludes private turns from the summarized range', async () => {
+  const messages = turns(10);
+  messages[0].private = true;
+  const record = recordWith(messages);
+
+  const result = await summarizeRange(record, {
+    keepRecent: 4,
+    summaryMaxChars: 200,
+    summarize: async (range) => {
+      assert.equal(range.some((message) => message.private), false);
+      return 'T';
+    },
+  });
+  assert.equal(result.changed, true);
+  assert.equal(record.messages.some((message) => message.private), false);
+});
+
 test('summarizer does nothing when the range is too short', async () => {
   const record = recordWith(turns(3));
   const result = await summarizeRange(record, {

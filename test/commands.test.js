@@ -352,6 +352,55 @@ test('/summary summarizes the last N turn messages', async () => {
   assert.equal(received.reasoning, 'none');
 });
 
+test('/summary ignores private turns', async () => {
+  const d = deps();
+  let received = null;
+  d.models.chat = async (input) => {
+    received = input;
+    return { content: 'Summary content' };
+  };
+  const commands = createCommands(d);
+  const record = {
+    messages: [
+      { role: 'user', kind: 'turn', text: 'private question', private: true },
+      { role: 'assistant', kind: 'turn', text: 'private answer', private: true },
+      { role: 'user', kind: 'turn', text: 'public question' },
+      { role: 'assistant', kind: 'turn', text: 'public answer' },
+    ],
+    turns: 2,
+    meta: { thinking: null },
+  };
+  const result = await commands.run({ name: 'summary', args: '30' }, ctx(d, { record }));
+  assert.match(result.text, /Summary of the last 2 messages/);
+  const joined = received.messages.map((message) => message.content).join('\n');
+  assert.match(joined, /public question/);
+  assert.equal(joined.includes('private'), false);
+});
+
+test('/summary keeps the newest messages when the transcript is capped', async () => {
+  const d = deps();
+  let received = null;
+  d.models.chat = async (input) => {
+    received = input;
+    return { content: 'Summary content' };
+  };
+  const commands = createCommands(d);
+  const record = {
+    messages: [
+      { role: 'user', kind: 'turn', text: `OLDEST ${'x'.repeat(13_000)}` },
+      { role: 'assistant', kind: 'turn', text: 'NEWEST answer' },
+      { role: 'user', kind: 'turn', text: 'NEWEST question' },
+    ],
+    turns: 2,
+    meta: { thinking: null },
+  };
+  await commands.run({ name: 'summary', args: '30' }, ctx(d, { record }));
+  const joined = received.messages.map((message) => message.content).join('\n');
+  assert.match(joined, /NEWEST question/);
+  assert.match(joined, /NEWEST answer/);
+  assert.equal(joined.includes('OLDEST'), false);
+});
+
 test('/summary validates the count and the history', async () => {
   const d = deps();
   d.models.chat = async () => ({ content: 'x' });

@@ -1,7 +1,7 @@
 import { createTokenMeter } from '../context/token-meter.js';
 import { CircuitOpenError, HttpError } from '../http.js';
 import { stripMention } from '../text/format.js';
-import { createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
+import { QUEUE_BUSY_TEXT, createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
 import { createCollectorSink, createSenderFactory } from './agent/sending.js';
 import { findBreak, planAttemptBudget, preview, sleep } from './agent/helpers.js';
 import { createTurnRunner } from './agent/turn.js';
@@ -59,6 +59,8 @@ export function createAgent(deps) {
     });
     const collector = options.collector ?? null;
     const stopTyping = collector || !config.typing ? async () => {} : transport.startTyping(event.chatId);
+    /** @type {any} */
+    let activeRecord = null;
 
     /** @param {string} text */
     async function reply(text) {
@@ -74,6 +76,7 @@ export function createAgent(deps) {
       // Keep the record in memory while the turn runs: eviction would silently lose it.
       store.pin?.(event.chatId);
       const record = await store.get(event.chatId, { chatType: event.chatType });
+      activeRecord = record;
 
       // Durable dedupe: `seen` in RAM is lost on restart, the record is not.
       // (Two processes sharing a file can still race — run a single instance.)
@@ -189,12 +192,15 @@ export function createAgent(deps) {
       });
 
       let text = 'Sorry, something went wrong while handling this message. Please try again.';
+      const platformHint = platform.explainError?.(error) ?? null;
       if (error instanceof CircuitOpenError) {
         text = 'I am a bit overloaded right now, please try again in a few seconds.';
       } else if (/** @type {any} */ (error)?.code === LLM_ERROR.AUTH) {
         text = 'The AI provider rejected the API key. Admin, please check the model API key.';
+      } else if (platformHint) {
+        text = platformHint;
       } else if (error instanceof HttpError && error.status === 401) {
-        text = platform.explainError(error) ?? 'The bot token was rejected. Admin, please check the platform token.';
+        text = 'The bot token was rejected. Admin, please check the platform token.';
       }
 
       try {
@@ -203,6 +209,11 @@ export function createAgent(deps) {
         logger.error('failed to send error message', { error: sendError });
       }
     } finally {
+      if (event.private && activeRecord?.messages) {
+        const before = activeRecord.messages.length;
+        activeRecord.messages = activeRecord.messages.filter((message) => !message.private);
+        if (activeRecord.messages.length !== before) store.touch(event.chatId);
+      }
       store.unpin?.(event.chatId);
       try {
         await stopTyping();
@@ -212,10 +223,13 @@ export function createAgent(deps) {
     }
   }
 
-  const { enqueue, pending, drain } = createQueue({ config, logger, metrics, transport, handle });
-
-  /** @type {Map<string, Promise<unknown>>} */
-  const collectQueues = new Map();
+  const { enqueue, exclusive, isFull, pending, drain } = createQueue({
+    config,
+    logger,
+    metrics,
+    transport,
+    handle,
+  });
 
   /**
    * @param {import('../../platforms/contract.js').BotEvent} event
@@ -224,17 +238,15 @@ export function createAgent(deps) {
    */
   function runCollected(event, options, collector) {
     const chatId = String(event?.chatId ?? '');
-    const previous = collectQueues.get(chatId) ?? Promise.resolve();
-    const task = previous.then(async () => {
+    if (isFull()) {
+      metrics.inc('queue.dropped');
+      logger.warn('queue is full, skipping slash turn', { chatId, icon: '🧯' });
+      return Promise.resolve({ text: QUEUE_BUSY_TEXT, photos: [] });
+    }
+    return exclusive(chatId, async () => {
       await handle(event, { collector, skipCommands: options.skipCommands !== false });
       return collector.result();
     });
-    const guarded = task.catch(() => {});
-    collectQueues.set(chatId, guarded);
-    guarded.then(() => {
-      if (collectQueues.get(chatId) === guarded) collectQueues.delete(chatId);
-    });
-    return task;
   }
 
   /**
@@ -262,7 +274,18 @@ export function createAgent(deps) {
     );
   }
 
-  return { handle, collect, stream, enqueue, pending, drain, seenSize: () => seen.size() };
+  return {
+    handle,
+    collect,
+    stream,
+    enqueue,
+    exclusive,
+    isFull,
+    rateLimited,
+    pending,
+    drain,
+    seenSize: () => seen.size(),
+  };
 }
 
 export const __test__ = { findBreak, planAttemptBudget };

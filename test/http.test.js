@@ -193,3 +193,129 @@ test('client errors (4xx) do not trip the circuit breaker', async () => {
   assert.equal(calls, 8);
   assert.equal(http.stateOf('auth').open, false);
 });
+
+/** @param {number} status @param {Record<string,string>} headers */
+function errorResponse(status, headers) {
+  return {
+    ok: false,
+    status,
+    headers: new Headers(headers),
+    text: async () => '{"error":"busy"}',
+  };
+}
+
+test('requestJson waits for the Retry-After delta-seconds hint', async () => {
+  let calls = 0;
+  /** @type {number[]} */
+  const delays = [];
+  const http = createHttp({
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) return errorResponse(429, { 'retry-after': '2' });
+      return response({ ok: true });
+    },
+  });
+
+  const result = await http.requestJson('https://example.com', { service: 'retry-after', retries: 1 });
+  assert.equal(result.data.ok, true);
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] >= 2000, `expected >= 2000ms, got ${delays[0]}`);
+  assert.ok(delays[0] <= 30_000, `expected a bounded wait, got ${delays[0]}`);
+});
+
+test('requestJson waits for the Retry-After HTTP-date hint', async () => {
+  let calls = 0;
+  /** @type {number[]} */
+  const delays = [];
+  const http = createHttp({
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return errorResponse(503, { 'retry-after': new Date(Date.now() + 4000).toUTCString() });
+      }
+      return response({ ok: true });
+    },
+  });
+
+  await http.requestJson('https://example.com', { service: 'retry-after-date', retries: 1 });
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] >= 2500, `expected the date hint to be honored, got ${delays[0]}`);
+  assert.ok(delays[0] <= 30_000, `expected a bounded wait, got ${delays[0]}`);
+});
+
+test('the final HttpError keeps retryAfterMs when retries are exhausted', async () => {
+  const http = createHttp({
+    sleep: noSleep,
+    fetchImpl: async () => errorResponse(429, { 'retry-after': '1' }),
+  });
+  await assert.rejects(
+    () => http.requestJson('https://example.com', { service: 'retry-after-error', retries: 0 }),
+    (error) => error instanceof HttpError && error.retryAfterMs === 1000,
+  );
+});
+
+test('invalid JSON is not retried and does not reset the breaker', async () => {
+  let calls = 0;
+  const http = createHttp({
+    sleep: noSleep,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) return response({ error: 'boom' }, 500);
+      return response('not-json');
+    },
+  });
+
+  await assert.rejects(() => http.requestJson('https://example.com', { service: 'bad-json', retries: 0 }));
+  assert.equal(http.stateOf('bad-json').failures, 1);
+
+  await assert.rejects(
+    () => http.requestJson('https://example.com', { service: 'bad-json', retries: 2 }),
+    (error) => error instanceof HttpError && error.retryable === false && /invalid JSON/.test(error.message),
+  );
+  assert.equal(calls, 2);
+  assert.equal(http.stateOf('bad-json').failures, 1);
+});
+
+test('an attempt timeout (TimeoutError signal) is retried, not treated as a caller abort', async () => {
+  let calls = 0;
+  const attemptSignal = AbortSignal.timeout(1);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(attemptSignal.aborted, true);
+
+  const http = createHttp({
+    sleep: noSleep,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls < 2) throw Object.assign(new Error('the operation timed out'), { name: 'TimeoutError' });
+      return response({ ok: true });
+    },
+  });
+
+  const result = await http.requestJson('https://example.com', {
+    service: 'attempt-timeout',
+    retries: 1,
+    signal: attemptSignal,
+  });
+  assert.equal(result.data.ok, true);
+  assert.equal(calls, 2);
+});
+
+test('openStream does not mark the breaker healthy on headers alone', async () => {
+  const http = createHttp({
+    sleep: noSleep,
+    fetchImpl: async () => new Response(new ReadableStream({ start: (controller) => controller.close() }), { status: 200 }),
+  });
+  http.recordStreamFailure('stream-svc');
+  const result = await http.openStream('https://example.com', { service: 'stream-svc' });
+  assert.equal(result.status, 200);
+  assert.equal(http.stateOf('stream-svc').failures, 1);
+
+  http.recordStreamSuccess('stream-svc');
+  assert.equal(http.stateOf('stream-svc').failures, 0);
+});
