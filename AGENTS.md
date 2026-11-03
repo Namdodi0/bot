@@ -85,8 +85,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   tool hook.
 - `src/core/ai/reminders.js` — persisted reminders, single-flight tick, VN-time parsing.
 - `src/core/context/` — record schema v2, assembler, atomic JSON store (memoized in-flight
-  loads, ordered per-chat writes), token meter, compaction (prune tool results, repair
-  leading orphan pairs, summarize balanced ranges).
+  loads, ordered per-chat writes, private entries filtered from disk), token meter,
+  compaction (prune tool results, repair orphan tool blocks anywhere, summarize balanced
+  ranges).
 - `src/core/commands/index.js` — shared command router and admin/manager checks.
 - `src/core/commands/registry.js` — shared command metadata; platforms append specs and
   help overrides.
@@ -104,14 +105,15 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   or be a pure function of config + record. Do not mutate a temporary copy of the request.
 - **Prompt assembly** goes through `createPrompt` (shared sections + the platform's
   `prompt.register`). Tool guidance appears only when the matching tool schema is actually
-  sent. Static sections must not embed the current date.
+  sent; the image guidance is disabled for no-tools calls and when `send_image` is absent.
+  Static sections must not embed the current date.
 - **No platform branches in core.** Shared code may read descriptor fields
   (`platform.capabilities`, `platform.limits`, `platform.transport`, `platform.name` only for
   labels/health lists), but behavior differences belong in `src/platforms/{zalo,discord}`.
 - **No `/remember`/`/forget` feature** — it was removed; do not reintroduce it without an explicit request.
 - **Tool calls/results stay paired.** Compaction and trimming must never split a pair;
   fallback calls must not receive `role: "tool"` history without `tools`. Compaction repairs
-  leading orphan tool entries instead of deadlocking on an unbalanced prefix.
+  orphan tool blocks anywhere instead of deadlocking on an unbalanced prefix.
 - **Secrets** are never logged raw. Use `collectSecrets`/logger redaction. `.env`, `data/`,
   and generated zips with secrets stay out of git.
 - **Image URLs** must pass `createImageValidator` before `sendPhoto`; platforms with
@@ -134,8 +136,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   Ordinary @mention/reply chat still goes through the shared agent.
 - **Private Discord turns stay private.** `/ask private:true`, ephemeral context menus and
   ephemeral regenerate/continue mark `event.private`. The core removes their entries from
-  the shared record after the turn and excludes them from summaries/compaction; direct sends
-  (`send_sticker`, `set_reminder`) are suppressed. Private wins over `thread:true`.
+  the shared record after the turn, filters them out of disk snapshots/loads, and excludes
+  them from summaries/compaction; direct sends (`send_sticker`, `set_reminder`, and
+  `send_image` without a collector sink) are suppressed. Private wins over `thread:true`.
 - **Platform-specific ids are opaque in core.** Discord uses raw channel/thread ids; its
   transport tolerates a legacy `discord:` prefix in old reminders but new ids are never
   prefixed. Zalo `allowedChatIds`/`adminIds` are enforced by `src/platforms/zalo`; Discord
@@ -146,8 +149,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - **Per-chat serialization** covers messages, collected/streamed turns and context
   maintenance. Queue depth, the concurrency cap and shutdown drain apply to all of them;
   do not mutate a chat record outside the shared queue.
-- **HTTP retries** honor `Retry-After`; attempt timeouts stay retryable and are not reported
-  as caller aborts. The circuit breaker learns stream outcomes after the body finishes.
+- **HTTP retries** honor and cap `Retry-After`; attempt timeouts stay retryable and are not
+  reported as caller aborts. The circuit breaker learns stream outcomes after the body
+  finishes.
 - **No new runtime dependencies** without explicit approval.
 
 ## Prompt, persona, and untrusted data
@@ -193,8 +197,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   `data/webhook-secret`. `--config <path>` selects another file for either entry point
   (it wins over the per-entry default path). Do not read non-secret
   settings from environment variables. `config.webhook.path` must start with `/` and have no
-  trailing slash or whitespace. `npm run pack` stages a sanitized `config.json` (secret
-  fields blanked) instead of copying it verbatim.
+  trailing slash or whitespace; `config.model.visionAlias` must name a vision-capable alias.
+  `npm run pack` stages a sanitized `config.json` (secret fields blanked) instead of copying
+  it verbatim.
 - Old non-secret variables left in `.env` are ignored; `loadConfig` reports them as
   `ignoredEnvKeys` and the startup logs a warning. If `config.json` is missing, startup
   fails with the list so no setting is silently lost. Do not add compatibility aliases.
