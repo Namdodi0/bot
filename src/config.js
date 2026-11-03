@@ -2,17 +2,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import crypto from 'node:crypto';
 import { DEFAULT_ALIAS, FALLBACK_ALIAS, MODEL_ALIASES, isKnownAlias } from './core/ai/models.js';
-import { parseStickerIds } from './platforms/zalo/stickers.js';
+import {
+  ConfigError,
+  asBool,
+  asInt,
+  asNumber,
+  asOptionalInt,
+  asOptionalNumber,
+  asString,
+  section,
+} from './core/config-helpers.js';
+import { DISCORD_SECTION_KEYS, parseDiscordConfig } from './platforms/discord/config.js';
+import {
+  STICKER_SECTION_KEYS,
+  WEBHOOK_SECTION_KEYS,
+  ZALO_SECTION_KEYS,
+  parseZaloConfig,
+} from './platforms/zalo/config.js';
 import { VERSION } from './core/version.js';
 
 /** @typedef {'polling'|'webhook'} TransportMode */
 /** @typedef {'none'|'low'|'medium'|'high'|'auto'} ReasoningMode */
 /** @typedef {'auto'|'on'|'off'} ProgressiveMode */
 
-const BOOL_TRUE = new Set(['1', 'on', 'true', 'yes', 'y']);
-const BOOL_FALSE = new Set(['0', 'off', 'false', 'no', 'n', '']);
+export { ConfigError };
 
 // Root directory of the repo, derived from this file (src/..) — NOT dependent on cwd.
 // Panel/pm2/systemd may start the bot with a different cwd, which makes a relative dataDir
@@ -104,111 +118,6 @@ export function isEphemeralDataDir(dir) {
   );
 }
 
-export class ConfigError extends Error {
-  /** @param {string} message */
-  constructor(message) {
-    super(message);
-    this.name = 'ConfigError';
-  }
-}
-
-/** @param {unknown} value @param {string} key @param {string} [fallback] */
-function asString(value, key, fallback = '') {
-  if (value === undefined || value === null) return fallback;
-  if (typeof value !== 'string' && typeof value !== 'number') {
-    throw new ConfigError(`${key} must be a string`);
-  }
-  return String(value).trim();
-}
-
-/** @param {unknown} value @param {string} key @param {boolean} fallback */
-function asBool(value, key, fallback) {
-  if (value === undefined || value === null) return fallback;
-  if (typeof value === 'boolean') return value;
-  const text = String(value).trim().toLowerCase();
-  if (BOOL_TRUE.has(text)) return true;
-  if (BOOL_FALSE.has(text)) return false;
-  throw new ConfigError(`${key} must be a boolean (got: "${value}")`);
-}
-
-/**
- * @param {unknown} value
- * @param {string} key
- * @param {number|null} fallback
- * @param {{min?:number,max?:number}} [bounds]
- * @returns {number|null}
- */
-function asInt(value, key, fallback, bounds = {}) {
-  if (value === undefined || value === null || value === '') return fallback;
-  const number = typeof value === 'number' ? value : Number(String(value).trim());
-  if (!Number.isFinite(number) || !Number.isInteger(number)) {
-    throw new ConfigError(`${key} must be an integer (got: "${value}")`);
-  }
-  if (bounds.min !== undefined && number < bounds.min) {
-    throw new ConfigError(`${key} must be >= ${bounds.min} (got: ${number})`);
-  }
-  if (bounds.max !== undefined && number > bounds.max) {
-    throw new ConfigError(`${key} must be <= ${bounds.max} (got: ${number})`);
-  }
-  return number;
-}
-
-/**
- * @param {unknown} value
- * @param {string} key
- * @param {number} fallback
- * @param {{min?:number,max?:number}} [bounds]
- */
-function asNumber(value, key, fallback, bounds = {}) {
-  if (value === undefined || value === null || value === '') return fallback;
-  const number = typeof value === 'number' ? value : Number(String(value).trim());
-  if (!Number.isFinite(number)) {
-    throw new ConfigError(`${key} must be a number (got: "${value}")`);
-  }
-  if (bounds.min !== undefined && number < bounds.min) {
-    throw new ConfigError(`${key} must be >= ${bounds.min} (got: ${number})`);
-  }
-  if (bounds.max !== undefined && number > bounds.max) {
-    throw new ConfigError(`${key} must be <= ${bounds.max} (got: ${number})`);
-  }
-  return number;
-}
-
-/** @param {unknown} value @param {string} key @param {{min?:number,max?:number}} [bounds] */
-function asOptionalNumber(value, key, bounds = {}) {
-  if (value === undefined || value === null || value === '') return null;
-  return asNumber(value, key, 0, bounds);
-}
-
-/** @param {unknown} value @param {string} key @param {{min?:number,max?:number}} [bounds] */
-function asOptionalInt(value, key, bounds = {}) {
-  if (value === undefined || value === null || value === '') return null;
-  return asInt(value, key, 0, bounds);
-}
-
-/** @param {unknown} value @param {string} key */
-function asStringList(value, key) {
-  if (value === undefined || value === null) return [];
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (typeof value !== 'string') throw new ConfigError(`${key} must be an array of strings`);
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-/** @param {Record<string, any>} root @param {string} name */
-function section(root, name) {
-  const value = root?.[name];
-  if (value === undefined || value === null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new ConfigError(`config.${name} must be an object`);
-  }
-  return /** @type {Record<string, any>} */ (value);
-}
-
 /** @param {string} file */
 function readConfigFile(file) {
   let raw;
@@ -278,9 +187,9 @@ const KNOWN_TOP_LEVEL_KEYS = new Set([
 
 /** @type {Record<string, Set<string>>} */
 const KNOWN_SECTION_KEYS = {
-  zalo: new Set(['botId', 'baseUrl', 'parseMode']),
-  discord: new Set(['guildId', 'allowedChannelIds', 'respondToAllChannelIds']),
-  webhook: new Set(['port', 'host', 'path', 'secret', 'publicUrl']),
+  zalo: ZALO_SECTION_KEYS,
+  discord: DISCORD_SECTION_KEYS,
+  webhook: WEBHOOK_SECTION_KEYS,
   nim: new Set([
     'baseUrl',
     'model',
@@ -323,7 +232,7 @@ const KNOWN_SECTION_KEYS = {
   ]),
   search: new Set(['enabled', 'auto', 'baseUrl', 'depth', 'maxResults', 'country', 'cacheTtlMs']),
   image: new Set(['enabled']),
-  sticker: new Set(['enabled', 'echo', 'ids']),
+  sticker: STICKER_SECTION_KEYS,
 };
 
 /**
@@ -390,38 +299,6 @@ Secrets: ZALO_BOT_TOKEN, NIM_API_KEY, DEEPSEEK_API_KEY, TAVILY_API_KEY (see .env
 Settings: see config.example.json.`;
 
 /**
- * Webhook secret: use config.webhook.secret when set; otherwise generate it once and store
- * it in data/ so a restart does not change the secret (403 on every request).
- * @param {string} dataDir
- * @param {string} mode
- * @param {string} configured
- */
-function resolveWebhookSecret(dataDir, mode, configured) {
-  if (configured) {
-    if (configured.length < 8) throw new ConfigError('config.webhook.secret must be at least 8 characters');
-    return configured;
-  }
-  if (mode !== 'webhook') return '';
-
-  const file = path.join(dataDir, 'webhook-secret');
-  try {
-    const existing = fs.readFileSync(file, 'utf8').trim();
-    if (existing.length >= 8) return existing;
-  } catch {
-    // no file yet → generate one below
-  }
-
-  const generated = crypto.randomBytes(24).toString('hex');
-  try {
-    fs.mkdirSync(dataDir, { recursive: true });
-    fs.writeFileSync(file, generated, { encoding: 'utf8', mode: 0o600 });
-  } catch {
-    // if it cannot be saved, still use a temporary secret for this session
-  }
-  return generated;
-}
-
-/**
  * @param {{argv?: string[], env?: Record<string, unknown>, cwd?: string, config?: Record<string, any>, configPath?: string}} [input]
  */
 export function loadConfig(input = {}) {
@@ -472,8 +349,6 @@ export function loadConfig(input = {}) {
     );
   }
 
-  const zaloSection = section(root, 'zalo');
-  const webhookSection = section(root, 'webhook');
   const nimSection = section(root, 'nim');
   const deepseekSection = section(root, 'deepseek');
   const modelSection = section(root, 'model');
@@ -482,29 +357,33 @@ export function loadConfig(input = {}) {
   const searchSection = section(root, 'search');
   const imageSection = section(root, 'image');
   const stickerSection = section(root, 'sticker');
-  const discordSection = section(root, 'discord');
 
   const platform = asString(root.platform, 'config.platform', 'zalo').toLowerCase();
   if (!['zalo', 'discord'].includes(platform)) {
     throw new ConfigError(`config.platform must be "zalo" or "discord" (got: "${platform}")`);
   }
 
-  const token = asString(env.ZALO_BOT_TOKEN, 'ZALO_BOT_TOKEN');
-  if (platform === 'zalo' && !token) {
+  const dataDirRaw = asString(root.dataDir, 'config.dataDir', './data') || './data';
+  const dataDir = path.isAbsolute(dataDirRaw)
+    ? path.normalize(dataDirRaw)
+    : path.resolve(PROJECT_ROOT, dataDirRaw);
+
+  // Both sections are parsed regardless of `platform` so the config object keeps the same
+  // shape for every entry point; only the missing-token policy depends on the platform.
+  const zaloConfig = parseZaloConfig({ root, env, cli, dataDir });
+  const { discord } = parseDiscordConfig({ root, env });
+
+  if (platform === 'zalo' && !zaloConfig.token) {
     throw new ConfigError('Missing ZALO_BOT_TOKEN (see .env.example)');
   }
   const nimKey = asString(env.NIM_API_KEY, 'NIM_API_KEY');
   const deepseekKey = asString(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY');
   const tavilyKey = asString(env.TAVILY_API_KEY, 'TAVILY_API_KEY');
-  const discordToken = asString(env.DISCORD_BOT_TOKEN, 'DISCORD_BOT_TOKEN');
-  if (platform === 'discord' && !discordToken) {
+  if (platform === 'discord' && !discord.token) {
     throw new ConfigError('Missing DISCORD_BOT_TOKEN (required when config.platform is "discord")');
   }
 
-  const mode = String(cli.mode ?? asString(root.mode, 'config.mode', 'polling')).toLowerCase();
-  if (mode !== 'polling' && mode !== 'webhook') {
-    throw new ConfigError(`config.mode must be "polling" or "webhook" (got: "${mode}")`);
-  }
+  const mode = zaloConfig.mode;
 
   const reasoning = String(
     cli.think ?? asString(aiSection.reasoning, 'config.ai.reasoning', 'none'),
@@ -571,11 +450,6 @@ export function loadConfig(input = {}) {
   if (searchEnabled && !tavilyKey) {
     throw new ConfigError('config.search.enabled is true but TAVILY_API_KEY is missing (or use --no-search)');
   }
-
-  const dataDirRaw = asString(root.dataDir, 'config.dataDir', './data') || './data';
-  const dataDir = path.isAbsolute(dataDirRaw)
-    ? path.normalize(dataDirRaw)
-    : path.resolve(PROJECT_ROOT, dataDirRaw);
 
   const depthRaw = asString(searchSection.depth, 'config.search.depth', 'fast');
   if (!['fast', 'basic', 'advanced', 'ultra-fast'].includes(depthRaw)) {
@@ -646,32 +520,14 @@ export function loadConfig(input = {}) {
     ignoredEnvKeys: legacyEnvKeys,
     unknownConfigKeys,
     zalo: {
-      token,
-      botId: asString(zaloSection.botId, 'config.zalo.botId'),
-      baseUrl: asString(zaloSection.baseUrl, 'config.zalo.baseUrl', 'https://bot-api.zaloplatforms.com'),
-      parseMode: /** @type {'markdown'|'none'} */ (
-        asString(zaloSection.parseMode, 'config.zalo.parseMode', 'markdown').toLowerCase() === 'none' ? 'none' : 'markdown'
-      ),
+      token: zaloConfig.token,
+      ...zaloConfig.zalo,
     },
-    allowedChatIds: asStringList(root.allowedChatIds, 'config.allowedChatIds'),
-    adminIds: asStringList(root.adminIds, 'config.adminIds'),
-    discord: {
-      token: discordToken,
-      guildId: asString(discordSection.guildId, 'config.discord.guildId'),
-      allowedChannelIds: asStringList(discordSection.allowedChannelIds, 'config.discord.allowedChannelIds'),
-      respondToAllChannelIds: asStringList(
-        discordSection.respondToAllChannelIds,
-        'config.discord.respondToAllChannelIds',
-      ),
-    },
+    allowedChatIds: zaloConfig.allowedChatIds,
+    adminIds: zaloConfig.adminIds,
+    discord,
     mode: /** @type {TransportMode} */ (mode),
-    webhook: {
-      port: /** @type {number} */ (asInt(webhookSection.port, 'config.webhook.port', 8787, { min: 1, max: 65535 })),
-      host: asString(webhookSection.host, 'config.webhook.host', '127.0.0.1'),
-      path: asString(webhookSection.path, 'config.webhook.path', '/zalo/webhook'),
-      secret: resolveWebhookSecret(dataDir, mode, asString(webhookSection.secret, 'config.webhook.secret')),
-      publicUrl: asString(webhookSection.publicUrl, 'config.webhook.publicUrl'),
-    },
+    webhook: zaloConfig.webhook,
     nim: {
       apiKey: nimKey,
       baseUrl: asString(nimSection.baseUrl, 'config.nim.baseUrl', 'https://integrate.api.nvidia.com/v1').replace(/\/+$/, ''),
@@ -752,9 +608,8 @@ export function loadConfig(input = {}) {
       enabled: asBool(stickerSection.enabled, 'config.sticker.enabled', true),
       // echo the same sticker back when someone sends a sticker to the bot
       echo: asBool(stickerSection.echo, 'config.sticker.echo', true),
-      file: path.join(dataDir, 'stickers.json'),
-      // pre-declared valid IDs: "id1,id2:name 2"
-      extraIds: parseStickerIds(asString(stickerSection.ids, 'config.sticker.ids')),
+      file: zaloConfig.sticker.file,
+      extraIds: zaloConfig.sticker.extraIds,
     },
     tone,
     typing: cli['no-typing'] ? false : asBool(root.typing, 'config.typing', true),
