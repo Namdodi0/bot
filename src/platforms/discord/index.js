@@ -1,7 +1,7 @@
 import { normalizeWhitespace } from '../../core/text/format.js';
 import { createDiscordTransport } from './transport.js';
 import { registerDiscordPrompt, DISCORD_TOOL_GUIDANCE } from './prompt.js';
-import { createDiscordStickerService } from './stickers.js';
+import { createDiscordStickerService, createStickerToolRunner, stickerToolDefinitions } from './stickers.js';
 
 /**
  * Discord platform descriptor. The native bot (bot.js) owns slash commands and interactions;
@@ -20,6 +20,7 @@ export function createDiscordPlatform(input) {
     metrics,
   });
   const stickers = createDiscordStickerService({ config, client: transport.client, logger, metrics });
+  const runStickerTool = createStickerToolRunner({ stickers, logger });
 
   return {
     name: 'discord',
@@ -27,7 +28,7 @@ export function createDiscordPlatform(input) {
     transport,
     transportMode: 'gateway',
     capabilities: {
-      stickers: false,
+      stickers: true,
       uploadMedia: true,
       nativeInteractions: true,
       messageEdits: true,
@@ -44,42 +45,8 @@ export function createDiscordPlatform(input) {
       run: async () => undefined,
     },
     tools: {
-      definitions: () =>
-        stickers.enabled
-          ? [
-              {
-                type: 'function',
-                function: {
-                  name: 'send_sticker',
-                  description: 'Send a sticker available in this Discord server that fits the mood.',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      emotion: {
-                        type: 'string',
-                        description: 'Sticker name, tag, mood or id, e.g. "wave", "cat", "happy"',
-                      },
-                    },
-                    required: ['emotion'],
-                  },
-                },
-              },
-            ]
-          : [],
-      run: async (/** @type {string} */ name, /** @type {any} */ args, /** @type {any} */ ctx) => {
-        if (name !== 'send_sticker') return null;
-        if (!stickers.enabled) return { ok: false, text: 'Stickers are disabled in the config.' };
-        try {
-          const channel = await stickers.channelOf(ctx.chatId);
-          const query = args?.emotion ?? args?.query ?? args?.name;
-          const sticker = await stickers.resolve(channel, query);
-          if (!sticker) return { ok: false, text: 'No matching sticker in this server.' };
-          await stickers.send(channel, sticker);
-          return { ok: true, text: `Sent the sticker "${sticker.name}".` };
-        } catch (error) {
-          return { ok: false, text: `Could not send the sticker: ${String(/** @type {any} */ (error)?.message ?? error)}` };
-        }
-      },
+      definitions: () => stickerToolDefinitions(config),
+      run: runStickerTool,
     },
     stickers,
     healthServices: ['tavily'],

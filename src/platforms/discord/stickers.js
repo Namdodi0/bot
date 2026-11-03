@@ -19,6 +19,58 @@ export function parseDiscordStickerIds(raw) {
 }
 
 /**
+ * Discord `send_sticker` tool schema, advertised only when server stickers are enabled.
+ * @param {any} config
+ */
+export function stickerToolDefinitions(config) {
+  if (config?.discord?.stickers?.enabled === false) return [];
+  return [
+    {
+      type: 'function',
+      function: {
+        name: 'send_sticker',
+        description: 'Send a sticker available in this Discord server that fits the mood.',
+        parameters: {
+          type: 'object',
+          properties: {
+            emotion: {
+              type: 'string',
+              description: 'Sticker name, tag, mood or id, e.g. "wave", "cat", "happy"',
+            },
+          },
+          required: ['emotion'],
+        },
+      },
+    },
+  ];
+}
+
+/**
+ * `send_sticker` tool runner. Returns null for other tool names so the core router keeps
+ * looking.
+ * @param {{stickers: ReturnType<typeof createDiscordStickerService>, logger?: any}} deps
+ */
+export function createStickerToolRunner(deps) {
+  const stickers = deps.stickers;
+
+  /** @param {string} name @param {any} args @param {{chatId: string}} ctx */
+  return async function run(name, args, ctx) {
+    if (name !== 'send_sticker') return null;
+    if (!stickers.enabled) return { ok: false, text: 'Stickers are disabled in the config.' };
+    try {
+      const channel = await stickers.channelOf(ctx.chatId);
+      const query = args?.emotion ?? args?.query ?? args?.name;
+      const sticker = await stickers.resolve(channel, query);
+      if (!sticker) return { ok: false, text: 'No matching sticker in this server.' };
+      await stickers.send(channel, sticker);
+      return { ok: true, text: `Sent the sticker "${sticker.name}".` };
+    } catch (error) {
+      return { ok: false, text: `Could not send the sticker: ${String(/** @type {any} */ (error)?.message ?? error)}` };
+    }
+  };
+}
+
+/**
  * Guild sticker lookup with a config fallback. Listing guild stickers needs Manage
  * Expressions; when that is missing the configured ids still work.
  * @param {{config: any, client: any, logger: any, metrics?: any}} deps
