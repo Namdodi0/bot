@@ -16,8 +16,8 @@ import { fileURLToPath } from 'node:url';
 /** Files tried, in priority order (the first one wins). */
 export const DEFAULT_ENV_FILES = ['.env', '.env.local'];
 
-/** Repo root derived from this file, independent of the process working directory. */
-export const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/** Repo root derived from this file (src/core/env.js → ../..), independent of the process cwd. */
+export const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 

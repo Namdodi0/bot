@@ -147,6 +147,9 @@ export function chunkText(text, options = {}) {
   const normalized = normalizeWhitespace(text);
   if (!normalized) return { chunks: [], truncated: false };
   if (normalized.length <= limit) return { chunks: [normalized], truncated: false };
+  // balanceFences may prepend "```\n" and append "\n```" (4 chars each); reserve that space
+  // up front so a balanced chunk can never exceed the platform's hard limit.
+  const splitLimit = normalized.includes('```') ? Math.max(1, limit - 8) : limit;
 
   /** @type {string[]} */
   const raw = [];
@@ -157,9 +160,9 @@ export function chunkText(text, options = {}) {
   };
 
   for (const block of normalized.split(/\n{2,}/)) {
-    if (block.length <= limit) {
+    if (block.length <= splitLimit) {
       const sep = current ? '\n\n' : '';
-      if (current.length + sep.length + block.length <= limit) {
+      if (current.length + sep.length + block.length <= splitLimit) {
         current += sep + block;
       } else {
         pushCurrent();
@@ -168,15 +171,15 @@ export function chunkText(text, options = {}) {
       continue;
     }
     pushCurrent();
-    raw.push(...splitLongBlock(block, limit));
+    raw.push(...splitLongBlock(block, splitLimit));
   }
   pushCurrent();
 
   /** @type {string[]} */
   const chunks = [];
   for (const item of raw) {
-    if (item.length <= limit) chunks.push(item);
-    else chunks.push(...hardSplit(item, limit));
+    if (item.length <= splitLimit) chunks.push(item);
+    else chunks.push(...hardSplit(item, splitLimit));
   }
 
   const balanced = balanceFences(chunks);

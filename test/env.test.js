@@ -3,8 +3,13 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describeEnvHints, loadEnvFiles, parseEnvFile } from '../src/core/env.js';
+import { describeEnvHints, loadEnvFiles, parseEnvFile, PROJECT_ROOT } from '../src/core/env.js';
 import { loadConfig } from '../src/config.js';
+
+test('PROJECT_ROOT points at the repository root, not src/', async () => {
+  await fsp.access(path.join(PROJECT_ROOT, 'package.json'));
+  assert.ok(path.basename(PROJECT_ROOT) !== 'src');
+});
 
 async function tempDir() {
   return fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-env-'));

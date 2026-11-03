@@ -42,6 +42,15 @@ test('chunkText keeps code fences balanced', () => {
   }
 });
 
+test('chunkText keeps fenced chunks within the platform hard limit', () => {
+  // 2001 chars with one open fence: rebalancing adds up to 8 chars, so the split limit
+  // must reserve that space (Discord rejects messages over 2000).
+  const code = `\`\`\`\n${'x'.repeat(1996)}y`;
+  const result = chunkText(code, { limit: 2000 });
+  assert.ok(result.chunks.length > 1);
+  for (const chunk of result.chunks) assert.ok(chunk.length <= 2000, `chunk too long: ${chunk.length}`);
+});
+
 test('sanitizeZaloMarkdown converts links and tables', () => {
   assert.equal(sanitizeZaloMarkdown('See [here](https://a.com) now'), 'See here (https://a.com) now');
   assert.equal(sanitizeZaloMarkdown('![cat](https://a.com/m.png)'), 'cat (https://a.com/m.png)');
