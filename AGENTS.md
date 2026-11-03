@@ -42,7 +42,7 @@ this file is for agents and maintainers.
 | `npm run dev` | Polling + watch |
 | `npm run simulate -- "question"` | Real agent + real LLM/Tavily, but sends nothing to Zalo |
 | `npm run smoke` | Checks Zalo/DeepSeek/NIM/Tavily; **uses real APIs and credits** |
-| `npm run pack` | Builds a deployment zip (excludes `.env` and `data/` by default) |
+| `npm run pack` | Builds a deployment zip (excludes `.env` and `data/`; blanks secret fields in the staged `config.json`) |
 
 Run `npm test` and `npm run typecheck` before reporting work as complete. Do not run
 `smoke`/`simulate` unless the task explicitly requires live provider calls.
@@ -56,24 +56,26 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   banner, shutdown.
 - `src/platforms/contract.js` — the `Platform` contract: transport, capabilities, limits,
   formatOutgoing, admin rule, prompt, tools, commands, health services, lifecycle.
-- `src/platforms/zalo/` — Zalo client, event normalization, polling/webhook, stickers,
-  Zalo prompt sections, sticker tool/command, markdown sanitizing, admission/admin policy.
+- `src/platforms/zalo/` — Zalo client, event normalization, polling/webhook (validated
+  webhook path; fatal server errors end the loop), stickers, Zalo prompt sections, sticker
+  tool/command, markdown sanitizing, admission/admin policy.
 - `src/platforms/discord/` — native Discord bot: `specs.js` (slash/context-menu surface),
   `commands/` (router, ask/streaming, settings, catchup, stickers, basic handlers, shared
   helpers), `ui.js` (embeds/attachments/components/modals), `bot.js` (client + registration),
   `message-handler.js` (admission + streaming chat), `interaction-router.js`, `presence.js`,
   `transport.js`, `events.js` (normalization/admission), `stickers.js`, `prompt.js` and
   `config.js`. Native commands collect answers via `agent.stream()`/`agent.collect()`; no
-  second agent or Zalo import.
+  second agent or Zalo import. Private asks/context menus mark `event.private`.
 - `src/core/services/` — shared chat/context/summary and reminder operations used by both
-  command layers.
+  command layers; summaries keep the newest transcript lines and skip private turns.
 - `src/core/ai/agent/turn/` — `fallback.js`, `tools.js`, `final.js`, `report.js` extracted
   from the turn loop.
-- `src/core/ai/agent.js` — agent composition: event routing (commands, dedupe, rate limit)
-  and queue wiring.
+- `src/core/ai/agent.js` — agent composition: event routing (commands, dedupe, rate limit),
+  queue wiring, and removal of private turns from the shared record after a turn.
 - `src/core/ai/agent/` — `helpers.js` (budget/prompt helpers), `sending.js` (sender +
   platform chunk limit/format), `turn.js` (LLM round loop, tools, streaming, fallback),
-  `queue.js` (FIFO, concurrency, dedupe, rate limit, drain).
+  `queue.js` (per-chat FIFO for messages and collected turns, concurrency, dedupe, rate
+  limit, queue depth, shared exclusive runner, drain).
 - `src/core/ai/prompt/` — prompt registry (`section`, `context`, `variable`, `tools`),
   shared static sections/tone rules (`sections.js`), runtime context (`entries.js`).
 - `src/core/ai/llm/` — provider-neutral service, OpenAI-compatible adapter, model catalog,
@@ -82,15 +84,17 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/core/ai/tools.js` — `web_search`, `read_url`, `send_image`, `set_reminder` + platform
   tool hook.
 - `src/core/ai/reminders.js` — persisted reminders, single-flight tick, VN-time parsing.
-- `src/core/context/` — record schema v2, assembler, atomic JSON store, token meter,
-  compaction (prune tool results then summarize balanced ranges).
+- `src/core/context/` — record schema v2, assembler, atomic JSON store (memoized in-flight
+  loads, ordered per-chat writes), token meter, compaction (prune tool results, repair
+  leading orphan pairs, summarize balanced ranges).
 - `src/core/commands/index.js` — shared command router and admin/manager checks.
 - `src/core/commands/registry.js` — shared command metadata; platforms append specs and
   help overrides.
 - `src/core/media/validate.js` — SSRF-safe image URL validation/download and public page
   text fetching (pinned DNS, redirects, size).
-- `src/core/http.js` — fetch wrapper: timeout, retry, per-service breaker (only retryable
-  failures count), SSE opening.
+- `src/core/http.js` — fetch wrapper: timeout, retry (honors `Retry-After`), per-service
+  breaker (only retryable failures count; streaming outcomes are recorded after the body),
+  SSE opening.
 - `src/core/text/format.js` — chunking, mention stripping, time/duration helpers.
   Zalo markdown sanitizing lives in `src/platforms/zalo/format.js`.
 
@@ -106,14 +110,17 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   labels/health lists), but behavior differences belong in `src/platforms/{zalo,discord}`.
 - **No `/remember`/`/forget` feature** — it was removed; do not reintroduce it without an explicit request.
 - **Tool calls/results stay paired.** Compaction and trimming must never split a pair;
-  fallback calls must not receive `role: "tool"` history without `tools`.
+  fallback calls must not receive `role: "tool"` history without `tools`. Compaction repairs
+  leading orphan tool entries instead of deadlocking on an unbalanced prefix.
 - **Secrets** are never logged raw. Use `collectSecrets`/logger redaction. `.env`, `data/`,
   and generated zips with secrets stay out of git.
 - **Image URLs** must pass `createImageValidator` before `sendPhoto`; platforms with
   `capabilities.uploadMedia` download validated bytes first.
 - **Vision input is current-turn only.** Validated image bytes travel on `event.imageData`,
-  the vision model is chosen via `config.model.visionAlias`, and the durable record keeps a
-  text note instead of the image bytes. Tool/fallback calls strip image content blocks.
+  the vision model is chosen via `config.model.visionAlias`, and that alias must be passed to
+  the actual LLM call (not just used for metadata). Fallback selection excludes the model
+  that was actually attempted. The durable record keeps a text note instead of the image
+  bytes; tool/fallback calls strip image content blocks.
 - **Zalo mutating POSTs** are not retried (duplicate messages).
 - **Discord is slash-first.** Chat input is `/ask` (plus `/help`, `/status`, `/ping`,
   `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`,
@@ -125,11 +132,22 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   mention/reply chat, context menus, Regenerate/Continue, `/summary`, `/catchup`); tool-only
   outputs use `agent.collect()` or are sent when ready. Typed text commands are ignored.
   Ordinary @mention/reply chat still goes through the shared agent.
+- **Private Discord turns stay private.** `/ask private:true`, ephemeral context menus and
+  ephemeral regenerate/continue mark `event.private`. The core removes their entries from
+  the shared record after the turn and excludes them from summaries/compaction; direct sends
+  (`send_sticker`, `set_reminder`) are suppressed. Private wins over `thread:true`.
 - **Platform-specific ids are opaque in core.** Discord uses raw channel/thread ids; its
   transport tolerates a legacy `discord:` prefix in old reminders but new ids are never
   prefixed. Zalo `allowedChatIds`/`adminIds` are enforced by `src/platforms/zalo`; Discord
   admin commands use Manage Server and are hidden from other members by default.
-- **Context store writes** are atomic (temp + rename); keep per-chat ordering.
+- **Context store writes** are atomic (temp + rename), ordered per chat, and concurrent
+  loads of one chat share the same in-memory record. `keepMeta` resets must preserve the
+  settings of a cold record too.
+- **Per-chat serialization** covers messages, collected/streamed turns and context
+  maintenance. Queue depth, the concurrency cap and shutdown drain apply to all of them;
+  do not mutate a chat record outside the shared queue.
+- **HTTP retries** honor `Retry-After`; attempt timeouts stay retryable and are not reported
+  as caller aborts. The circuit breaker learns stream outcomes after the body finishes.
 - **No new runtime dependencies** without explicit approval.
 
 ## Prompt, persona, and untrusted data
@@ -153,7 +171,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - Test platform policy (admission, limits, prompt, tools, commands) in `test/` against the
   platform modules, not by re-adding platform branches to `src/core`.
 - Add a regression test for every bug fix, especially around retries, context compaction,
-  reminders, and message dedupe.
+  reminders, message dedupe, per-chat queue serialization, private turns and streamed
+  payload safety.
 - Keep coverage healthy; the suite currently covers ~90% of lines.
 
 ## Style
@@ -168,18 +187,21 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 
 - **`.env` contains API keys/tokens only**: `ZALO_BOT_TOKEN`, `NIM_API_KEY`, `DEEPSEEK_API_KEY`,
   `TAVILY_API_KEY`, and `DISCORD_BOT_TOKEN` when the Discord transport is enabled. It is loaded in code (`src/core/env.js`); variables already in `process.env`
-  win unless empty.
+  win unless empty or whitespace-only.
 - **`config.json` contains non-secret settings and is tracked** (see `config.example.json`).
   It must never contain API keys; leave `webhook.secret` empty so the secret stays in
   `data/webhook-secret`. `--config <path>` selects another file for either entry point
   (it wins over the per-entry default path). Do not read non-secret
-  settings from environment variables.
+  settings from environment variables. `config.webhook.path` must start with `/` and have no
+  trailing slash or whitespace. `npm run pack` stages a sanitized `config.json` (secret
+  fields blanked) instead of copying it verbatim.
 - Old non-secret variables left in `.env` are ignored; `loadConfig` reports them as
   `ignoredEnvKeys` and the startup logs a warning. If `config.json` is missing, startup
   fails with the list so no setting is silently lost. Do not add compatibility aliases.
-- Unknown config keys (typos such as `allowChatIds`) are collected into
-  `config.unknownConfigKeys` and warned about at startup; they are never fatal. Keep the
-  known-key lists in `src/config.js` in sync when adding a setting.
+- Unknown config keys (typos such as `allowChatIds`, or nested ones such as
+  `discord.presence.statuss`) are collected into `config.unknownConfigKeys` and warned about
+  at startup; they are never fatal. Keep the known-key and nested-key lists in
+  `src/config.js` in sync when adding a setting.
 - Relative `dataDir` resolves from the repo root, not the process cwd. Never use temp dirs
   for real data.
 - `allowedChatIds` empty means every Zalo chat is served; `adminIds` empty currently means
@@ -194,6 +216,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 These are known from the last review and intentionally left for the owner:
 
 - Persona/policy lines in `src/core/ai/prompt/sections.js` (P0).
+- Prompt-injection boundary for web search / page / tool output (P1-2 of the latest review;
+  the model prompt still has no untrusted-data rule).
 - Open admin default when `adminIds` is empty (P1-1).
 - Unbounded tool calls / streaming total timeout (P1-3 and P1-4).
 - Reminder removal is not scoped to the creator or admins (P2-4).
