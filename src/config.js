@@ -3,9 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import crypto from 'node:crypto';
-import { DEFAULT_ALIAS, FALLBACK_ALIAS, MODEL_ALIASES, isKnownAlias } from './ai/models.js';
-import { parseStickerIds } from './ai/stickers.js';
-import { VERSION } from './version.js';
+import { DEFAULT_ALIAS, FALLBACK_ALIAS, MODEL_ALIASES, isKnownAlias } from './core/ai/models.js';
+import { parseStickerIds } from './platforms/zalo/stickers.js';
+import { VERSION } from './core/version.js';
 
 /** @typedef {'polling'|'webhook'} TransportMode */
 /** @typedef {'none'|'low'|'medium'|'high'|'auto'} ReasoningMode */

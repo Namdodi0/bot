@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { latestSummary, summaryEntry } from '../src/context/record.js';
-import { createContextStore } from '../src/context/store.js';
+import { latestSummary, summaryEntry } from '../src/core/context/record.js';
+import { createContextStore } from '../src/core/context/store.js';
 import { silentLogger } from '../test-utils/helpers.js';
 
 test('store saves, reloads, resets', async () => {

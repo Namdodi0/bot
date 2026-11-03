@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CircuitOpenError, HttpError, closeHttpServer, createHttp } from '../src/http.js';
+import { CircuitOpenError, HttpError, closeHttpServer, createHttp } from '../src/core/http.js';
 
 /** @param {unknown} body @param {number} [status] */
 function response(body, status = 200) {

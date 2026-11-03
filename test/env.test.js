@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describeEnvHints, loadEnvFiles, parseEnvFile } from '../src/env.js';
+import { describeEnvHints, loadEnvFiles, parseEnvFile } from '../src/core/env.js';
 import { loadConfig } from '../src/config.js';
 
 async function tempDir() {

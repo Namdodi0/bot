@@ -9,7 +9,7 @@ import {
   isValidStickerId,
   normalizeText,
   parseStickerIds,
-} from '../src/ai/stickers.js';
+} from '../src/platforms/zalo/stickers.js';
 import { silentLogger } from '../test-utils/helpers.js';
 
 test('normalizeText strips diacritics so an unaccented query still matches', () => {

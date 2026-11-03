@@ -1,4 +1,22 @@
-import { createSilentLogger } from '../src/logger.js';
+import { createSilentLogger } from '../src/core/logger.js';
+import { normalizeWhitespace } from '../src/core/text/format.js';
+import { prepareOutgoing } from '../src/platforms/zalo/format.js';
+import {
+  createDiscordCommandRunner,
+  DISCORD_COMMAND_SPECS,
+  DISCORD_HELP_NOTE,
+  DISCORD_HELP_OVERRIDES,
+} from '../src/platforms/discord/commands.js';
+import { registerDiscordPrompt } from '../src/platforms/discord/prompt.js';
+import {
+  createZaloCommandRunner,
+  zaloHelpNote,
+  ZALO_COMMAND_SPECS,
+  ZALO_HELP_OVERRIDES,
+} from '../src/platforms/zalo/commands.js';
+import { createZaloIncomingHandler } from '../src/platforms/zalo/incoming.js';
+import { registerZaloPrompt, ZALO_TOOL_GUIDANCE } from '../src/platforms/zalo/prompt.js';
+import { createZaloToolRunner, zaloToolDefinitions } from '../src/platforms/zalo/tools.js';
 
 export const silentLogger = createSilentLogger();
 
@@ -89,6 +107,121 @@ export function makeConfig(overrides = {}) {
     ai: { ...base.ai, ...(overrides.ai ?? {}) },
     context: { ...base.context, ...(overrides.context ?? {}) },
     search: { ...base.search, ...(overrides.search ?? {}) },
+  };
+}
+
+/**
+ * @param {Record<string, any>} [overrides]
+ */
+export function makeTransport(overrides = {}) {
+  const transport = {
+    displayName: 'Bot deepseek',
+    sendMessage: async () => ({ ok: true }),
+    sendPhoto: async () => ({ ok: true }),
+    sendSticker: async (chatId, stickerId) => {
+      transport.lastSticker = { chatId, stickerId };
+      return { ok: true };
+    },
+    lastSticker: null,
+    startTyping: () => () => {},
+    stopAllTyping: () => {},
+    ping: async () => 5,
+    ...overrides,
+  };
+  return transport;
+}
+
+/**
+ * Zalo platform double for engine tests.
+ * @param {{config?: any, transport?: any, stickers?: any, logger?: any, metrics?: any, overrides?: Record<string, any>}} [input]
+ */
+export function makeZaloPlatform(input = {}) {
+  const config = input.config ?? makeConfig();
+  const transport = input.transport ?? makeTransport();
+  const stickers = input.stickers ?? null;
+  const logger = input.logger ?? silentLogger;
+  const metrics = input.metrics ?? { inc() {}, observe() {} };
+  return {
+    name: 'zalo',
+    label: 'Zalo',
+    transport,
+    transportMode: config.mode ?? 'polling',
+    capabilities: {
+      stickers: true,
+      uploadMedia: false,
+      nativeInteractions: false,
+      messageEdits: false,
+      embeds: false,
+      threads: false,
+    },
+    limits: { text: 1900, caption: 1900 },
+    formatOutgoing: (text) => prepareOutgoing(text, { parseMode: config.zalo?.parseMode ?? 'markdown' }),
+    isAdmin: (event) => {
+      const adminIds = config.adminIds ?? [];
+      return !adminIds.length || adminIds.includes(String(event?.senderId ?? ''));
+    },
+    prompt: { register: registerZaloPrompt, toolGuidance: ZALO_TOOL_GUIDANCE },
+    commands: {
+      specs: ZALO_COMMAND_SPECS,
+      helpOverrides: ZALO_HELP_OVERRIDES,
+      helpNote: zaloHelpNote(config),
+      run: createZaloCommandRunner({ config, stickers, transport, logger, metrics }),
+    },
+    tools: {
+      definitions: zaloToolDefinitions,
+      run: createZaloToolRunner({ config, stickers, transport, logger, metrics }),
+    },
+    healthServices: ['zalo', 'tavily'],
+    explainError: (error) =>
+      error?.status === 401 ? 'Zalo rejected the bot token. Admin, please check ZALO_BOT_TOKEN.' : null,
+    handleIncoming: createZaloIncomingHandler({ config, stickers, transport, logger, metrics }),
+    start: async () => ({ ready: {}, done: Promise.resolve() }),
+    stop: async () => {},
+    ...(input.overrides ?? {}),
+  };
+}
+
+/**
+ * Discord platform double for engine tests.
+ * @param {{transport?: any, overrides?: Record<string, any>}} [input]
+ */
+export function makeDiscordPlatform(input = {}) {
+  const transport = input.transport ?? makeTransport();
+  return {
+    name: 'discord',
+    label: 'Discord',
+    transport,
+    transportMode: 'gateway',
+    capabilities: {
+      stickers: false,
+      uploadMedia: true,
+      nativeInteractions: true,
+      messageEdits: true,
+      embeds: true,
+      threads: true,
+    },
+    limits: { text: 2000, caption: 2000 },
+    formatOutgoing: (text) => normalizeWhitespace(String(text ?? '')),
+    isAdmin: (event) => event?.isAdmin === true,
+    prompt: { register: registerDiscordPrompt },
+    commands: {
+      specs: DISCORD_COMMAND_SPECS,
+      helpOverrides: DISCORD_HELP_OVERRIDES,
+      helpNote: DISCORD_HELP_NOTE,
+      run: createDiscordCommandRunner(),
+      native: {},
+    },
+    tools: {
+      run: async (name) =>
+        name === 'send_sticker'
+          ? { ok: false, text: 'Zalo stickers are not available on Discord.' }
+          : null,
+    },
+    healthServices: ['tavily'],
+    explainError: () => null,
+    start: async () => ({ ready: {}, done: Promise.resolve() }),
+    stop: async () => {},
+    ...(input.overrides ?? {}),
   };
 }
 

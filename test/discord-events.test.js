@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isChannelAllowed, stripBotMention, isBotAddressed, toDiscordEvent, toDiscordInteractionEvent } from '../src/discord/events.js';
+import { isChannelAllowed, stripBotMention, isBotAddressed, toDiscordEvent, toDiscordInteractionEvent } from '../src/platforms/discord/events.js';
 
 const client = { user: { id: 'bot1', username: 'Bot deepseek' } };
 
@@ -118,7 +118,7 @@ test('isChannelAllowed lets threads inherit their parent channel entry', () => {
 });
 
 test('photoCaption clamps the caption to the Discord content limit', async () => {
-  const { photoCaption, DISCORD_MAX_CONTENT } = await import('../src/discord/client.js');
+  const { photoCaption, DISCORD_MAX_CONTENT } = await import('../src/platforms/discord/client.js');
   assert.equal(DISCORD_MAX_CONTENT, 2000);
   assert.equal(photoCaption('short'), 'short');
   assert.equal(photoCaption(''), '');
@@ -127,22 +127,145 @@ test('photoCaption clamps the caption to the Discord content limit', async () =>
 });
 
 test('discord transport constructs without logging in', async () => {
-  const { createDiscordTransport } = await import('../src/discord/client.js');
+  const { createDiscordTransport } = await import('../src/platforms/discord/client.js');
   const transport = createDiscordTransport({
     token: 'dummy',
     config: {},
     onEvent: () => {},
     logger: { debug() {}, info() {}, warn() {}, error() {} },
   });
-  for (const method of ['start', 'stop', 'sendMessage', 'sendPhoto', 'sendSticker', 'startTyping', 'stopAllTyping', 'ping']) {
+  for (const method of [
+    'start',
+    'stop',
+    'sendMessage',
+    'sendPhoto',
+    'sendSticker',
+    'editMessage',
+    'react',
+    'sendEmbed',
+    'createThread',
+    'startTyping',
+    'stopAllTyping',
+    'ping',
+  ]) {
     assert.equal(typeof transport[method], 'function', method);
   }
   assert.equal(transport.displayName, '');
   assert.equal(transport.ping('discord:1'), 0);
 });
 
+function fakeDiscordClient() {
+  /** @type {Record<string, Function>} */
+  const handlers = {};
+  return {
+    handlers,
+    client: {
+      user: { id: 'bot1', username: 'Bot deepseek' },
+      ws: { ping: 42 },
+      channels: { cache: new Map() },
+      application: null,
+      on(event, handler) {
+        handlers[event] = handler;
+      },
+      once() {},
+      async login() {},
+      async destroy() {},
+    },
+  };
+}
+
+test('native slash handlers bypass the text router', async () => {
+  const { createDiscordTransport } = await import('../src/platforms/discord/client.js');
+  const { handlers, client } = fakeDiscordClient();
+  const calls = { native: 0, defer: 0, delete: 0, events: 0 };
+  /** @type {any} */
+  let received = null;
+  const transport = createDiscordTransport({
+    token: 'dummy',
+    config: {},
+    commandSpecs: [],
+    nativeCommands: {
+      custom: async (interaction) => {
+        calls.native += 1;
+        received = interaction;
+      },
+    },
+    onEvent: () => {
+      calls.events += 1;
+    },
+    createClient: () => client,
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+  });
+  await transport.start();
+
+  const interaction = {
+    isChatInputCommand: () => true,
+    commandName: 'custom',
+    channelId: 'c1',
+    guildId: 'g1',
+    async deferReply() {
+      calls.defer += 1;
+    },
+    async deleteReply() {
+      calls.delete += 1;
+    },
+  };
+  handlers.interactionCreate(interaction);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.native, 1);
+  assert.equal(received, interaction);
+  assert.equal(calls.defer, 0);
+  assert.equal(calls.delete, 0);
+  assert.equal(calls.events, 0);
+});
+
+test('non-native slash commands still become synthetic text events', async () => {
+  const { createDiscordTransport } = await import('../src/platforms/discord/client.js');
+  const { handlers, client } = fakeDiscordClient();
+  const calls = { defer: 0, delete: 0 };
+  /** @type {any} */
+  let event = null;
+  const transport = createDiscordTransport({
+    token: 'dummy',
+    config: {},
+    commandSpecs: [],
+    nativeCommands: {},
+    onEvent: (incoming) => {
+      event = incoming;
+    },
+    createClient: () => client,
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+  });
+  await transport.start();
+
+  handlers.interactionCreate({
+    isChatInputCommand: () => true,
+    commandName: 'help',
+    channelId: 'c1',
+    guildId: 'g1',
+    createdTimestamp: 1,
+    user: { id: 'u1', username: 'nam' },
+    member: { displayName: 'Nam' },
+    memberPermissions: { has: () => false },
+    options: { data: [] },
+    async deferReply() {
+      calls.defer += 1;
+    },
+    async deleteReply() {
+      calls.delete += 1;
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(event.text, '/help');
+  assert.equal(event.rawInteraction?.commandName, 'help');
+  assert.equal(calls.defer, 1);
+  assert.equal(calls.delete, 1);
+});
+
 test('isBotRoleMentioned accepts the bot managed role only', async () => {
-  const { isBotRoleMentioned } = await import('../src/discord/events.js');
+  const { isBotRoleMentioned } = await import('../src/platforms/discord/events.js');
   const message = (botId) => ({
     mentions: {
       roles: new Map([['r1', { id: 'r1', tags: { botId } }]]),

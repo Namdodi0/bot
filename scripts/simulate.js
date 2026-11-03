@@ -7,24 +7,33 @@
  *   npm run simulate -- "/status"
  */
 import path from 'node:path';
-import { createAgent } from '../src/ai/agent.js';
-import { DEEPSEEK_REASONING_MAP, NIM_REASONING_MAP, createOpenAiCompatAdapter } from '../src/ai/llm/adapter-openai.js';
-import { createLlmService } from '../src/ai/llm/service.js';
-import { createReminderStore, formatReminderTime } from '../src/ai/reminders.js';
-import { createModelRouter } from '../src/ai/router.js';
-import { createStickerStore } from '../src/ai/stickers.js';
-import { createSummarizer } from '../src/ai/summarize.js';
-import { createToolRuntime } from '../src/ai/tools.js';
-import { createCommands } from '../src/commands/index.js';
-import { createCompactionEngine } from '../src/context/compaction/engine.js';
+import { createAgent } from '../src/core/ai/agent.js';
+import { DEEPSEEK_REASONING_MAP, NIM_REASONING_MAP, createOpenAiCompatAdapter } from '../src/core/ai/llm/adapter-openai.js';
+import { createLlmService } from '../src/core/ai/llm/service.js';
+import { createReminderStore, formatReminderTime } from '../src/core/ai/reminders.js';
+import { createModelRouter } from '../src/core/ai/router.js';
+import { createStickerStore } from '../src/platforms/zalo/stickers.js';
+import { createSummarizer } from '../src/core/ai/summarize.js';
+import { createToolRuntime } from '../src/core/ai/tools.js';
+import { createCommands } from '../src/core/commands/index.js';
+import { createCompactionEngine } from '../src/core/context/compaction/engine.js';
 import { loadConfig } from '../src/config.js';
-import { createContextStore } from '../src/context/store.js';
-import { loadEnvFiles } from '../src/env.js';
-import { createHttp } from '../src/http.js';
-import { createLogger } from '../src/logger.js';
-import { createImageValidator } from '../src/media/validate.js';
-import { createMetrics } from '../src/metrics.js';
-import { createTavilyClient } from '../src/search/tavily.js';
+import { createContextStore } from '../src/core/context/store.js';
+import { loadEnvFiles } from '../src/core/env.js';
+import { createHttp } from '../src/core/http.js';
+import { createLogger } from '../src/core/logger.js';
+import { createImageValidator } from '../src/core/media/validate.js';
+import { createMetrics } from '../src/core/metrics.js';
+import { createTavilyClient } from '../src/core/search/tavily.js';
+import { prepareOutgoing } from '../src/platforms/zalo/format.js';
+import {
+  createZaloCommandRunner,
+  zaloHelpNote,
+  ZALO_COMMAND_SPECS,
+  ZALO_HELP_OVERRIDES,
+} from '../src/platforms/zalo/commands.js';
+import { registerZaloPrompt, ZALO_TOOL_GUIDANCE } from '../src/platforms/zalo/prompt.js';
+import { createZaloToolRunner, zaloToolDefinitions } from '../src/platforms/zalo/tools.js';
 
 const text = process.argv.slice(2).join(' ').trim();
 if (!text) {
@@ -120,6 +129,32 @@ const tavily = config.search.enabled
 const validator = createImageValidator({ logger });
 const stickers = createStickerStore({ file: config.sticker.file, extraIds: config.sticker.extraIds, logger });
 await stickers.load();
+/** @type {import('../src/platforms/contract.js').Platform} */
+const platform = {
+  name: 'zalo',
+  label: 'Zalo',
+  transport,
+  transportMode: config.mode,
+  capabilities: { stickers: true, uploadMedia: false, nativeInteractions: false, messageEdits: false, embeds: false, threads: false },
+  limits: { text: 1900, caption: 1900 },
+  formatOutgoing: (value) => prepareOutgoing(value, { parseMode: config.zalo.parseMode }),
+  isAdmin: () => true,
+  prompt: { register: registerZaloPrompt, toolGuidance: ZALO_TOOL_GUIDANCE },
+  commands: {
+    specs: ZALO_COMMAND_SPECS,
+    helpOverrides: ZALO_HELP_OVERRIDES,
+    helpNote: zaloHelpNote(config),
+    run: createZaloCommandRunner({ config, stickers, transport, logger, metrics }),
+  },
+  tools: {
+    definitions: zaloToolDefinitions,
+    run: createZaloToolRunner({ config, stickers, transport, logger, metrics }),
+  },
+  healthServices: ['zalo', 'tavily'],
+  explainError: () => null,
+  start: async () => ({ ready: {}, done: Promise.resolve() }),
+  stop: async () => {},
+};
 const summarize = createSummarizer({ llm: models, logger });
 const compaction = createCompactionEngine({ config, logger, metrics, summarize });
 const reminders = createReminderStore({
@@ -129,15 +164,14 @@ const reminders = createReminderStore({
 ${text}`),
   logger,
 });
-const tools = createToolRuntime({ config, tavily, transport, validator, stickers, reminders, logger, metrics });
+const tools = createToolRuntime({ config, tavily, platform, validator, reminders, logger, metrics });
 const commands = createCommands({
   config,
   store,
   metrics,
-  transport,
+  platform,
   http: httpClient,
   models,
-  stickers,
   reminders,
   logger,
   compaction,
@@ -146,12 +180,11 @@ const agent = createAgent({
   config,
   logger,
   metrics,
-  transport,
+  platform,
   llm: models,
   store,
   tools,
   commands,
-  stickers,
   http: httpClient,
   compaction,
 });

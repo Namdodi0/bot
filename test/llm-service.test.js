@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LLM_ERROR, LlmError, asLlmError } from '../src/ai/llm/errors.js';
-import { createRetryExecutor } from '../src/ai/llm/retry.js';
-import { createLlmService } from '../src/ai/llm/service.js';
-import { CircuitOpenError, HttpError } from '../src/http.js';
+import { LLM_ERROR, LlmError, asLlmError } from '../src/core/ai/llm/errors.js';
+import { createRetryExecutor } from '../src/core/ai/llm/retry.js';
+import { createLlmService } from '../src/core/ai/llm/service.js';
+import { CircuitOpenError, HttpError } from '../src/core/http.js';
 import { silentLogger } from '../test-utils/helpers.js';
 
 function makeAdapter(id, chat, overrides = {}) {

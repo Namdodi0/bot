@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHttp } from '../src/http.js';
-import { createZaloClient, ZaloApiError } from '../src/zalo/client.js';
-import { createMetrics } from '../src/metrics.js';
+import { createHttp } from '../src/core/http.js';
+import { createZaloClient, ZaloApiError } from '../src/platforms/zalo/client.js';
+import { createMetrics } from '../src/core/metrics.js';
 import { silentLogger } from '../test-utils/helpers.js';
 
 /**

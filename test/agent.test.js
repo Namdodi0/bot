@@ -3,15 +3,16 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { __test__ as agentTest, createAgent } from '../src/ai/agent.js';
-import { LLM_ERROR, LlmError } from '../src/ai/llm/errors.js';
-import { createToolRuntime } from '../src/ai/tools.js';
-import { createCommands } from '../src/commands/index.js';
-import { createCompactionEngine } from '../src/context/compaction/engine.js';
-import { createContextStore } from '../src/context/store.js';
-import { HttpError } from '../src/http.js';
-import { createMetrics } from '../src/metrics.js';
-import { makeConfig, silentLogger, textEvent } from '../test-utils/helpers.js';
+import { __test__ as agentTest, createAgent } from '../src/core/ai/agent.js';
+import { LLM_ERROR, LlmError } from '../src/core/ai/llm/errors.js';
+import { createToolRuntime } from '../src/core/ai/tools.js';
+import { createCommands } from '../src/core/commands/index.js';
+import { createCompactionEngine } from '../src/core/context/compaction/engine.js';
+import { createContextStore } from '../src/core/context/store.js';
+import { HttpError } from '../src/core/http.js';
+import { createMetrics } from '../src/core/metrics.js';
+import { makeConfig, makeDiscordPlatform, makeZaloPlatform, silentLogger, textEvent } from '../test-utils/helpers.js';
+import { createZaloAdmission } from '../src/platforms/zalo/incoming.js';
 
 /**
  * @param {{replies?: any[], configOverrides?: Record<string, any>, tavily?: any, nimError?: any, delayMs?: number, deltaText?: string, logger?: any, toolRuntime?: any}} [options]
@@ -128,14 +129,17 @@ async function setup(options = {}) {
     size: () => 1,
   };
 
+  const platform =
+    options.platformName === 'discord'
+      ? makeDiscordPlatform({ transport })
+      : makeZaloPlatform({ config, transport, stickers, logger, metrics });
   const tools =
     options.toolRuntime ??
     createToolRuntime({
       config,
       tavily: options.tavily ?? null,
-      transport,
+      platform,
       validator: { validate: async () => ({ ok: true }) },
-      stickers,
       logger,
       metrics,
     });
@@ -149,19 +153,18 @@ async function setup(options = {}) {
     config,
     store,
     metrics,
-    transport,
+    platform,
     http: {
       stateOf: () => ({ failures: 0, open: false, openedUntil: 0 }),
       listStates: () => [],
     },
     models: llm,
-    stickers,
     logger,
     compaction,
   });
-  const agent = createAgent({ config, logger, metrics, transport, llm, store, tools, commands, stickers, compaction });
+  const agent = createAgent({ config, logger, metrics, platform, llm, store, tools, commands, compaction });
 
-  return { agent, sent, sentStickers, events, nimCalls, store, config, metrics, dir };
+  return { agent, sent, sentStickers, events, nimCalls, store, config, metrics, dir, platform };
 }
 
 test('replies in a group, strips the mention, stores context', async () => {
@@ -193,10 +196,10 @@ test('skips messages sent by the bot', async () => {
   assert.equal(sent.length, 0);
 });
 
-test('chats outside the allowlist are skipped', async () => {
-  const { agent, sent } = await setup({ configOverrides: { allowedChatIds: ['other-chat'] } });
-  await agent.handle(textEvent('hi'));
-  assert.equal(sent.length, 0);
+test('the Zalo admission gate rejects chats outside the allowlist', () => {
+  const admits = createZaloAdmission(makeConfig({ allowedChatIds: ['other-chat'] }));
+  assert.equal(admits(textEvent('hi')), false);
+  assert.equal(admits(textEvent('hi', { chatId: 'other-chat' })), true);
 });
 
 test('splits a long reply into several messages, at most maxMessagesPerReply', async () => {
@@ -805,8 +808,21 @@ test('the sender rate limit is scoped per chat', async () => {
   assert.equal(nimCalls.length, 2);
 });
 
+test('Discord splits long text at its 2000-character limit, Zalo at 1900', async () => {
+  const content = 'x'.repeat(2500);
+  const configOverrides = { maxMessagesPerReply: 0, progressive: 'off' };
+
+  const discord = await setup({ platformName: 'discord', replies: [{ content, toolCalls: [] }], configOverrides });
+  await discord.agent.handle(textEvent('long', { platform: 'discord', chatId: 'discord:c1' }));
+  assert.deepEqual(discord.sent.map((item) => item.text.length), [2000, 500]);
+
+  const zalo = await setup({ replies: [{ content, toolCalls: [] }], configOverrides });
+  await zalo.agent.handle(textEvent('long'));
+  assert.deepEqual(zalo.sent.map((item) => item.text.length), [1900, 600]);
+});
+
 test('discord replies reference the triggering message', async () => {
-  const { agent, sent } = await setup();
+  const { agent, sent } = await setup({ platformName: 'discord' });
   await agent.handle(
     textEvent('hello', {
       platform: 'discord',

@@ -26,7 +26,7 @@ shortcuts such as `mai`/`mốt` for reminders remain supported.
 
 ## Requirements
 
-- Node.js **>= 20.6** (tested on v24.19 and v26.12). **API keys live in `.env`**; all non-secret settings live in **`config.json`**. `.env` is **loaded in code** (`src/env.js`), so however you run `node index.js` the keys are there — the `--env-file-if-exists` flag is not required. `.env` / `.env.local` are looked up in the working directory first, then in the repo root (so a panel that starts the bot from another directory still finds the file).
+- Node.js **>= 20.6** (tested on v24.19 and v26.12). **API keys live in `.env`**; all non-secret settings live in **`config.json`**. `.env` is **loaded in code** (`src/core/env.js`), so however you run `node index.js` the keys are there — the `--env-file-if-exists` flag is not required. `.env` / `.env.local` are looked up in the working directory first, then in the repo root (so a panel that starts the bot from another directory still finds the file).
 - A Zalo bot created in **Zalo Bot Creator**, a valid token, `can_join_groups = true`.
 - A **DeepSeek** key (`sk-...`) for the primary model and an **NVIDIA NIM** key (`nvapi-...`) for the fallback model, plus Tavily (`tvly-...`).
 - Optional: a **Discord** bot token (`DISCORD_BOT_TOKEN`) if you enable the Discord transport.
@@ -265,12 +265,13 @@ Zalo API ──► polling/webhook ──► agent (per-chat queue, 4 chats in p
               (JSON + trim)   (DeepSeek/NIM)      (cache + validate)
 ```
 
+- **Platform contract**: `src/platforms/contract.js` defines what the engine needs from a platform (transport, output limits, markdown dialect, admin rule, prompt sections, tools, command specs/handlers, lifecycle). Zalo and Discord implement it in `src/platforms/zalo` and `src/platforms/discord`; `src/core` never branches on the platform name. Discord also exposes raw interaction/message handles, native slash-command handlers, and rich transport methods (`editMessage`, `react`, `sendEmbed`, `createThread`) for future Discord-only features.
 - **Model selection**: each chat has a `meta.model` (set by `/model`) → the router picks the matching provider/model; `config.model.defaultAlias` by default (deepseek-flash, reasoning off).
-- **No `max_tokens` cap**: the model generates until it is done. The prompt asks for compact replies by default; there is **no answer deadline by default** (`config.responseTimeoutMs=0`), long answers are split into multiple 1900-character messages, with **no limit on the number of messages** (`config.maxMessagesPerReply=0`).
+- **No `max_tokens` cap**: the model generates until it is done. The prompt asks for compact replies by default; there is **no answer deadline by default** (`config.responseTimeoutMs=0`), long answers are split at the platform's message limit (Zalo 1900, Discord 2000 characters), with **no limit on the number of messages** (`config.maxMessagesPerReply=0`).
 - **Lower latency**: `reasoning_effort: none` (DeepSeek returns no `reasoning_content`, measured ~600–900ms), typing indicator, warm-up at boot, Tavily cache (10 minutes by default), image validation result cache, `fetch` keep-alive, only `search_depth=fast`.
 - **Model fault tolerance**: no request timeout by default (`config.nim.timeoutMs=0`, `config.deepseek.timeoutMs=0`) and no answer deadline (`config.responseTimeoutMs=0`), so a slow model is waited for instead of being cut off. Set a positive value to restore limits: the bot then retries once (sharing the budget) and falls back **to a different model** (`config.model.fallbackAlias`) without tools — so the bot doesn't "die" when DeepSeek/NIM returns 500/timeout. If the fallback provider has no API key, that alias is skipped and the catalog picks another available model. Warmup runs **sequentially**, exactly 1 request per provider+model pair (before v1.1.1 it ran 2 aliases of the same provider in parallel → the second request was queued by NIM and then timed out after 20s), with an 8s timeout, and failures are logged at `debug` only — no impact on real messages.
 - **Prompt / context / LLM follow the DeepSeek Harness architecture** (porting the contract, not the plugin kernel):
-  - The **system prompt** is a set of `PromptSection`s with an `order` (identity, rules, chat shape, formatting, image, tool guidance, tone, commands) assembled by `src/ai/prompt/`; the registry supports `complete`, strict `{{...}}` variables, runtime context and the provider's tool schema. Tool guidance only appears when the matching tool is actually sent (even with `config.search.auto=false`).
+  - The **system prompt** is a set of `PromptSection`s with an `order` (identity, rules, chat shape, formatting, image, tool guidance, tone, commands) assembled by `src/core/ai/prompt/` (shared sections) plus `src/platforms/*/prompt.js` (identity, formatting, command list); the registry supports `complete`, strict `{{...}}` variables, runtime context and the provider's tool schema. Tool guidance only appears when the matching tool is actually sent (even with `config.search.auto=false`).
   - **Model-visible means logged**: timestamps and `/search` results are **persistent user messages** in the record (refreshed every turn), tool calls/results are written to the record, and the summary is **a single user message** replacing the old range — no more mutating a copy of the request.
   - **Token meter + compaction**: estimates `system + tool schemas + messages`, calibrated with `usage.prompt_tokens`; exceeding `config.context.compactThreshold` or the provider reporting context overflow → shrink tool results → summarize older ranges (keeping `config.context.keepRecent`, always balancing tool-call/result pairs). `/compact` compacts manually (admin).
   - **LLM service**: a shared OpenAI-compatible adapter for DeepSeek/NIM, a per-provider registry (duplicate routes are rejected), immutable requests, stable error codes (`NO_ADAPTER`, `AUTH`, `RATE_LIMIT`, `CONTEXT_WINDOW_EXCEEDED`, `TIMEOUT`, `ABORTED`, ...), a separate retry executor, and a model catalog that carries `contextWindow`.
@@ -284,35 +285,42 @@ Zalo API ──► polling/webhook ──► agent (per-chat queue, 4 chats in p
 
 ```
 src/
-  config.js        config.json + .env keys + CLI flags (util.parseArgs)
-  logger.js        JSON log, token/key redaction
-  http.js          fetch wrapper: timeout, retry, breaker, SSE
-  metrics.js       counters + p50/p95
-  zalo/            REST client, event normalize, polling, webhook
-  discord/         discord.js client, slash commands, event normalization
-  runtime.js       shared engine: store, models, tools, commands, agent, lifecycle
-  index.js         Zalo entry point (polling/webhook)
-  discord.js       Discord entry point (gateway + slash commands)
-  ai/
-    prompt/        registry section/context/variable + sections + entries
-    llm/           service, adapter OpenAI-compatible, catalog, retry, errors
-    router.js      pick the model per chat from the catalog
-    summarize.js   summarizer used for compaction
-    agent.js       reply pipeline, tool rounds, progressive, queue
-  context/
-    store.js       atomic JSON storage + TTL/LRU
-    record.js      schema v2, message/context/summary/tool constructors
-    assembler.js   record -> messages (trim, tool pairing)
-    token-meter.js token estimate + calibrator
-    compaction/    engine + pruner + summarizer
-  search/          tavily client + format
-  media/           validate image URL
-  text/            chunk, sanitize markdown, strip mention
-  commands/        /help /reset /status ...
+  config.js        shared config schema + .env keys + CLI flags (util.parseArgs)
+  index.js         Zalo entry point: config -> platform -> runtime
+  discord.js       Discord entry point: config -> platform -> runtime
+  core/            platform-neutral engine (no Zalo/Discord branches)
+    runtime.js     store, models, tools, commands, agent, lifecycle
+    ai/
+      prompt/      registry + shared sections + runtime context
+      llm/         service, adapter OpenAI-compatible, catalog, retry, errors
+      router.js    pick the model per chat from the catalog
+      summarize.js summarizer used for compaction
+      agent.js     reply pipeline, tool rounds, progressive, queue
+    context/
+      store.js     atomic JSON storage + TTL/LRU
+      record.js    schema v2, message/context/summary/tool constructors
+      assembler.js record -> messages (trim, tool pairing)
+      token-meter.js token estimate + calibrator
+      compaction/  engine + pruner + summarizer
+    commands/      command router + shared command metadata
+    search/        tavily client + format
+    media/         validate image URL / download bytes
+    text/          chunk, strip mention, time/format helpers
+    logger.js      JSON log, token/key redaction
+    http.js        fetch wrapper: timeout, retry, breaker, SSE
+    metrics.js     counters + p50/p95
+    env.js         .env loading + hints
+    version.js     package.json version
+  platforms/
+    contract.js    platform interface: transport, limits, prompt, tools, commands
+    zalo/          REST client, events, polling, webhook, stickers,
+                   prompt, tools, commands, formatting, lifecycle
+    discord/       gateway client, events, slash commands, prompt,
+                   native command hooks, rich transport methods, lifecycle
 scripts/smoke.js     checks token + DeepSeek + NIM + Tavily
 scripts/simulate.js  runs the real agent, sends nothing to Zalo
 test/                unit tests (node --test)
-test-utils/          shared test helpers
+test-utils/          shared test helpers (incl. platform doubles)
 ```
 
 ## Troubleshooting
@@ -360,4 +368,4 @@ test-utils/          shared test helpers
 - You can't "cancel" the typing indicator on Zalo's side: the bot stops sending typing before replying, and the rest expires on Zalo's client (~a few seconds).
 - NIM reports `cached_tokens = 0` even for an identical request → there is no real prefix cache; the system prompt is still kept static so nothing breaks if NVIDIA enables caching later.
 - DeepSeek only accepts `reasoning_effort` as `none|low|high|max` (`off` returns 422) — the bot maps it for you. The API model names are `deepseek-flash` (V4.1 Flash) and `deepseek-v4-pro`.
-- Discord: Zalo stickers are unavailable (`/sticker` is absent) and Discord's own stickers are ignored; messages are still split at 1900 characters (Discord's limit is 2000). Zalo and Discord are separate processes with separate configs/data; they do not share chat history.
+- Discord: Zalo stickers are unavailable (`/sticker` is absent) and Discord's own stickers are ignored; messages split at Discord's 2000-character limit. Zalo and Discord are separate processes with separate configs/data; they do not share chat history.

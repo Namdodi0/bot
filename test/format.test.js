@@ -4,11 +4,10 @@ import {
   chunkText,
   formatDuration,
   normalizeWhitespace,
-  prepareOutgoing,
-  sanitizeZaloMarkdown,
   stripMention,
   truncate,
-} from '../src/text/format.js';
+} from '../src/core/text/format.js';
+import { prepareOutgoing, sanitizeZaloMarkdown } from '../src/platforms/zalo/format.js';
 
 test('stripMention removes the bot name at every position', () => {
   assert.equal(stripMention('@Bot deepseek hello there', ['Bot deepseek']), 'hello there');

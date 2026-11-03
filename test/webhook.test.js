@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { createMetrics } from '../src/metrics.js';
-import { createWebhookServer } from '../src/zalo/webhook.js';
+import { createMetrics } from '../src/core/metrics.js';
+import { createWebhookServer } from '../src/platforms/zalo/webhook.js';
 import { makeConfig, silentLogger } from '../test-utils/helpers.js';
 
 function payload() {

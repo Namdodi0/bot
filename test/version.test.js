@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { VERSION, readVersion, __test__ as versionTest } from '../src/version.js';
-import { createLogger } from '../src/logger.js';
-import { createMetrics } from '../src/metrics.js';
-import { __test__ as nimTest } from '../src/ai/llm/adapter-openai.js';
+import { VERSION, readVersion, __test__ as versionTest } from '../src/core/version.js';
+import { createLogger } from '../src/core/logger.js';
+import { createMetrics } from '../src/core/metrics.js';
+import { __test__ as nimTest } from '../src/core/ai/llm/adapter-openai.js';
 
 const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
 

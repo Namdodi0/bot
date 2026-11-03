@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeUpdates, toEvent } from '../src/zalo/events.js';
+import { normalizeUpdates, toEvent } from '../src/platforms/zalo/events.js';
 
 test('normalize object-shaped payload', () => {
   const payload = {

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCommands, parseCommand } from '../src/commands/index.js';
-import { createMetrics } from '../src/metrics.js';
-import { makeConfig, silentLogger } from '../test-utils/helpers.js';
+import { createCommands, parseCommand } from '../src/core/commands/index.js';
+import { createMetrics } from '../src/core/metrics.js';
+import { makeConfig, makeDiscordPlatform, makeZaloPlatform, silentLogger } from '../test-utils/helpers.js';
 
 test('parseCommand recognizes commands and arguments', () => {
   assert.deepEqual(parseCommand('/help'), { name: 'help', args: '' });
@@ -50,11 +50,16 @@ function deps(overrides = {}) {
     lastSticker: null,
     ping: async () => 5,
   };
+  const platform =
+    overrides.platformName === 'discord'
+      ? makeDiscordPlatform({ transport })
+      : makeZaloPlatform({ config, transport, stickers, logger: silentLogger, metrics });
   return {
     config,
     metrics,
     models,
     stickers,
+    platform,
     store: {
       reset: async () => {},
       touch: () => {},
@@ -90,18 +95,18 @@ test('/help returns the list of commands', async () => {
 });
 
 test('/help on Discord lists slash commands without Zalo-only features', async () => {
-  const d = deps();
+  const d = deps({ platformName: 'discord' });
   const commands = createCommands(d);
-  const result = await commands.run({ name: 'help', args: '' }, ctx(d, { platform: 'discord' }));
+  const result = await commands.run({ name: 'help', args: '' }, ctx(d));
   assert.match(result.text, /Discord gateway/);
   assert.doesNotMatch(result.text, /\/sticker/);
   assert.doesNotMatch(result.text, /polling|webhook/);
 });
 
 test('/status on Discord reports the gateway transport', async () => {
-  const d = deps();
+  const d = deps({ platformName: 'discord' });
   const commands = createCommands(d);
-  const result = await commands.run({ name: 'status', args: '' }, ctx(d, { platform: 'discord' }));
+  const result = await commands.run({ name: 'status', args: '' }, ctx(d));
   assert.match(result.text, /Mode: gateway/);
   assert.doesNotMatch(result.text, /zalo:/);
 });
@@ -186,7 +191,7 @@ test('/model lists and switches the model for the chat', async () => {
 test('/model is blocked for non-admins', async () => {
   const d = deps({ config: { adminIds: ['admin-1'] } });
   const commands = createCommands(d);
-  const result = await commands.run({ name: 'model', args: 'deepseek' }, ctx(d));
+  const result = await commands.run({ name: 'model', args: 'deepseek' }, ctx(d, { isAdmin: false }));
   assert.match(result.text, /Only group admins/);
 });
 
@@ -196,13 +201,13 @@ test('/model settings work in a Discord DM but stay admin-only in a group', asyn
 
   const dm = await commands.run(
     { name: 'model', args: 'nim' },
-    ctx(d, { chatId: 'discord:dm1', chatType: 'PRIVATE', platform: 'discord', isAdmin: false }),
+    ctx(d, { chatId: 'discord:dm1', chatType: 'PRIVATE', isAdmin: false }),
   );
   assert.match(dm.text, /Switched to/);
 
   const group = await commands.run(
     { name: 'model', args: 'nim' },
-    ctx(d, { chatId: 'discord:c1', chatType: 'GROUP', platform: 'discord', isAdmin: false }),
+    ctx(d, { chatId: 'discord:c1', chatType: 'GROUP', isAdmin: false }),
   );
   assert.match(group.text, /Only group admins/);
 });
@@ -210,7 +215,7 @@ test('/model settings work in a Discord DM but stay admin-only in a group', asyn
 test('/reset is blocked for non-admins', async () => {
   const d = deps({ config: { adminIds: ['admin-1'] } });
   const commands = createCommands(d);
-  const result = await commands.run({ name: 'reset', args: '' }, ctx(d));
+  const result = await commands.run({ name: 'reset', args: '' }, ctx(d, { isAdmin: false }));
   assert.match(result.text, /Only group admins/);
 });
 
@@ -221,7 +226,7 @@ test('/reset lets admins clear the context', async () => {
     resetCalled = true;
   };
   const commands = createCommands(d);
-  const result = await commands.run({ name: 'reset', args: '' }, ctx(d));
+  const result = await commands.run({ name: 'reset', args: '' }, ctx(d, { isAdmin: true }));
   assert.equal(resetCalled, true);
   assert.match(result.text, /Cleared this chat's context/);
 });
@@ -273,7 +278,7 @@ test('/split off disables splitting for the chat, /split auto returns to the con
 test('/split is blocked for non-admins', async () => {
   const d = deps({ config: { adminIds: ['admin-1'] } });
   const commands = createCommands(d);
-  const result = await commands.run({ name: 'split', args: 'off' }, ctx(d));
+  const result = await commands.run({ name: 'split', args: 'off' }, ctx(d, { isAdmin: false }));
   assert.match(result.text, /Only group admins/);
 });
 
@@ -357,8 +362,8 @@ test('/summary validates the count and the history', async () => {
 });
 
 test('/sticker is unsupported on Discord', async () => {
-  const d = deps();
+  const d = deps({ platformName: 'discord' });
   const commands = createCommands(d);
-  const result = await commands.run({ name: 'sticker', args: '' }, ctx(d, { platform: 'discord' }));
+  const result = await commands.run({ name: 'sticker', args: '' }, ctx(d));
   assert.match(result.text, /not supported on Discord/);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTavilyClient, formatSearchResults } from '../src/search/tavily.js';
+import { createTavilyClient, formatSearchResults } from '../src/core/search/tavily.js';
 
 function fakeHttp() {
   return {

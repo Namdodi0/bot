@@ -9,7 +9,7 @@ import {
   toolCallEntry,
   toolPairingBalanced,
   toolResultEntry,
-} from '../src/context/record.js';
+} from '../src/core/context/record.js';
 
 test('normalizeRecord upgrades a v1 record with a summary into a summary node', () => {
   const record = {

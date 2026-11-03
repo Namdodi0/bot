@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLogger, printBanner, visualWidth } from '../src/logger.js';
+import { createLogger, printBanner, visualWidth } from '../src/core/logger.js';
 
 function sink() {
   /** @type {string[]} */

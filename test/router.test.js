@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createModelRouter } from '../src/ai/router.js';
+import { createModelRouter } from '../src/core/ai/router.js';
 import { makeConfig, silentLogger } from '../test-utils/helpers.js';
 
 function makeService(providers = ['deepseek', 'nim']) {

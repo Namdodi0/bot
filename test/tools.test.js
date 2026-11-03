@@ -1,28 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createToolRuntime } from '../src/ai/tools.js';
-import { silentLogger } from '../test-utils/helpers.js';
+import { createToolRuntime } from '../src/core/ai/tools.js';
+import { makeDiscordPlatform, makeTransport, makeZaloPlatform, silentLogger } from '../test-utils/helpers.js';
 
 function runtime(config, stickerStore) {
-  const transport = {
-    sendPhoto: async () => ({ ok: true }),
-    sendSticker: async (chatId, stickerId) => {
-      transport.lastSticker = { chatId, stickerId };
-      return { ok: true };
-    },
-    lastSticker: null,
-  };
+  const transport = makeTransport();
+  const platform = makeZaloPlatform({ config, transport, stickers: stickerStore });
   const tools = createToolRuntime({
     config,
     tavily: { search: async () => ({ results: [], images: [] }) },
-    transport,
+    platform,
     validator: { validate: async () => ({ ok: true }) },
-    stickers: stickerStore,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
   });
-  return { tools, transport };
+  return { tools, transport, platform };
 }
 
 const fakeStickers = {
@@ -82,9 +75,8 @@ test('send_image tries the next candidate when Zalo rejects the first URL', asyn
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images: ['https://x/a.png', 'https://x/b.png'] }) },
-    transport,
+    platform: makeZaloPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
     validator: { validate: async () => ({ ok: true }) },
-    stickers: fakeStickers,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
   });
@@ -117,9 +109,8 @@ test('no send_image tool when Tavily (search) is disabled', () => {
   const tools = createToolRuntime({
     config: baseConfig({ search: { enabled: false, auto: false, depth: 'fast', maxResults: 4, country: 'vietnam' } }),
     tavily: null,
-    transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
     validator: { validate: async () => ({ ok: true }) },
-    stickers: fakeStickers,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
   });
@@ -139,9 +130,8 @@ test('set_reminder tool: definition, add and validation', async () => {
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: null,
-    transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
     validator: { validate: async () => ({ ok: true }) },
-    stickers: fakeStickers,
     reminders,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
@@ -167,9 +157,8 @@ test('set_reminder tool: reports the per-chat limit and is absent without a stor
     createToolRuntime({
       config: baseConfig(),
       tavily: null,
-      transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+      platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
       validator: { validate: async () => ({ ok: true }) },
-      stickers: fakeStickers,
       reminders,
       logger: silentLogger,
       metrics: { inc() {}, observe() {} },
@@ -187,6 +176,13 @@ test('send_image sends the requested count', async () => {
   /** @type {string[]} */
   const sent = [];
   const images = Array.from({ length: 12 }, (_, index) => `https://img.example/${index}.png`);
+  const transport = {
+    sendPhoto: async (_chatId, url) => {
+      sent.push(url);
+      return { ok: true };
+    },
+    sendSticker: async () => ({ ok: true }),
+  };
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: {
@@ -195,15 +191,8 @@ test('send_image sends the requested count', async () => {
         images: String(query).endsWith('2') ? images.slice(6) : images.slice(0, 6),
       }),
     },
-    transport: {
-      sendPhoto: async (_chatId, url) => {
-        sent.push(url);
-        return { ok: true };
-      },
-      sendSticker: async () => ({ ok: true }),
-    },
+    platform: makeZaloPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
     validator: { validate: async () => ({ ok: true }) },
-    stickers: fakeStickers,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
@@ -218,56 +207,56 @@ test('send_image sends the requested count', async () => {
 test('send_image on Discord downloads validated bytes instead of passing the URL', async () => {
   /** @type {any} */
   let photoOptions = null;
+  const transport = {
+    sendPhoto: async (_chatId, _url, _caption, options) => {
+      photoOptions = options;
+      return { ok: true };
+    },
+    sendSticker: async () => ({ ok: true }),
+  };
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png'] }) },
-    transport: {
-      sendPhoto: async (_chatId, _url, _caption, options) => {
-        photoOptions = options;
-        return { ok: true };
-      },
-      sendSticker: async () => ({ ok: true }),
-    },
+    platform: makeDiscordPlatform({ transport }),
     validator: {
       validate: async () => {
         throw new Error('validate must not run on Discord');
       },
       download: async () => ({ ok: true, data: Buffer.from('png'), contentType: 'image/png' }),
     },
-    stickers: fakeStickers,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
   });
 
-  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9', platform: 'discord' });
+  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9' });
   assert.equal(result.ok, true);
   assert.deepEqual(photoOptions, { data: Buffer.from('png'), contentType: 'image/png' });
 });
 
 test('send_image on Discord skips URLs whose pinned download fails', async () => {
   let sent = 0;
+  const transport = {
+    sendPhoto: async () => {
+      sent += 1;
+      return { ok: true };
+    },
+    sendSticker: async () => ({ ok: true }),
+  };
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images: ['https://img.example/private.png'] }) },
-    transport: {
-      sendPhoto: async () => {
-        sent += 1;
-        return { ok: true };
-      },
-      sendSticker: async () => ({ ok: true }),
-    },
+    platform: makeDiscordPlatform({ transport }),
     validator: {
       validate: async () => ({ ok: true }),
       download: async () => ({ ok: false, reason: 'internal address blocked' }),
     },
-    stickers: fakeStickers,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
   });
 
-  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9', platform: 'discord' });
+  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9' });
   assert.equal(result.ok, false);
   assert.equal(sent, 0);
 });
@@ -275,18 +264,18 @@ test('send_image on Discord skips URLs whose pinned download fails', async () =>
 test('send_image reports a partial batch when there are not enough unique images', async () => {
   /** @type {string[]} */
   const sent = [];
+  const transport = {
+    sendPhoto: async (_chatId, url) => {
+      sent.push(url);
+      return { ok: true };
+    },
+    sendSticker: async () => ({ ok: true }),
+  };
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png', 'https://img.example/b.png'] }) },
-    transport: {
-      sendPhoto: async (_chatId, url) => {
-        sent.push(url);
-        return { ok: true };
-      },
-      sendSticker: async () => ({ ok: true }),
-    },
+    platform: makeZaloPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
     validator: { validate: async () => ({ ok: true }) },
-    stickers: fakeStickers,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
@@ -299,12 +288,16 @@ test('send_image reports a partial batch when there are not enough unique images
 });
 
 test('discord excludes Zalo stickers and the tool refuses', async () => {
-  const { tools } = runtime(baseConfig(), fakeStickers);
-  assert.equal(
-    tools.definitions('discord').some((tool) => tool.function.name === 'send_sticker'),
-    false,
-  );
-  const result = await tools.run('send_sticker', { emotion: 'hi' }, { chatId: 'discord:c1', platform: 'discord' });
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: makeDiscordPlatform(),
+    validator: { validate: async () => ({ ok: true }) },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+  assert.equal(tools.definitions().some((tool) => tool.function.name === 'send_sticker'), false);
+  const result = await tools.run('send_sticker', { emotion: 'hi' }, { chatId: 'discord:c1' });
   assert.equal(result.ok, false);
   assert.match(result.text, /not available on Discord/);
 });

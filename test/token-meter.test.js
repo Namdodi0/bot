@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCalibrator, createTokenMeter } from '../src/context/token-meter.js';
+import { createCalibrator, createTokenMeter } from '../src/core/context/token-meter.js';
 
 test('request sums system + tool + message and applies the calibrator', () => {
   const meter = createTokenMeter({ calibrator: { estimate: (raw) => raw * 2, observe: () => {}, ratio: () => 2 } });

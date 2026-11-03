@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startPolling } from '../src/zalo/polling.js';
+import { startPolling } from '../src/platforms/zalo/polling.js';
 import { silentLogger } from '../test-utils/helpers.js';
 
 test('polling dispatches events then stops on abort', async () => {

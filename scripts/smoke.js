@@ -1,12 +1,12 @@
-import { DEEPSEEK_REASONING_MAP, NIM_REASONING_MAP, createOpenAiCompatAdapter } from '../src/ai/llm/adapter-openai.js';
+import { DEEPSEEK_REASONING_MAP, NIM_REASONING_MAP, createOpenAiCompatAdapter } from '../src/core/ai/llm/adapter-openai.js';
 import { loadConfig } from '../src/config.js';
-import { loadEnvFiles } from '../src/env.js';
-import { createHttp } from '../src/http.js';
-import { createLogger } from '../src/logger.js';
-import { createImageValidator } from '../src/media/validate.js';
-import { createMetrics } from '../src/metrics.js';
-import { createTavilyClient } from '../src/search/tavily.js';
-import { createZaloClient } from '../src/zalo/client.js';
+import { loadEnvFiles } from '../src/core/env.js';
+import { createHttp } from '../src/core/http.js';
+import { createLogger } from '../src/core/logger.js';
+import { createImageValidator } from '../src/core/media/validate.js';
+import { createMetrics } from '../src/core/metrics.js';
+import { createTavilyClient } from '../src/core/search/tavily.js';
+import { createZaloClient } from '../src/platforms/zalo/client.js';
 
 /** @param {string} label @param {boolean} ok @param {string} detail */
 function report(label, ok, detail = '') {

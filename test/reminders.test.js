@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createReminderStore, formatReminderTime, parseReminderArgs } from '../src/ai/reminders.js';
-import { createSilentLogger } from '../src/logger.js';
+import { createReminderStore, formatReminderTime, parseReminderArgs } from '../src/core/ai/reminders.js';
+import { createSilentLogger } from '../src/core/logger.js';
 
 // 2026-10-28 17:00 in Vietnam (UTC+7).
 const NOW = Date.UTC(2026, 9, 28, 10, 0, 0);

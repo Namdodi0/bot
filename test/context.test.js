@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assembleRequest } from '../src/context/assembler.js';
+import { assembleRequest } from '../src/core/context/assembler.js';
 import {
   contextEntry,
   freshRecord,
   summaryEntry,
   toolCallEntry,
   toolResultEntry,
-} from '../src/context/record.js';
-import { createTokenMeter } from '../src/context/token-meter.js';
+} from '../src/core/context/record.js';
+import { createTokenMeter } from '../src/core/context/token-meter.js';
 
 function assemble(messages, overrides = {}) {
   const record = freshRecord('chat-1', 'GROUP', 0);

@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { ConfigError, HELP_TEXT, loadConfig } from './config.js';
-import { createDiscordTransport } from './discord/client.js';
-import { describeEnvHints, loadEnvFiles, PROJECT_ROOT } from './env.js';
-import { printBanner } from './logger.js';
-import { createBoot, createRuntime } from './runtime.js';
-import { VERSION } from './version.js';
+import { describeEnvHints, loadEnvFiles, PROJECT_ROOT } from './core/env.js';
+import { printBanner } from './core/logger.js';
+import { createBoot, createRuntime } from './core/runtime.js';
+import { VERSION } from './core/version.js';
+import { createDiscordPlatform } from './platforms/discord/index.js';
 
 const DISCORD_CONFIG_PATH = path.join(PROJECT_ROOT, 'config.discord.json');
 
@@ -22,21 +22,11 @@ async function main() {
   }
 
   const boot = createBoot({ config, envReport });
-  const { logger, metrics } = boot;
-
-  /** @type {(event: any) => Promise<unknown>|void} */
-  let dispatchEvent = () => {};
-  const discord = createDiscordTransport({
-    token: config.discord.token,
-    config: config.discord,
-    logger,
-    metrics,
-    onEvent: (event) => dispatchEvent(event),
-  });
-  const runtime = await createRuntime({ config, transport: discord, boot });
-  const { agent, primary, fallback, contextFiles, addCleanup, shutdown, waitForShutdown } = runtime;
-  dispatchEvent = (event) => agent.enqueue(event);
-  addCleanup(() => discord.stop());
+  const { logger } = boot;
+  const platform = createDiscordPlatform({ config, boot });
+  const runtime = await createRuntime({ config, platform, boot });
+  const { agent, primary, fallback, contextFiles, controller, addCleanup, shutdown } = runtime;
+  addCleanup(() => platform.stop());
 
   if (config.dryRun) {
     logger.info('dry-run: Discord transport not started');
@@ -45,12 +35,15 @@ async function main() {
   }
 
   try {
-    await discord.start();
+    const { done } = await platform.start({
+      onEvent: (event) => agent.enqueue(event),
+      signal: controller.signal,
+    });
     if (config.logFormat === 'pretty') {
       printBanner(
         process.stdout,
         [
-          `🤖 ${discord.displayName || 'Bot Discord'}  ·  v${config.version}  ·  Discord bot`,
+          `🤖 ${platform.transport.displayName || 'Bot Discord'}  ·  v${config.version}  ·  Discord bot`,
           `🧠 ${primary.label} · ${primary.provider}/${primary.model}  (fallback: ${fallback.alias})`,
           `⚙️  discord · reasoning=${config.ai.reasoning} · max_tokens=${config.ai.maxTokens ?? 'unlimited'}`,
           `🔎 search=${config.search.enabled ? `${config.search.depth}/${config.search.maxResults}` : 'off'} · typing=${config.typing ? 'on' : 'off'} · progressive=${config.progressive}`,
@@ -60,18 +53,11 @@ async function main() {
       );
     }
     logger.info('discord bot ready', {
-      name: discord.displayName,
+      name: platform.transport.displayName,
       guildId: config.discord.guildId || 'global commands',
       icon: '🎮',
     });
-    if (!config.discord.allowedChannelIds.length) {
-      logger.warn('config.discord.allowedChannelIds is empty: the bot answers in every channel where it is mentioned/replied to, and in DMs.');
-    }
-    if (config.discord.respondToAllChannelIds.length) {
-      logger.info('discord respond-to-all channels', {
-        channels: config.discord.respondToAllChannelIds,
-      });
-    }
+    await done;
   } catch (error) {
     logger.error('discord failed to start — check DISCORD_BOT_TOKEN', { error });
     await shutdown('discord start failed');
@@ -79,7 +65,6 @@ async function main() {
     return;
   }
 
-  await waitForShutdown();
   await shutdown('discord transport ended');
 }
 

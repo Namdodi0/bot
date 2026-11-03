@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCompactionEngine } from '../src/context/compaction/engine.js';
-import { summarizeRange } from '../src/context/compaction/summarizer.js';
-import { pruneToolResults } from '../src/context/compaction/tool-result-pruner.js';
-import { freshRecord, toolCallEntry, toolResultEntry } from '../src/context/record.js';
+import { createCompactionEngine } from '../src/core/context/compaction/engine.js';
+import { summarizeRange } from '../src/core/context/compaction/summarizer.js';
+import { pruneToolResults } from '../src/core/context/compaction/tool-result-pruner.js';
+import { freshRecord, toolCallEntry, toolResultEntry } from '../src/core/context/record.js';
 import { makeConfig, silentLogger } from '../test-utils/helpers.js';
 
 function recordWith(messages) {
