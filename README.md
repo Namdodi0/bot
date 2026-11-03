@@ -296,7 +296,9 @@ Discord gateway ──► bot.js ──► native commands (commands.js, ui.js)
 |---|---|
 | `src/discord.js` | Discord entry: config, platform, runtime, bot lifecycle. |
 | `src/platforms/discord/specs.js` | Slash/context-menu surface. |
-| `src/platforms/discord/commands.js` | Native handlers, buttons, select menu, ephemeral replies. |
+| `src/platforms/discord/commands/` | Routed native handlers: ask/streaming, settings, catchup, stickers, basic commands, shared helpers. |
+| `src/platforms/discord/message-handler.js` | Admission + streaming reply for ordinary @mention/reply chat. |
+| `src/platforms/discord/interaction-router.js` / `presence.js` | Interaction routing and startup presence. |
 | `src/core/services/` | Shared chat settings/context/summary and reminder operations. |
 | `src/core/ai/agent/turn/` | Turn fallback, tool round, final answer and reporting helpers. |
 | `src/platforms/discord/ui.js` | Embeds, buttons, select menu, attachments, chunking. |

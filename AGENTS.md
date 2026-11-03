@@ -59,10 +59,12 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/platforms/zalo/` — Zalo client, event normalization, polling/webhook, stickers,
   Zalo prompt sections, sticker tool/command, markdown sanitizing, admission/admin policy.
 - `src/platforms/discord/` — native Discord bot: `specs.js` (slash/context-menu surface),
-  `commands.js` (native handlers, buttons/selects, ephemeral replies), `ui.js`
-  (embeds/attachments/components), `bot.js` (gateway events + command routing),
-  `transport.js`, `events.js` (normalization/admission), `prompt.js` and `config.js`.
-  Native commands collect answers via `agent.collect()`; no second agent or Zalo import.
+  `commands/` (router, ask/streaming, settings, catchup, stickers, basic handlers, shared
+  helpers), `ui.js` (embeds/attachments/components/modals), `bot.js` (client + registration),
+  `message-handler.js` (admission + streaming chat), `interaction-router.js`, `presence.js`,
+  `transport.js`, `events.js` (normalization/admission), `stickers.js`, `prompt.js` and
+  `config.js`. Native commands collect answers via `agent.stream()`/`agent.collect()`; no
+  second agent or Zalo import.
 - `src/core/services/` — shared chat/context/summary and reminder operations used by both
   command layers.
 - `src/core/ai/agent/turn/` — `fallback.js`, `tools.js`, `final.js`, `report.js` extracted
