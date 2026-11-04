@@ -5,6 +5,7 @@ import {
   isBotAddressed,
   isChannelAllowed,
   isRespondToAllChannel,
+  replyQuote,
   stripBotMention,
   toDiscordEvent,
 } from '../src/platforms/discord/events.js';
@@ -47,6 +48,25 @@ test('discord message: first image attachment becomes an image event', () => {
   );
   assert.equal(event.kind, 'image');
   assert.equal(event.imageUrl, 'https://cdn.example/a.png');
+});
+
+test('a reply carries the referenced message as a compact quote', () => {
+  const event = toDiscordEvent(message({ content: '<@bot1> what is this?' }), client, {
+    author: { username: 'other' },
+    content: 'original\n  text',
+  });
+  assert.equal(event.text, '[Replying to other: original text]\nwhat is this?');
+});
+
+test('replyQuote flattens, strips the bot mention, marks attachments and caps length', () => {
+  assert.equal(replyQuote({ author: { username: 'Nam' }, content: 'hello\n  world' }), '[Replying to Nam: hello world]');
+  assert.equal(replyQuote({ author: { username: 'Nam' }, content: '<@bot1> hi' }, 'bot1'), '[Replying to Nam: hi]');
+  assert.equal(
+    replyQuote({ author: { username: 'Nam' }, content: '', attachments: { size: 1 } }),
+    '[Replying to Nam: [attachment]]',
+  );
+  assert.equal(replyQuote({ author: { username: 'Nam' }, content: '' }), '');
+  assert.ok(replyQuote({ author: { username: 'Nam' }, content: 'x'.repeat(600) }).length <= 520);
 });
 
 test('discord message: DMs are private and empty messages are ignored', () => {

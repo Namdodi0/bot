@@ -39,14 +39,15 @@ export function createMessageHandler(deps) {
     const roleMentioned = isBotRoleMentioned(message, client.user?.id ?? '');
     if (!isChannelAllowed(config.discord ?? {}, message.channel ?? { id: message.channelId })) return;
     let repliedToBot = false;
-    if (!mentioned && !roleMentioned && !isDm && message.reference?.messageId) {
-      const referenced = await message.fetchReference().catch(() => null);
+    let referenced = null;
+    if (message.reference?.messageId) {
+      referenced = await message.fetchReference().catch(() => null);
       repliedToBot = Boolean(referenced && referenced.author?.id === client.user?.id);
     }
     const listensHere = isRespondToAllChannel(config.discord ?? {}, message.channel ?? { id: message.channelId });
     if (!isBotAddressed({ mentioned, roleMentioned, repliedToBot, isDm, listensHere })) return;
 
-    const event = toDiscordEvent(message, client);
+    const event = toDiscordEvent(message, client, referenced);
     if (!event) return;
     // Slash-only command surface: a typed "/ask ..." is not a command.
     if (String(event.text ?? '').trimStart().startsWith('/')) return;

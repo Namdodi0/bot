@@ -86,12 +86,43 @@ export function isBotAddressed(flags = {}) {
 }
 
 /**
+ * Compact quote of the message a user replied to, safe to prepend to the new message text.
+ * Mentions of the bot are stripped, whitespace is flattened and long content is clipped.
+ * @param {any} referenced discord.js Message-like
+ * @param {string} [botId]
+ * @param {number} [maxChars]
+ * @returns {string}
+ */
+export function replyQuote(referenced, botId = '', maxChars = 500) {
+  if (!referenced) return '';
+  const author = String(
+    referenced.member?.displayName ??
+      referenced.author?.displayName ??
+      referenced.author?.username ??
+      'someone',
+  );
+  const flat = stripBotMention(referenced.content, botId).replace(/\s+/g, ' ').trim();
+  const attachmentCount = Number(referenced.attachments?.size ?? referenced.attachments?.length ?? 0);
+  const body = flat
+    ? attachmentCount > 0
+      ? `${flat} [attachment]`
+      : flat
+    : attachmentCount > 0
+      ? '[attachment]'
+      : '';
+  if (!body) return '';
+  const clipped = body.length > maxChars ? `${body.slice(0, maxChars)}…` : body;
+  return `[Replying to ${author}: ${clipped}]`;
+}
+
+/**
  * Normalize a Discord message for the shared engine.
  * @param {any} message discord.js Message-like
  * @param {any} client discord.js Client-like
+ * @param {any} [referenced] the message this one replies to, when fetched
  * @returns {any|null}
  */
-export function toDiscordEvent(message, client) {
+export function toDiscordEvent(message, client, referenced = null) {
   const channel = message?.channel;
   if (!channel?.id) return null;
   const author = message.author ?? {};
@@ -99,7 +130,9 @@ export function toDiscordEvent(message, client) {
   const image =
     attachments.find((item) => typeof item?.contentType === 'string' && item.contentType.startsWith('image/')) ??
     attachments.find((item) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(item?.url ?? '')));
-  const text = stripBotMention(message.content, client?.user?.id, botRoleId(message, client?.user?.id));
+  let text = stripBotMention(message.content, client?.user?.id, botRoleId(message, client?.user?.id));
+  const quote = replyQuote(referenced, client?.user?.id);
+  if (quote) text = text ? `${quote}\n${text}` : quote;
   if (!text && !image) return null;
   const kind = text ? 'text' : 'image';
   return {
