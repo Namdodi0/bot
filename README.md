@@ -28,8 +28,8 @@ Nothing in the Discord code imports the Zalo integration.
 - **Presence** — configurable activity/status (`WATCHING /ask` by default).
 - **Vision** — attach an image to `/ask`, or @mention the bot with an image; the turn switches
   to the configured vision model and sends the image as an OpenAI `image_url` block.
-- **Channel settings** — `/settings` (admin) controls model, tone, default privacy and
-  auto-thread per channel.
+- **Channel settings** — `/settings` (admin) controls model, tone, think effort, default
+  privacy and auto-thread per channel.
 - **Catch-up** — `/catchup [hours]` summarizes what happened in the channel since a time window.
 - **Private or public** — `/ask private:true`, `/search private:true`, `/image private:true`.
 - **Threads** — `/ask thread:true` creates a thread and answers there.
@@ -128,7 +128,7 @@ still works.
 | `/status` | Model, transport, uptime, context size, latency, traffic. |
 | `/ping` | Gateway and interaction round-trip latency. |
 | `/model [name]` | Admin: show a select menu or switch the channel model. Autocomplete for aliases. |
-| `/settings` | Admin: model, tone, default privacy and auto-thread for this channel. |
+| `/settings` | Admin: model, tone, think effort, default privacy and auto-thread for this channel. |
 | `/reset [all]` | Admin: clear the channel context; `all` also clears per-channel settings. |
 | `/compact` | Admin: compact the context now. |
 | `/summary [count]` | Summarize the last 2–200 messages (default 30). |

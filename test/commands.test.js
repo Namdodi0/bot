@@ -102,7 +102,7 @@ test('/help on Discord lists the native slash commands', async () => {
   assert.match(result.text, /`\/ask`/);
   assert.match(result.text, /Slash commands only/);
   assert.match(result.text, /\/sticker/);
-  assert.doesNotMatch(result.text, /tone|split|think/);
+  assert.doesNotMatch(result.text, /`\/(tone|split|think)`/);
 });
 
 test('/status on Discord reports the gateway transport', async () => {

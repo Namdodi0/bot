@@ -1,5 +1,5 @@
 import { EmbedBuilder, MessageFlags } from 'discord.js';
-import { COLORS, errorEmbed, modelSelect, settingsEmbed, settingsRows, textEmbed, TONES } from '../ui.js';
+import { COLORS, errorEmbed, modelSelect, REASONING_MODES, settingsEmbed, settingsRows, textEmbed, TONES } from '../ui.js';
 
 /**
  * `/settings` and `/model`, plus the select menus and autocomplete that back them.
@@ -112,6 +112,9 @@ export function createSettingsHandlers(shared) {
       await chat.setModel(chatId, picked.alias, chatType, record);
     } else if (field === 'tone') {
       record.meta.tone = value !== '__default' && TONES.some((item) => item.value === value) ? value : null;
+    } else if (field === 'reasoning') {
+      record.meta.thinking =
+        value !== '__default' && REASONING_MODES.some((item) => item.value === value) ? value : null;
     } else if (field === 'privacy') {
       record.meta.privateDefault = value === 'private';
     } else if (field === 'thread') {

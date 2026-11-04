@@ -214,6 +214,15 @@ export const TONES = [
   { value: 'roast-extreme', label: 'Roast extreme' },
 ];
 
+/** @type {Array<{value: string, label: string}>} */
+export const REASONING_MODES = [
+  { value: '__default', label: 'Default' },
+  { value: 'off', label: 'Off' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+];
+
 /**
  * Channel settings summary. Reads the same `record.meta` fields the handlers write.
  * @param {any} record
@@ -223,12 +232,17 @@ export const TONES = [
 export function settingsEmbed(record, config, currentModel) {
   const meta = record?.meta ?? {};
   const tone = typeof meta.tone === 'string' && meta.tone ? meta.tone : `default (${config?.tone ?? 'friendly'})`;
+  const reasoning =
+    typeof meta.thinking === 'string' && meta.thinking
+      ? meta.thinking
+      : `default (${config?.ai?.reasoning ?? 'none'})`;
   return new EmbedBuilder()
     .setColor(COLORS.info)
     .setTitle('Channel settings')
     .addFields(
       { name: 'Model', value: `\`${currentModel.alias}\` — ${currentModel.label}`, inline: true },
       { name: 'Tone', value: tone, inline: true },
+      { name: 'Think effort', value: reasoning, inline: true },
       { name: 'Default privacy', value: meta.privateDefault ? 'private' : 'public', inline: true },
       { name: 'Auto-thread', value: meta.autoThread ? 'on' : 'off', inline: true },
     )
@@ -255,7 +269,8 @@ function selectRow(input) {
 }
 
 /**
- * At most four action rows (Discord's limit): model, tone, default privacy, auto-thread.
+ * At most five action rows (Discord's limit): model, tone, think effort, default privacy,
+ * auto-thread.
  * @param {Array<{alias: string, label: string, provider: string, model: string}>} models
  * @param {any} record
  * @param {{alias: string}} currentModel
@@ -264,6 +279,7 @@ export function settingsRows(models, record, currentModel) {
   const meta = record?.meta ?? {};
   const model = typeof meta.model === 'string' && meta.model ? meta.model : currentModel.alias;
   const tone = typeof meta.tone === 'string' && meta.tone ? meta.tone : '__default';
+  const reasoning = typeof meta.thinking === 'string' && meta.thinking ? meta.thinking : '__default';
   return [
     selectRow({
       customId: 'settings:model',
@@ -279,6 +295,11 @@ export function settingsRows(models, record, currentModel) {
       customId: 'settings:tone',
       placeholder: 'Choose a tone',
       options: TONES.map((item) => ({ ...item, default: item.value === tone })),
+    }),
+    selectRow({
+      customId: 'settings:reasoning',
+      placeholder: 'Think effort',
+      options: REASONING_MODES.map((item) => ({ ...item, default: item.value === reasoning })),
     }),
     selectRow({
       customId: 'settings:privacy',

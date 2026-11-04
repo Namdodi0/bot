@@ -80,7 +80,7 @@ test('/settings replies with an ephemeral panel and selects update record.meta',
   assert.ok(panel.replies[0].flags);
   assert.deepEqual(
     panel.replies[0].components.map((row) => row.components[0].data.custom_id),
-    ['settings:model', 'settings:tone', 'settings:privacy', 'settings:thread'],
+    ['settings:model', 'settings:tone', 'settings:reasoning', 'settings:privacy', 'settings:thread'],
   );
 
   const tone = interaction('', {}, { customId: 'settings:tone', values: ['roast'] });
@@ -92,6 +92,14 @@ test('/settings replies with an ephemeral panel and selects update record.meta',
   const privacy = interaction('', {}, { customId: 'settings:privacy', values: ['private'] });
   await commands.handleSelect(privacy);
   assert.equal(runtime.record.meta.privateDefault, true);
+
+  const reasoning = interaction('', {}, { customId: 'settings:reasoning', values: ['medium'] });
+  await commands.handleSelect(reasoning);
+  assert.equal(runtime.record.meta.thinking, 'medium');
+
+  const reasoningDefault = interaction('', {}, { customId: 'settings:reasoning', values: ['__default'] });
+  await commands.handleSelect(reasoningDefault);
+  assert.equal(runtime.record.meta.thinking, null);
 
   const thread = interaction('', {}, { customId: 'settings:thread', values: ['on'] });
   await commands.handleSelect(thread);
