@@ -86,7 +86,7 @@
   "maxQueueDepth": 50,
   "userRateLimitPerMinute": 12,
   "userRateLimits": {
-    "890071093673603112": 2
+    "890071093673603112": 5
   },
   "logLevel": "info",
   "logThinking": true,
