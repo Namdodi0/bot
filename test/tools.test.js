@@ -135,6 +135,40 @@ test('read_url fetches a page and converts it to text', async () => {
   assert.match(result.text, /Title: Docs/);
 });
 
+test('read_url uses YouTube oEmbed for YouTube links', async () => {
+  const transport = { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) };
+  const calls = [];
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: {
+      transport,
+      capabilities: { uploadMedia: false },
+      tools: { run: async () => null },
+    },
+    validator: {
+      validate: async () => ({ ok: true }),
+      readText: async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          text: JSON.stringify({ title: 'Test video', author_name: 'Some channel' }),
+          contentType: 'application/json',
+          finalUrl: url,
+        };
+      },
+    },
+    stickers: fakeStickers,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+  const result = await tools.run('read_url', { url: 'https://youtu.be/GGlt8rLwWzQ' }, { chatId: 'c1' });
+  assert.equal(result.ok, true);
+  assert.match(result.text, /YouTube video: Test video/);
+  assert.match(result.text, /Channel: Some channel/);
+  assert.match(calls[0], /youtube\.com\/oembed/);
+});
+
 test('no send_image tool when Tavily (search) is disabled', () => {
   const tools = createToolRuntime({
     config: baseConfig({ search: { enabled: false, auto: false, depth: 'fast', maxResults: 4, country: 'vietnam' } }),

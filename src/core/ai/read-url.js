@@ -31,6 +31,29 @@ function decodeEntities(value) {
 }
 
 /**
+ * Extract the video id from common YouTube URL forms, else an empty string.
+ * @param {string} url
+ */
+export function youtubeVideoId(url) {
+  let parsed;
+  try {
+    parsed = new URL(String(url ?? ''));
+  } catch {
+    return '';
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  const valid = (value) => (/^[A-Za-z0-9_-]{6,}$/.test(value) ? value : '');
+  if (host === 'youtu.be') return valid(parsed.pathname.replace(/^\//, '').split('/')[0]);
+  if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) {
+    const fromQuery = valid(parsed.searchParams.get('v') ?? '');
+    if (fromQuery) return fromQuery;
+    const match = parsed.pathname.match(/^\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{6,})/);
+    return match ? match[1] : '';
+  }
+  return '';
+}
+
+/**
  * Turn a fetched HTML document into readable text for the model. Not a full parser:
  * removes scripts/styles/SVG, keeps block breaks and decodes common entities.
  * @param {string} input

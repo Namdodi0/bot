@@ -1,6 +1,6 @@
 import { formatSearchResults } from '../search/tavily.js';
 import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from './reminders.js';
-import { htmlToText } from './read-url.js';
+import { htmlToText, youtubeVideoId } from './read-url.js';
 
 /** @typedef {(url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>} PhotoSender */
 
@@ -175,6 +175,38 @@ export function createToolRuntime(options) {
   }
 
   /**
+   * YouTube pages are far over the 1MB read cap and hide their metadata in scripts, so read
+   * the small oEmbed document instead and return the title/channel.
+   * @param {string} url
+   * @param {{deadline?: number}} [ctx]
+   */
+  async function readYouTube(url, ctx = {}) {
+    const videoId = youtubeVideoId(url);
+    if (!videoId) return null;
+    if (ctx.deadline && Date.now() > ctx.deadline) {
+      return { ok: false, text: 'Ran out of time before the video could be read.' };
+    }
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`;
+    const result = await validator.readText(endpoint);
+    if (!result.ok || !result.text) return null;
+    try {
+      const info = JSON.parse(result.text);
+      if (!info?.title) return null;
+      const lines = [`YouTube video: ${info.title}`];
+      if (info.author_name) lines.push(`Channel: ${info.author_name}`);
+      lines.push(`URL: ${watchUrl}`);
+      return {
+        ok: true,
+        text: lines.join('\n'),
+        data: { url, finalUrl: watchUrl, title: String(info.title), author: info.author_name ?? '' },
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * @param {any} args
    * @param {{chatId: string, deadline?: number}} ctx
    */
@@ -187,6 +219,8 @@ export function createToolRuntime(options) {
     if (!/^https?:\/\//i.test(url)) {
       return { ok: false, text: 'Only public http(s) URLs can be read.' };
     }
+    const youtube = await readYouTube(url, ctx);
+    if (youtube) return youtube;
     const result = await validator.readText(url);
     if (!result.ok) {
       logger.debug('read_url rejected', { url, reason: result.reason, icon: '🌐' });

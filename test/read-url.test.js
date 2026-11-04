@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { htmlToText } from '../src/core/ai/read-url.js';
+import { htmlToText, youtubeVideoId } from '../src/core/ai/read-url.js';
 
 test('htmlToText extracts title, text, lists and entities', () => {
   const html = `
@@ -37,4 +37,14 @@ test('htmlToText leaves plain text untouched', () => {
   const { title, text } = htmlToText('just plain text', 'text/plain');
   assert.equal(title, '');
   assert.equal(text, 'just plain text');
+});
+
+test('youtubeVideoId covers watch, short, shorts and embed links', () => {
+  assert.equal(youtubeVideoId('https://youtu.be/GGlt8rLwWzQ?si=x'), 'GGlt8rLwWzQ');
+  assert.equal(youtubeVideoId('https://www.youtube.com/watch?v=GGlt8rLwWzQ&t=5'), 'GGlt8rLwWzQ');
+  assert.equal(youtubeVideoId('https://m.youtube.com/watch?v=GGlt8rLwWzQ'), 'GGlt8rLwWzQ');
+  assert.equal(youtubeVideoId('https://youtube.com/shorts/GGlt8rLwWzQ'), 'GGlt8rLwWzQ');
+  assert.equal(youtubeVideoId('https://www.youtube.com/embed/GGlt8rLwWzQ'), 'GGlt8rLwWzQ');
+  assert.equal(youtubeVideoId('https://example.com/watch?v=GGlt8rLwWzQ'), '');
+  assert.equal(youtubeVideoId('not a url'), '');
 });
