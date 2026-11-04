@@ -54,7 +54,8 @@ export function reportTurn({
   metrics.observe('agent.reply', duration);
   metrics.inc('messages.replied');
   if (thinkingText && config.logThinking !== false) {
-    logger.info(`🧠 thinking: ${preview(thinkingText, 2000)}`, {
+    // Keep the reasoning out of the normal log stream: it is long and noisy.
+    logger.debug(`🧠 thinking: ${preview(thinkingText, 400)}`, {
       chatId,
       model: attribution.model,
       ...(reasoningTokens > 0 ? { tokens: reasoningTokens } : {}),

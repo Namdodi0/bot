@@ -90,7 +90,7 @@ export function createMessageHandler(deps) {
       await previewer.flush();
       const chunks = result.text ? chunkContent(result.text) : [];
       const first = chunks.shift();
-      logger?.info('discord reply ready', { chatId: event.chatId, photos: result.photos.length, chunks: chunks.length });
+      logger?.debug('discord reply ready', { chatId: event.chatId, photos: result.photos.length, chunks: chunks.length });
       if (placeholder) {
         if (!first && !result.photos.length) await placeholder.delete().catch(() => {});
         else await placeholder.edit({ content: first || 'Here are the images.', allowedMentions: { parse: [] } }).catch(() => {});

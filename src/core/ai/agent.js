@@ -55,7 +55,7 @@ export function createAgent(deps) {
 
     metrics.inc('messages.in');
     const incomingPreview =
-      event.text && String(event.text).trim() ? preview(event.text, 900) : `[${event.kind}]`;
+      event.text && String(event.text).trim() ? preview(event.text, 300) : `[${event.kind}]`;
     logger.info(`💬 ${event.senderName || 'User'}: ${incomingPreview}`, {
       chatId: event.chatId,
       kind: event.kind,
