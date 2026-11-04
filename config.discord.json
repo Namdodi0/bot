@@ -2,7 +2,7 @@
   "platform": "discord",
   "dataDir": "./data/discord",
   "discord": {
-    "guildId": "1545374195540693004",
+    "guildId": "",
     "allowedChannelIds": [],
     "respondToAllChannelIds": ["1566804908869427262"],
     "stickers": {
