@@ -11,8 +11,8 @@
     },
     "presence": {
       "status": "online",
-      "type": "WATCHING",
-      "text": "/ask",
+      "type": "PLAYING",
+      "text": "Deep Diving",
       "url": ""
     }
   },
