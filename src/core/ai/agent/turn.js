@@ -5,18 +5,15 @@ import { LLM_ERROR } from '../llm/errors.js';
 import { buildSearchContext, createPrompt } from '../prompt/index.js';
 import {
   DEFAULT_MAX_TOOL_ROUNDS,
-  SLOW_CALL_WARN_MS,
   TOOL_ROUND_WARN,
   effectiveReasoning,
   fallbackMessages,
-  findBreak,
-  planAttemptBudget,
-  providerTimeout,
-  samplingFor,
 } from './helpers.js';
+import { createAttemptRunner } from './turn/attempt.js';
 import { attemptFallback } from './turn/fallback.js';
 import { forceFinalAnswer } from './turn/final.js';
 import { reportTurn } from './turn/report.js';
+import { createProgressiveFlusher } from './turn/streaming.js';
 import { runToolRound } from './turn/tools.js';
 
 /**
@@ -240,35 +237,16 @@ export function createTurnRunner(deps) {
       ),
     });
 
-    let streamBuffer = '';
-    let emitted = 0;
-    let flushed = false;
-    // After a round with a tool call, the next round is a fresh, complete answer —
-    // do not split early anymore to avoid missing or duplicated segments.
-    let flushLocked = false;
-
-    const onDelta = (delta) => {
-      // Live sinks (Discord message edits) render the raw stream themselves.
-      if (responseSink.live) {
-        responseSink.onDelta?.(delta);
-        return;
-      }
-      if (!streaming || flushed || flushLocked || !flushAllowed) return;
-      streamBuffer += delta;
-      const elapsed = Date.now() - startedAt;
-      if (elapsed < flushAfterMs) return;
-      if (streamBuffer.length < minHeadChars) return;
-      const cut = findBreak(streamBuffer);
-      if (cut < minHeadChars) return;
-      const rawHead = streamBuffer.slice(0, cut);
-      const head = rawHead.trimEnd();
-      streamBuffer = streamBuffer.slice(cut);
-      flushed = true;
-      emitted = rawHead.length;
-      sendText(responseSink, head).catch((error) => {
-        logger.warn('progressive send failed', { error: String(error?.message ?? error), icon: '✂️' });
-      });
-    };
+    const progressive = createProgressiveFlusher({
+      sink: responseSink,
+      logger,
+      sendText,
+      streaming,
+      flushAfterMs,
+      minHeadChars,
+      flushAllowed,
+      startedAt,
+    });
 
     let finalText = '';
     let aborted = false;
@@ -278,12 +256,30 @@ export function createTurnRunner(deps) {
     // LLM stats for this turn for logging: total call time, real generation time (TTFT subtracted),
     // generated tokens → tok/s. Accumulated across tool-call rounds.
     let llmMs = 0;
+    let fallbackLlmMs = 0;
     let completionMs = 0;
     let completionTokens = 0;
     let overflowRecovered = false;
     /** @type {{model: string, alias: string, provider: string}|null} */
     let answeredBy = null;
     let abortReason = '';
+
+    const attempts = createAttemptRunner({
+      config,
+      logger,
+      metrics,
+      llm,
+      record,
+      target,
+      chatId: event.chatId,
+      messages,
+      toolDefs,
+      reasoning,
+      streaming,
+      onDelta: progressive.onDelta,
+      deadline,
+      retryExecutor,
+    });
 
     const configuredRounds = Number(config.ai?.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS);
     const unlimitedRounds = !Number.isFinite(configuredRounds) || configuredRounds <= 0;
@@ -303,65 +299,8 @@ export function createTurnRunner(deps) {
       /** @type {unknown} */
       let lastError = null;
 
-      let attemptIndex = 0;
-      const callOnce = async () => {
-        attemptIndex += 1;
-        const left = deadline - Date.now();
-        const budget = planAttemptBudget({
-          remainingMs: left,
-          attempt: attemptIndex,
-          maxAttempts: retryExecutor.maxAttempts,
-          streaming,
-          aiTimeoutMs: providerTimeout(config, target.provider),
-        });
-        // Measure failed calls too: llmMs is the total time actually spent on the LLM.
-        const callStarted = Date.now();
-        // With no deadline a hung provider would otherwise be silent forever.
-        const slowTimer = setTimeout(() => {
-          logger.warn('llm call still running', {
-            chatId: event.chatId,
-            provider: target.provider,
-            model: target.model,
-            ms: Date.now() - callStarted,
-            icon: '🐢',
-          });
-        }, SLOW_CALL_WARN_MS);
-        slowTimer.unref?.();
-        try {
-          return await llm.chat({
-            record,
-            alias: target.alias,
-            messages,
-            tools: toolDefs.length ? toolDefs : undefined,
-            reasoning,
-            maxTokens: config.ai.maxTokens,
-            sampling: samplingFor(config, target.provider),
-            stream: streaming,
-            onDelta,
-            ttftMs: budget.ttftMs,
-            timeoutMs: budget.timeoutMs,
-          });
-        } finally {
-          clearTimeout(slowTimer);
-          llmMs += Date.now() - callStarted;
-        }
-      };
-
       try {
-        response = await retryExecutor.execute(callOnce, {
-          deadline,
-          onRetry: (error, nextAttempt) => {
-            metrics.inc('llm.retries');
-            logger.warn('llm call failed, retrying', {
-              attempt: nextAttempt,
-              provider: target.provider,
-              model: target.model,
-              status: /** @type {any} */ (error)?.status,
-              error: String(/** @type {any} */ (error)?.message ?? error),
-              icon: '🔁',
-            });
-          },
-        });
+        response = await attempts.execute();
       } catch (error) {
         lastError = error;
         abortReason = String(/** @type {any} */ (error)?.message ?? error);
@@ -390,7 +329,7 @@ export function createTurnRunner(deps) {
                 tokensAfter: result.tokensAfter,
                 icon: '📉',
               });
-              response = await callOnce();
+              response = await attempts.once(2);
             }
           } catch (recoveryError) {
             logger.warn('overflow recovery failed', {
@@ -406,19 +345,19 @@ export function createTurnRunner(deps) {
 
       // Last-resort fallback with a DIFFERENT model: drop tools so we still get an answer.
       // `flushed` = the head was already sent to the user; calling fallback now would duplicate content.
-      if (!response && !flushed) {
+      if (!response && !progressive.flushed) {
         const fallback = await attemptFallback({
           config, logger, metrics, llm, record, target,
           chatId: event.chatId, noToolsMessages, deadline,
         });
-        llmMs += fallback.llmMs;
+        fallbackLlmMs += fallback.llmMs;
         if (fallback.response) ({ response, answeredBy } = fallback);
         else if (fallback.lastError) ({ lastError, abortReason } = fallback);
       }
 
       if (!response) {
         // Part of the reply was already sent (progressive), so treat that part as done.
-        if (flushed) {
+        if (progressive.flushed) {
           aborted = true;
           break;
         }
@@ -450,10 +389,8 @@ export function createTurnRunner(deps) {
           privateTurn: event.private === true,
         });
         // The head of this round was already sent: send the whole final-round content instead of
-        // cutting by the previous round's `emitted` (which may be longer than the final answer).
-        streamBuffer = '';
-        emitted = 0;
-        flushLocked = true;
+        // cutting by the previous round's emitted text (which may be longer than the final answer).
+        progressive.lockAfterToolRound();
         continue;
       }
 
@@ -466,7 +403,7 @@ export function createTurnRunner(deps) {
     // All tool rounds used: force one final answer without tools so fetched data is not lost.
     ({ finalText, llmMs, completionMs, completionTokens, answeredBy } = await forceFinalAnswer({
       config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
-      finalText, aborted, llmMs, completionMs, completionTokens, answeredBy,
+      finalText, aborted, llmMs: attempts.llmMs() + fallbackLlmMs, completionMs, completionTokens, answeredBy,
     }));
     // A tool round can set `answeredBy` before a final answer exists; drop it when the
     // forced final call produced no text.
@@ -474,10 +411,10 @@ export function createTurnRunner(deps) {
 
     await responseSink.wait();
 
-    const remainder = finalText.slice(emitted);
+    const remainder = finalText.slice(progressive.emitted);
     if (remainder.trim()) {
       await sendText(responseSink, remainder);
-    } else if (!flushed && !finalText.trim()) {
+    } else if (!progressive.flushed && !finalText.trim()) {
       await sendText(responseSink, 'I do not have an answer for this one yet — please ask again a bit more clearly.');
     }
 
