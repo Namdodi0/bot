@@ -9,7 +9,7 @@ import { LLM_ERROR, isRetryableLlmError } from './llm/errors.js';
 import { createRetryExecutor } from './llm/retry.js';
 
 /**
- * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, platform: import('../../platforms/contract.js').Platform, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, commands: ReturnType<typeof import('../commands/index.js').createCommands>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>}} deps
+ * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, platform: import('../../platforms/contract.js').Platform, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, commands: ReturnType<typeof import('../commands/index.js').createCommands>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>, rateLimitFile?: string}} deps
  */
 export function createAgent(deps) {
   const { config, logger, metrics, platform, llm, store, tools, commands, compaction } = deps;
@@ -21,7 +21,7 @@ export function createAgent(deps) {
     reserveMs: FALLBACK_MIN_MS,
   });
   const seen = createSeenTracker();
-  const rateLimited = createRateLimiter(config);
+  const rateLimited = createRateLimiter(config, { file: deps.rateLimitFile });
   const { makeSender, sendText } = createSenderFactory({ config, logger, metrics, platform });
 
   const conversation = createTurnRunner({
@@ -291,6 +291,7 @@ export function createAgent(deps) {
     exclusive,
     isFull,
     rateLimited,
+    flushRateLimits: () => rateLimited.flush?.(),
     pending,
     drain,
     seenSize: () => seen.size(),

@@ -192,6 +192,7 @@ export async function createRuntime(input) {
     commands,
     http: httpClient,
     compaction,
+    rateLimitFile: path.join(config.dataDir, 'rate-limits.json'),
   });
 
   const primary = models.resolve(null);
@@ -260,6 +261,7 @@ export async function createRuntime(input) {
       }
       try {
         transport.stopAllTyping();
+        agent.flushRateLimits?.();
         await store.flush();
       } catch (error) {
         logger.warn('flush on shutdown failed', { error });

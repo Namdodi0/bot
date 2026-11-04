@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 const MAX_CONCURRENT_CHATS = 4;
 const RATE_WINDOW_MS = 60_000;
 
@@ -30,12 +33,63 @@ export function createSeenTracker() {
 }
 
 /**
- * Per-chat + per-sender rate limit for incoming messages.
+ * Per-chat + per-sender rate limit for incoming messages. When `options.file` is set the
+ * current window is persisted so a quick restart does not reset an active limit.
  * @param {any} config
+ * @param {{file?: string}} [options]
  */
-export function createRateLimiter(config) {
+export function createRateLimiter(config, options = {}) {
   /** @type {Map<string, number[]>} */
   const userHits = new Map();
+  const filePath = options.file ? path.resolve(String(options.file)) : '';
+  /** @type {NodeJS.Timeout|null} */
+  let saveTimer = null;
+
+  /** @param {number[]} hits @param {number} [now] */
+  function fresh(hits, now = Date.now()) {
+    return hits.filter((ts) => Number.isFinite(ts) && now - ts < RATE_WINDOW_MS);
+  }
+
+  if (filePath) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const now = Date.now();
+      for (const [key, hits] of Object.entries(saved?.hits ?? {})) {
+        if (!Array.isArray(hits)) continue;
+        const kept = fresh(/** @type {number[]} */ (hits), now);
+        if (kept.length) userHits.set(key, kept);
+      }
+    } catch {
+      // No saved window yet, or the file is unreadable: start clean.
+    }
+  }
+
+  function flush() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (!filePath) return;
+    try {
+      const now = Date.now();
+      /** @type {Record<string, number[]>} */
+      const hits = {};
+      for (const [key, values] of userHits) {
+        const kept = fresh(values, now);
+        if (kept.length) hits[key] = kept;
+      }
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify({ savedAt: now, hits }));
+    } catch {
+      // Rate-limit persistence is best effort; never affect message handling.
+    }
+  }
+
+  function scheduleFlush() {
+    if (!filePath || saveTimer) return;
+    saveTimer = setTimeout(flush, 2_000);
+    saveTimer.unref?.();
+  }
 
   /**
    * Limit how many messages one person sends per minute — blocks spam that burns API credit.
@@ -50,10 +104,11 @@ export function createRateLimiter(config) {
     if (!limit || !senderId) return false;
     const key = `${chatId}:${senderId}`;
     const now = Date.now();
-    const hits = (userHits.get(key) ?? []).filter((ts) => now - ts < RATE_WINDOW_MS);
+    const hits = fresh(userHits.get(key) ?? [], now);
     if (hits.length >= limit) {
       userHits.delete(key);
       userHits.set(key, hits);
+      scheduleFlush();
       return true;
     }
     hits.push(now);
@@ -63,9 +118,11 @@ export function createRateLimiter(config) {
       const oldest = userHits.keys().next().value;
       if (oldest !== undefined) userHits.delete(oldest);
     }
+    scheduleFlush();
     return false;
   }
 
+  rateLimited.flush = flush;
   return rateLimited;
 }
 
