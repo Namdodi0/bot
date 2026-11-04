@@ -25,7 +25,7 @@ export function createToolRuntime(options) {
   const reminders = options.reminders;
   const logger = options.logger;
   const metrics = options.metrics;
-  const sendDelayMs = options.sendDelayMs ?? 400;
+  const sendDelayMs = options.sendDelayMs ?? 0;
   const imageBudgetMs = options.imageBudgetMs ?? IMAGE_SEND_BUDGET_MS;
 
   function definitions() {
@@ -346,33 +346,49 @@ export function createToolRuntime(options) {
       }
     }
 
+    // Validate/download a small batch at a time: this is the network-bound part. Sending stays
+    // ordered, but the default 400ms anti-spam delay is now opt-in.
+    const limit = Math.min(urls.length, Math.max(6, requested * 3));
+    const selectTarget = Math.min(limit, requested + 2);
+    /** @type {Array<{url: string, upload: {data?: Buffer, contentType?: string}|null}>} */
+    const selected = [];
+    const concurrency = 4;
+    let next = 0;
+    while (selected.length < selectTarget && next < limit && remaining() > 0) {
+      const batch = urls.slice(next, Math.min(limit, next + concurrency));
+      next += batch.length;
+      if (!batch.length) break;
+      const results = await Promise.all(
+        batch.map(async (url) => {
+          if (remaining() <= 0) return null;
+          if (platform.capabilities.uploadMedia) {
+            const file = await validator.download(url);
+            if (!file.ok) {
+              logger.debug('image rejected by validator', { url, reason: file.reason, icon: '🚫' });
+              return null;
+            }
+            return { url, upload: { data: file.data, contentType: file.contentType } };
+          }
+          const check = await validator.validate(url);
+          if (!check.ok) {
+            logger.debug('image rejected by validator', { url, reason: check.reason, icon: '🚫' });
+            return null;
+          }
+          return { url, upload: null };
+        }),
+      );
+      for (const result of results) {
+        if (!result) continue;
+        selected.push(result);
+        if (selected.length >= selectTarget) break;
+      }
+    }
+
     let sent = 0;
     /** @type {string[]} */
     const sentUrls = [];
-    const maxCandidates = Math.max(6, requested * 3);
-    let checked = 0;
-    for (const url of urls) {
-      if (sent >= requested || remaining() <= 0 || checked >= maxCandidates) break;
-      checked += 1;
-      // Platforms that upload bytes download them here through the pinned-address validator
-      // instead of letting the platform client fetch the URL on its own.
-      /** @type {{data?: Buffer, contentType?: string}|null} */
-      let upload = null;
-      if (platform.capabilities.uploadMedia) {
-        const file = await validator.download(url);
-        if (!file.ok) {
-          logger.debug('image rejected by validator', { url, reason: file.reason, icon: '🚫' });
-          continue;
-        }
-        upload = { data: file.data, contentType: file.contentType };
-      } else {
-        const check = await validator.validate(url);
-        if (!check.ok) {
-          logger.debug('image rejected by validator', { url, reason: check.reason, icon: '🚫' });
-          continue;
-        }
-      }
-      if (remaining() <= 0) break;
+    for (const { url, upload } of selected) {
+      if (sent >= requested || remaining() <= 0) break;
       try {
         if (typeof ctx.sendPhoto === 'function') {
           // Injected sinks collect (url, caption, asset); they add the chat id themselves.

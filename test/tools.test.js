@@ -396,7 +396,7 @@ test('send_image stops at its time budget instead of hanging on bad candidates',
     }),
     validator: {
       validate: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 700));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
         return { ok: false, reason: 'slow candidate' };
       },
     },
@@ -411,6 +411,40 @@ test('send_image stops at its time budget instead of hanging on bad candidates',
   assert.equal(result.ok, false);
   assert.ok(Date.now() - started < 5000, 'must stop at the budget');
   assert.match(result.text, /image limit/);
+});
+
+test('send_image validates candidates in parallel', async () => {
+  let active = 0;
+  let maxActive = 0;
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: {
+      search: async () => ({
+        results: [],
+        images: Array.from({ length: 5 }, (_, index) => `https://img.example/${index}.jpg`),
+      }),
+    },
+    platform: makeZaloPlatform({
+      config: baseConfig(),
+      stickers: fakeStickers,
+      transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+    }),
+    validator: {
+      validate: async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        active -= 1;
+        return { ok: true };
+      },
+    },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+
+  const result = await tools.run('send_image', { query: 'cat', count: 5 }, { chatId: 'c1' });
+  assert.equal(result.ok, true);
+  assert.ok(maxActive > 1, `validations must overlap (saw ${maxActive})`);
 });
 
 test('send_image on Discord downloads validated bytes instead of passing the URL', async () => {
