@@ -53,6 +53,36 @@ test('DeepSeek maps medium to high, none stays none', async () => {
   assert.equal(http.calls[1].payload.model, 'deepseek-flash');
 });
 
+test('reads cached prompt tokens from OpenAI and DeepSeek usage shapes', async () => {
+  /** @type {Record<string, number>} */
+  const counters = {};
+  const metrics = {
+    inc: (name, value = 1) => {
+      counters[name] = (counters[name] ?? 0) + value;
+    },
+    observe() {},
+    gauge() {},
+  };
+  const openaiUsage = {
+    prompt_tokens: 100,
+    completion_tokens: 5,
+    prompt_tokens_details: { cached_tokens: 80 },
+  };
+  const openai = makeClient(fakeHttp([], { ...standardResponse, usage: openaiUsage }), { metrics });
+  const first = await openai.chat({ messages: [{ role: 'user', content: 'x' }], reasoning: 'none' });
+  assert.equal(first.cachedTokens, 80);
+  assert.equal(counters['llm.cachedPromptTokens'], 80);
+
+  const deepseekUsage = { prompt_tokens: 50, completion_tokens: 2, prompt_cache_hit_tokens: 30 };
+  const deepseek = makeClient(fakeHttp([], { ...standardResponse, usage: deepseekUsage }), {
+    provider: 'deepseek',
+    metrics,
+  });
+  const second = await deepseek.chat({ messages: [{ role: 'user', content: 'x' }], reasoning: 'none' });
+  assert.equal(second.cachedTokens, 30);
+  assert.equal(counters['llm.cachedPromptTokens'], 110);
+});
+
 test('passes multimodal content blocks through unchanged', async () => {
   const http = fakeHttp([], standardResponse);
   const nim = makeClient(http);

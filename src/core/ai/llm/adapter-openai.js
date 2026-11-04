@@ -75,6 +75,19 @@ function tokensPerSec(tokens, ms) {
 }
 
 /**
+ * Cached prompt tokens reported by OpenAI-compatible providers.
+ * @param {any} usage
+ */
+function cachedPromptTokens(usage) {
+  const detailed = Number(usage?.prompt_tokens_details?.cached_tokens);
+  if (Number.isFinite(detailed) && detailed > 0) return detailed;
+  const direct = Number(usage?.cached_tokens);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const deepseek = Number(usage?.prompt_cache_hit_tokens);
+  return Number.isFinite(deepseek) && deepseek > 0 ? deepseek : 0;
+}
+
+/**
  * Map the shared mode (none/low/medium/high/auto) to the `reasoning_effort` value
  * each provider accepts. DeepSeek only accepts none|low|high|max.
  * @param {string} mode
@@ -212,9 +225,11 @@ export function createOpenAiCompatAdapter(options) {
         throw emptyCompletionError(routeKey(payload.model), payload.model);
       }
       const usage = data?.usage ?? null;
+      const cachedTokens = cachedPromptTokens(usage);
       metrics?.inc('llm.calls');
       metrics?.inc('llm.promptTokens', usage?.prompt_tokens ?? 0);
       metrics?.inc('llm.completionTokens', usage?.completion_tokens ?? 0);
+      if (cachedTokens) metrics?.inc('llm.cachedPromptTokens', cachedTokens);
       metrics?.observe('llm.latency', latency());
       const ms = latency();
       const completionTokens = Number(usage?.completion_tokens ?? 0);
@@ -228,12 +243,14 @@ export function createOpenAiCompatAdapter(options) {
         promptTokens: usage?.prompt_tokens,
         completionTokens: usage?.completion_tokens,
         reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens,
+        ...(cachedTokens ? { cachedTokens } : {}),
         ms,
         tps,
       });
       return {
         ...parsed,
         usage,
+        cachedTokens,
         latencyMs: ms,
         completionTokens,
         ttftMs: ms,
@@ -431,6 +448,8 @@ export function createOpenAiCompatAdapter(options) {
     metrics?.inc('llm.streamCalls');
     if (usage?.prompt_tokens) metrics?.inc('llm.promptTokens', usage.prompt_tokens);
     if (usage?.completion_tokens) metrics?.inc('llm.completionTokens', usage.completion_tokens);
+    const cachedTokens = cachedPromptTokens(usage);
+    if (cachedTokens) metrics?.inc('llm.cachedPromptTokens', cachedTokens);
     metrics?.observe('llm.latency', latency());
 
     const ms = latency();
@@ -450,6 +469,7 @@ export function createOpenAiCompatAdapter(options) {
       promptTokens: usage?.prompt_tokens,
       completionTokens: usage?.completion_tokens,
       reasoningTokens: usage?.completion_tokens_details?.reasoning_tokens,
+      ...(cachedTokens ? { cachedTokens } : {}),
       ms,
       ttft: firstTokenMs,
       tps,
@@ -462,6 +482,7 @@ export function createOpenAiCompatAdapter(options) {
       toolCalls,
       finishReason,
       usage,
+      cachedTokens,
       latencyMs: ms,
       completionTokens,
       ttftMs: firstTokenMs,

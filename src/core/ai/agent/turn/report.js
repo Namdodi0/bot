@@ -23,6 +23,8 @@ import { preview } from '../helpers.js';
  *   llmMs: number,
  *   completionMs: number,
  *   completionTokens: number,
+ *   promptTokens: number,
+ *   cachedTokens: number,
  * }} input
  */
 export function reportTurn({
@@ -44,8 +46,11 @@ export function reportTurn({
   llmMs,
   completionMs,
   completionTokens,
+  promptTokens = 0,
+  cachedTokens = 0,
 }) {
   const duration = Date.now() - startedAt;
+  const cacheHitPct = promptTokens > 0 ? Math.round((cachedTokens / promptTokens) * 1000) / 10 : 0;
   const tps =
     completionTokens > 0 && completionMs > 0
       ? Math.round((completionTokens / (completionMs / 1000)) * 10) / 10
@@ -53,6 +58,7 @@ export function reportTurn({
   const attribution = answeredBy ?? { model: target.model, alias: target.alias, provider: target.provider };
   metrics.observe('agent.reply', duration);
   metrics.inc('messages.replied');
+  if (promptTokens > 0) metrics.gauge?.('llm.cacheHitPct', cacheHitPct);
   if (thinkingText && config.logThinking !== false) {
     // Keep the reasoning out of the normal log stream: it is long and noisy.
     logger.debug(`🧠 thinking: ${preview(thinkingText, 400)}`, {
@@ -76,6 +82,7 @@ export function reportTurn({
     kept: built.keptMessages,
     reasoning, // reasoning mode (none/low/...), not the thinking content
     ...(reasoningTokens > 0 ? { thinkingTokens: reasoningTokens } : {}),
+    ...(cachedTokens > 0 ? { cachedTokens, cacheHitPct } : {}),
   });
 
   if (aborted) {

@@ -259,6 +259,8 @@ export function createTurnRunner(deps) {
     let fallbackLlmMs = 0;
     let completionMs = 0;
     let completionTokens = 0;
+    let promptTotal = 0;
+    let cachedTotal = 0;
     let overflowRecovered = false;
     /** @type {{model: string, alias: string, provider: string}|null} */
     let answeredBy = null;
@@ -366,6 +368,8 @@ export function createTurnRunner(deps) {
 
       completionMs += Number(response.completionMs ?? response.latencyMs ?? 0) || 0;
       completionTokens += Number(response.completionTokens ?? response.usage?.completion_tokens ?? 0) || 0;
+      promptTotal += Number(response.usage?.prompt_tokens ?? 0) || 0;
+      cachedTotal += Number(response.cachedTokens ?? 0) || 0;
       // The first round matches `built.estimatedTokens`; later rounds add tool messages
       // so do not use them for calibration (it would skew the ratio).
       if (round === 0) {
@@ -431,7 +435,7 @@ export function createTurnRunner(deps) {
     reportTurn({
       config, logger, metrics, chatId: event.chatId, startedAt, finalText, built, responseSink,
       reasoning, target, answeredBy, aborted, abortReason, thinkingText, reasoningTokens,
-      llmMs, completionMs, completionTokens,
+      llmMs, completionMs, completionTokens, promptTokens: promptTotal, cachedTokens: cachedTotal,
     });
   }
 
