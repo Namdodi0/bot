@@ -31,6 +31,10 @@ export function createBoot(input) {
     color: config.logColor,
     secrets: collectSecrets(config),
     version: config.version,
+    files: [
+      { path: path.join(config.dataDir, 'logs', 'bot.log'), level: config.logLevel },
+      { path: path.join(config.dataDir, 'logs', 'debug.log'), level: 'debug' },
+    ],
   });
   const metrics = createMetrics();
   const http = createHttp({ logger, metrics });
@@ -269,6 +273,11 @@ export async function createRuntime(input) {
         images: metrics.get('tool.sendImage.ok'),
         icon: '📊',
       });
+      try {
+        await logger.close();
+      } catch {
+        // log files are best effort
+      }
     })();
     return shutdownPromise;
   }

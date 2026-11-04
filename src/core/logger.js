@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
 
 const ANSI = {
@@ -184,16 +187,31 @@ function formatPretty(record, color) {
 }
 
 /**
+ * Keep one previous generation of a log file so it cannot grow forever.
+ * @param {string} filePath
+ * @param {number} maxBytes
+ */
+function rotateFile(filePath, maxBytes) {
+  if (!(maxBytes > 0)) return;
+  try {
+    if (fs.statSync(filePath).size > maxBytes) fs.renameSync(filePath, `${filePath}.1`);
+  } catch (error) {
+    if (/** @type {any} */ (error)?.code !== 'ENOENT') throw error;
+  }
+}
+
+/**
  * @typedef {object} Logger
  * @property {(msg: string, fields?: Record<string, unknown>) => void} debug
  * @property {(msg: string, fields?: Record<string, unknown>) => void} info
  * @property {(msg: string, fields?: Record<string, unknown>) => void} warn
  * @property {(msg: string, fields?: Record<string, unknown>) => void} error
  * @property {(bindings: Record<string, unknown>) => Logger} child
+ * @property {() => Promise<void>} close
  */
 
 /**
- * @param {{level?: string, format?: 'pretty'|'json', color?: 'auto'|'always'|'never', secrets?: string[], version?: string, stdout?: NodeJS.WritableStream, stderr?: NodeJS.WritableStream, now?: () => Date}} [options]
+ * @param {{level?: string, format?: 'pretty'|'json', color?: 'auto'|'always'|'never', secrets?: string[], version?: string, stdout?: NodeJS.WritableStream, stderr?: NodeJS.WritableStream, now?: () => Date, files?: Array<{path: string, level?: string}>, rotateBytes?: number}} [options]
  * @returns {Logger}
  */
 export function createLogger(options = {}) {
@@ -204,8 +222,39 @@ export function createLogger(options = {}) {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
   const now = options.now ?? (() => new Date());
+  const rotateBytes = options.rotateBytes ?? 5_000_000;
+  /** @type {Array<{stream: import('node:fs').WriteStream, level: number}>} */
+  const fileSinks = [];
+  for (const file of options.files ?? []) {
+    try {
+      const filePath = path.resolve(file.path);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      rotateFile(filePath, rotateBytes);
+      const stream = fs.createWriteStream(filePath, { flags: 'a' });
+      stream.on('error', () => {});
+      fileSinks.push({ stream, level: LEVELS[file.level ?? 'debug'] ?? LEVELS.debug });
+    } catch {
+      // A broken log path must never take the bot down.
+    }
+  }
+  const minLevel = fileSinks.length ? Math.min(level, ...fileSinks.map((item) => item.level)) : level;
   /** Attach the version to EVERY log line: the panel git-pulls on its own, so we must know which build is running. */
   const rootBindings = /** @type {Record<string, unknown>} */ (options.version ? { version: options.version } : {});
+
+  function close() {
+    return Promise.all(
+      fileSinks.map(
+        ({ stream }) =>
+          new Promise((resolve) => {
+            try {
+              stream.end(() => resolve(undefined));
+            } catch {
+              resolve(undefined);
+            }
+          }),
+      ),
+    ).then(() => undefined);
+  }
 
   /**
    * @param {Record<string, unknown>} bindings
@@ -214,23 +263,33 @@ export function createLogger(options = {}) {
   function make(bindings) {
     /** @param {'debug'|'info'|'warn'|'error'} method */
     const emit = (method) => (msg, fields) => {
-      if (LEVELS[method] < level) return;
-      const stream = method === 'error' || method === 'warn' ? stderr : stdout;
+      const severity = LEVELS[method];
+      if (severity < minLevel) return;
       const date = now();
       const merged = { ...bindings, ...(fields ?? {}) };
       const safeMsg = redactText(String(msg), secrets);
       const safeFields = /** @type {Record<string, unknown>} */ (redactValue(merged, secrets));
+      /** @param {boolean} color */
+      const render = (color) =>
+        format === 'json'
+          ? `${JSON.stringify({ t: date.toISOString(), level: method, msg: safeMsg, ...safeFields })}\n`
+          : `${formatPretty({ date, level: method, msg: safeMsg, fields: safeFields }, color)}\n`;
 
-      try {
-        if (format === 'json') {
-          stream.write(
-            `${JSON.stringify({ t: date.toISOString(), level: method, msg: safeMsg, ...safeFields })}\n`,
-          );
-          return;
+      if (severity >= level) {
+        const stream = method === 'error' || method === 'warn' ? stderr : stdout;
+        try {
+          stream.write(render(colorEnabled(stream, colorMode)));
+        } catch {
+          // never let a logging failure kill the bot
         }
-        stream.write(`${formatPretty({ date, level: method, msg: safeMsg, fields: safeFields }, colorEnabled(stream, colorMode))}\n`);
-      } catch {
-        // never let a logging failure kill the bot
+      }
+      for (const sink of fileSinks) {
+        if (severity < sink.level) continue;
+        try {
+          sink.stream.write(render(false));
+        } catch {
+          // never let a logging failure kill the bot
+        }
       }
     };
 
@@ -240,6 +299,7 @@ export function createLogger(options = {}) {
       warn: emit('warn'),
       error: emit('error'),
       child: (extra) => make({ ...bindings, ...extra }),
+      close,
     };
   }
 
@@ -276,7 +336,7 @@ export function printBanner(stream, lines, options = {}) {
 export function createSilentLogger() {
   const noop = () => {};
   /** @type {Logger} */
-  const logger = { debug: noop, info: noop, warn: noop, error: noop, child: () => logger };
+  const logger = { debug: noop, info: noop, warn: noop, error: noop, child: () => logger, close: async () => {} };
   return logger;
 }
 

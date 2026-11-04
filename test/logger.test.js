@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { createLogger, printBanner, visualWidth } from '../src/core/logger.js';
 
 function sink() {
@@ -114,6 +118,33 @@ test('pretty: long values are truncated, objects compacted to JSON', () => {
   const line = out.lines[0];
   assert.ok(line.includes('…'), 'must contain an ellipsis');
   assert.match(line, /obj=\{"a":1\}/);
+});
+
+test('two file sinks split normal and debug output', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-logs-'));
+  const out = sink();
+  const logger = createLogger({
+    level: 'info',
+    format: 'pretty',
+    color: 'never',
+    stdout: /** @type {any} */ (out.stream),
+    stderr: /** @type {any} */ (out.stream),
+    files: [
+      { path: path.join(dir, 'bot.log'), level: 'info' },
+      { path: path.join(dir, 'debug.log'), level: 'debug' },
+    ],
+  });
+  logger.debug('hidden detail');
+  logger.info('visible line');
+  await logger.close();
+
+  const normal = fs.readFileSync(path.join(dir, 'bot.log'), 'utf8');
+  const debug = fs.readFileSync(path.join(dir, 'debug.log'), 'utf8');
+  assert.match(normal, /visible line/);
+  assert.doesNotMatch(normal, /hidden detail/);
+  assert.match(debug, /hidden detail/);
+  assert.match(debug, /visible line/);
+  assert.equal(normal.includes('\u001b['), false);
 });
 
 test('banner stays aligned even with emoji', () => {

@@ -250,6 +250,13 @@ Pretty logs by default; JSON with `--json` or `logFormat: "json"`.
 Every line carries `version=` (read from `package.json`). Tokens and keys are always masked;
 the full stack appears only in JSON mode. `--verbose` adds retry/cache/tool/context debug logs.
 
+Two log files are written per bot under the data directory:
+
+- `logs/bot.log` — normal output at `logLevel` (default `info`)
+- `logs/debug.log` — everything, including debug and thinking traces
+
+Both rotate once at 5 MB (`*.log.1`). The console output is unchanged.
+
 ---
 
 ## Troubleshooting
