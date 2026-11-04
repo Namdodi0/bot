@@ -19,6 +19,7 @@ import { truncate } from '../../../text/format.js';
  *   messages: any[],
  *   record: any,
  *   privateTurn?: boolean,
+ *   imageBudget?: {remaining: number},
  * }} input
  */
 export async function runToolRound({
@@ -34,6 +35,7 @@ export async function runToolRound({
   messages,
   record,
   privateTurn = false,
+  imageBudget,
 }) {
   metrics.inc('llm.toolRounds');
   messages.push({
@@ -64,6 +66,7 @@ export async function runToolRound({
         senderId,
         deadline,
         sendPhoto,
+        ...(imageBudget ? { imageBudget } : {}),
         ...(privateTurn ? { suppressDirectSend: true } : {}),
       });
     } catch (error) {

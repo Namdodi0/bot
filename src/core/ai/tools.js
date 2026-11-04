@@ -67,7 +67,7 @@ export function createToolRuntime(options) {
         function: {
           name: 'send_image',
           description:
-            'Find and send images into the current conversation. Use when the user asks for pictures. Set count to the number of images requested: it sends one message per image, capped at 5 per request.',
+            'Find and send images into the current conversation. Use when the user asks for pictures. Set count to the number of images requested: it sends one message per image. The whole reply is capped at 5 images total, across every send_image call.',
           parameters: {
             type: 'object',
             properties: {
@@ -275,7 +275,7 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender, suppressDirectSend?: boolean}} ctx
+   * @param {{chatId: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender, suppressDirectSend?: boolean, imageBudget?: {remaining: number}}} ctx
    */
   async function sendImage(args, ctx) {
     if (!config.image.enabled) return { ok: false, text: 'Image sending is disabled.' };
@@ -289,8 +289,13 @@ export function createToolRuntime(options) {
     const query = String(args?.query ?? '').trim().slice(0, 200);
     if (!query) return { ok: false, text: 'Missing image keywords.' };
     const wantedCount = Math.max(1, Math.trunc(Number(args?.count ?? args?.number ?? 1)) || 1);
-    const requested = Math.min(MAX_IMAGES_PER_SEND, wantedCount);
-    const capped = wantedCount > MAX_IMAGES_PER_SEND;
+    const budget = ctx?.imageBudget && Number.isFinite(ctx.imageBudget.remaining) ? ctx.imageBudget : null;
+    const available = budget ? Math.max(0, Math.trunc(budget.remaining)) : Number.POSITIVE_INFINITY;
+    if (budget && available <= 0) {
+      return { ok: false, text: `Image limit reached for this reply (max ${MAX_IMAGES_PER_SEND} images).` };
+    }
+    const requested = Math.min(MAX_IMAGES_PER_SEND, wantedCount, available);
+    const capped = wantedCount > requested;
     const caption = String(args?.caption ?? '').trim() || query;
 
     const remaining = () =>
@@ -364,6 +369,7 @@ export function createToolRuntime(options) {
           await transport.sendPhoto(ctx.chatId, url, caption, upload ?? undefined);
         }
         sent += 1;
+        if (budget) budget.remaining = Math.max(0, budget.remaining - 1);
         sentUrls.push(url);
         metrics?.inc('tool.sendImage.ok');
         logger.info('image sent', { query, url, sent, requested, icon: '🖼️' });
@@ -386,7 +392,7 @@ export function createToolRuntime(options) {
     const text =
       sent >= requested
         ? `Sent ${sent} image${sent === 1 ? '' : 's'} for "${query}"${
-            capped ? ` (limit is ${MAX_IMAGES_PER_SEND} per request)` : ''
+            capped ? ` (limit is ${MAX_IMAGES_PER_SEND} images per reply)` : ''
           }.`
         : `Sent ${sent} of ${requested} requested images for "${query}" — the search ran out of valid unique images.`;
     return { ok: true, text, data: { sent, requested, urls: sentUrls } };

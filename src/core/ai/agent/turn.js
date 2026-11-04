@@ -2,7 +2,8 @@ import { assembleRequest } from '../../context/assembler.js';
 import { searchEntry, syncContexts, turnEntry } from '../../context/record.js';
 import { normalizeWhitespace, truncate } from '../../text/format.js';
 import { LLM_ERROR } from '../llm/errors.js';
-import { buildSearchContext, createPrompt } from '../prompt/index.js';
+import { createPrompt, buildSearchContext } from '../prompt/index.js';
+import { MAX_IMAGES_PER_SEND } from '../tools.js';
 import {
   DEFAULT_MAX_TOOL_ROUNDS,
   TOOL_ROUND_WARN,
@@ -283,6 +284,9 @@ export function createTurnRunner(deps) {
       retryExecutor,
     });
 
+    // One reply may call send_image several times; share a single image budget across them.
+    const imageBudget = { remaining: MAX_IMAGES_PER_SEND };
+
     const configuredRounds = Number(config.ai?.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS);
     const unlimitedRounds = !Number.isFinite(configuredRounds) || configuredRounds <= 0;
 
@@ -390,7 +394,7 @@ export function createTurnRunner(deps) {
         await runToolRound({
           logger, metrics, tools, store, chatId: event.chatId, senderId: event.senderId,
           deadline, sendPhoto: responseSink.sendPhoto, response, messages, record,
-          privateTurn: event.private === true,
+          privateTurn: event.private === true, imageBudget,
         });
         // The head of this round was already sent: send the whole final-round content instead of
         // cutting by the previous round's emitted text (which may be longer than the final answer).

@@ -72,7 +72,7 @@ export const TOOL_GUIDANCE = {
   read_url:
     'When the user shares a link or asks about a specific page, ALWAYS call the `read_url` tool on that exact URL before answering — even if an earlier link failed or you think you already know the page. YouTube links return the video title and channel. Answer from the tool result; if it cannot be read, say so instead of guessing.',
   send_image:
-    'When the user asks for pictures ("send me a cat photo", "show me 5 pictures of ..."), call the `send_image` tool with `query` and `count` (default 1, maximum 5). It sends one message per image. Never request more than 5 at once — if the user asks for 10, send 5 and say the limit is 5. Report how many were actually sent.',
+    'When the user asks for pictures ("send me a cat photo", "show me 5 pictures of ..."), call the `send_image` tool with `query` and `count` (default 1). One reply may contain at most 5 images in total: never call the tool again after 5 images were sent in this reply, and if the user asks for more, say the limit is 5 per reply. Report how many were actually sent.',
   set_reminder:
     'When the user asks to be reminded at a later time ("remind me at 8pm tonight", "remind me in 10 minutes"), call the `set_reminder` tool with the time converted to Vietnam time (`HH:MM`, `HH:MM tomorrow`, `HH:MM dd/mm`, `+10m`, `+2h`, `+1d`) and the reminder content. Only confirm the reminder after the tool returns ok. Reminders are capped at 5 per chat and 30 days ahead.',
 };
