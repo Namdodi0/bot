@@ -89,6 +89,7 @@ export function createMessageHandler(deps) {
       await previewer.flush();
       const chunks = result.text ? chunkContent(result.text) : [];
       const first = chunks.shift();
+      logger?.info('discord reply ready', { chatId: event.chatId, photos: result.photos.length, chunks: chunks.length });
       if (placeholder) {
         if (!first && !result.photos.length) await placeholder.delete().catch(() => {});
         else await placeholder.edit({ content: first || 'Here are the images.', allowedMentions: { parse: [] } }).catch(() => {});
@@ -96,17 +97,46 @@ export function createMessageHandler(deps) {
         placeholder = await message.reply({ content: first, allowedMentions: { parse: [] } });
       }
       for (const chunk of chunks) {
-        await message.channel.send({ content: chunk, allowedMentions: { parse: [] } }).catch(() => {});
+        await message.channel.send({ content: chunk, allowedMentions: { parse: [] } }).catch((error) => {
+          logger?.warn('discord chunk send failed', {
+            chatId: event.chatId,
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+        });
       }
       for (let index = 0; index < result.photos.length; index += 10) {
         const group = result.photos.slice(index, index + 10);
-        await message.channel
-          .send({
+        try {
+          await message.channel.send({
             files: group.map(photoAttachment),
             content: group[0].caption?.slice(0, 2000) || undefined,
             allowedMentions: { parse: [] },
-          })
-          .catch(() => {});
+          });
+        } catch (error) {
+          logger?.warn('discord photo send failed', {
+            chatId: event.chatId,
+            count: group.length,
+            status: /** @type {any} */ (error)?.status,
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+          // One bad attachment must not take the whole group down: retry each via the transport.
+          for (const photo of group) {
+            try {
+              await transport.sendPhoto(
+                event.chatId,
+                photo.url,
+                photo.caption,
+                photo.data ? { data: photo.data, contentType: photo.contentType } : undefined,
+              );
+            } catch (fallbackError) {
+              logger?.error('discord photo fallback failed', {
+                chatId: event.chatId,
+                url: photo.url,
+                error: String(/** @type {any} */ (fallbackError)?.message ?? fallbackError),
+              });
+            }
+          }
+        }
       }
     } catch (error) {
       logger?.error('discord streaming reply failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
