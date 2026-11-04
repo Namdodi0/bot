@@ -101,6 +101,15 @@ export const DEEPSEEK_REASONING_MAP = {
   auto: 'low',
 };
 
+// Refuseless exposes off/low/high/max; medium is not offered, so it maps to high.
+export const REFUSELESS_REASONING_MAP = {
+  none: 'off',
+  low: 'low',
+  medium: 'high',
+  high: 'high',
+  auto: 'low',
+};
+
 /** Neutral sampling names -> OpenAI-compatible wire names. */
 export const SAMPLING_FIELDS = {
   topP: 'top_p',

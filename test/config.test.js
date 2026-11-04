@@ -56,6 +56,21 @@ test('userRateLimits accepts per-user overrides and rejects malformed values', (
   assert.throws(() => load({ userRateLimits: { 'u-1': -1 } }), /userRateLimits/);
 });
 
+test('refuseless parses its models and needs a key when primary', () => {
+  const config = load(
+    { refuseless: { temperature: 0.4 }, model: { defaultAlias: 'glm' } },
+    baseEnv({ REFUSELESS_API_KEY: 'abl-test' }),
+  );
+  assert.equal(config.refuseless.apiKey, 'abl-test');
+  assert.equal(config.refuseless.model, 'glm-5.3-abliterated');
+  assert.equal(config.refuseless.deepseekFreeModel, 'deepseek-v4.1-flash-abliterated-free');
+  assert.equal(config.refuseless.temperature, 0.4);
+  assert.throws(
+    () => load({ model: { defaultAlias: 'glm' } }, baseEnv({ REFUSELESS_API_KEY: '' })),
+    /REFUSELESS_API_KEY/,
+  );
+});
+
 test('reads every setting from config.json', async () => {
   const dir = await tempDir();
   const file = path.join(dir, 'config.json');

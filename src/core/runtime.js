@@ -1,7 +1,12 @@
 import nodeHttp from 'node:http';
 import path from 'node:path';
 import { createAgent } from './ai/agent.js';
-import { DEEPSEEK_REASONING_MAP, NIM_REASONING_MAP, createOpenAiCompatAdapter } from './ai/llm/adapter-openai.js';
+import {
+  DEEPSEEK_REASONING_MAP,
+  NIM_REASONING_MAP,
+  REFUSELESS_REASONING_MAP,
+  createOpenAiCompatAdapter,
+} from './ai/llm/adapter-openai.js';
 import { createLlmService } from './ai/llm/service.js';
 import { createReminderStore } from './ai/reminders.js';
 import { createModelRouter } from './ai/router.js';
@@ -133,6 +138,21 @@ export async function createRuntime(input) {
         metrics,
         defaultTemperature: config.nim.temperature,
         reasoningMap: NIM_REASONING_MAP,
+      }),
+    );
+  }
+  if (config.refuseless?.apiKey) {
+    adapters.push(
+      createOpenAiCompatAdapter({
+        provider: 'refuseless',
+        apiKey: config.refuseless.apiKey,
+        baseUrl: config.refuseless.baseUrl,
+        model: config.refuseless.model,
+        http: httpClient,
+        logger,
+        metrics,
+        defaultTemperature: config.refuseless.temperature,
+        reasoningMap: REFUSELESS_REASONING_MAP,
       }),
     );
   }

@@ -149,6 +149,7 @@ export function collectSecrets(config) {
     config.zalo.token,
     config.nim.apiKey,
     config.deepseek.apiKey,
+    config.refuseless?.apiKey,
     config.search.apiKey,
     config.discord?.token,
     config.webhook.secret,
@@ -212,7 +213,7 @@ Usage: node index.js [flags]
 
 Flags:
   --config <path>    Config file (default: config.json in the repo root)
-  --model <alias>    Default model: deepseek | pro | nim | ultra | nim-light
+  --model <alias>    Default model: deepseek | pro | nim | ultra | nim-light | glm | glm-flash | ds-abl | ds-fast | minimax | ds-abl-free
   --mode <m>         polling | webhook
   --think <mode>     none | low | medium | high | auto
   --max-tokens <n>   Cap on generated tokens (empty = unlimited)
@@ -282,6 +283,7 @@ export function loadConfig(input = {}) {
 
   const nimSection = section(root, 'nim');
   const deepseekSection = section(root, 'deepseek');
+  const refuselessSection = section(root, 'refuseless');
   const modelSection = section(root, 'model');
   const aiSection = section(root, 'ai');
   const contextSection = section(root, 'context');
@@ -309,6 +311,7 @@ export function loadConfig(input = {}) {
   }
   const nimKey = asString(env.NIM_API_KEY, 'NIM_API_KEY');
   const deepseekKey = asString(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY');
+  const refuselessKey = asString(env.REFUSELESS_API_KEY, 'REFUSELESS_API_KEY');
   const tavilyKey = asString(env.TAVILY_API_KEY, 'TAVILY_API_KEY');
   if (platform === 'discord' && !discord.token) {
     throw new ConfigError('Missing DISCORD_BOT_TOKEN (required when config.platform is "discord")');
@@ -387,6 +390,9 @@ export function loadConfig(input = {}) {
   if (primaryProvider === 'deepseek' && !deepseekKey) {
     throw new ConfigError('Missing DEEPSEEK_API_KEY (see .env.example)');
   }
+  if (primaryProvider === 'refuseless' && !refuselessKey) {
+    throw new ConfigError('Missing REFUSELESS_API_KEY (used as the primary model)');
+  }
 
   const searchEnabled = cli['no-search'] ? false : asBool(searchSection.enabled, 'config.search.enabled', true);
   if (searchEnabled && !tavilyKey) {
@@ -455,6 +461,18 @@ export function loadConfig(input = {}) {
     asOptionalNumber(deepseekSection.presencePenalty, 'config.deepseek.presencePenalty', { min: -2, max: 2 }) ?? 0;
   const deepseekSeed = asOptionalInt(deepseekSection.seed, 'config.deepseek.seed', { min: 0 });
 
+  const refuselessTopP =
+    asOptionalNumber(refuselessSection.topP, 'config.refuseless.topP', { min: 0, max: 1 }) ?? 0.9;
+  if (refuselessTopP !== null && refuselessTopP <= 0) {
+    throw new ConfigError('config.refuseless.topP must be within (0, 1]');
+  }
+  const refuselessFrequencyPenalty =
+    asOptionalNumber(refuselessSection.frequencyPenalty, 'config.refuseless.frequencyPenalty', { min: -2, max: 2 }) ??
+    0;
+  const refuselessPresencePenalty =
+    asOptionalNumber(refuselessSection.presencePenalty, 'config.refuseless.presencePenalty', { min: -2, max: 2 }) ?? 0;
+  const refuselessSeed = asOptionalInt(refuselessSection.seed, 'config.refuseless.seed', { min: 0 });
+
   const unknownConfigKeys = collectUnknownConfigKeys(root);
 
   /** @type {Record<string, number>} */
@@ -515,6 +533,37 @@ export function loadConfig(input = {}) {
       frequencyPenalty: deepseekFrequencyPenalty,
       presencePenalty: deepseekPresencePenalty,
       seed: deepseekSeed,
+    },
+    refuseless: {
+      apiKey: refuselessKey,
+      baseUrl: asString(refuselessSection.baseUrl, 'config.refuseless.baseUrl', 'https://api.refuseless.com/v1').replace(
+        /\/+$/,
+        '',
+      ),
+      model: asString(refuselessSection.model, 'config.refuseless.model', 'glm-5.3-abliterated'),
+      flashModel: asString(refuselessSection.flashModel, 'config.refuseless.flashModel', 'glm-5.3-flash-abliterated'),
+      deepseekModel: asString(
+        refuselessSection.deepseekModel,
+        'config.refuseless.deepseekModel',
+        'deepseek-v4.1-flash-abliterated',
+      ),
+      deepseekFastModel: asString(
+        refuselessSection.deepseekFastModel,
+        'config.refuseless.deepseekFastModel',
+        'deepseek-v4.1-flash-fast',
+      ),
+      minimaxModel: asString(refuselessSection.minimaxModel, 'config.refuseless.minimaxModel', 'minimax-m3.1-flash'),
+      deepseekFreeModel: asString(
+        refuselessSection.deepseekFreeModel,
+        'config.refuseless.deepseekFreeModel',
+        'deepseek-v4.1-flash-abliterated-free',
+      ),
+      temperature: asNumber(refuselessSection.temperature, 'config.refuseless.temperature', 0.5, { min: 0, max: 2 }),
+      timeoutMs: /** @type {number} */ (asInt(refuselessSection.timeoutMs, 'config.refuseless.timeoutMs', 0, { min: 0 })),
+      topP: refuselessTopP,
+      frequencyPenalty: refuselessFrequencyPenalty,
+      presencePenalty: refuselessPresencePenalty,
+      seed: refuselessSeed,
     },
     model: {
       defaultAlias,
@@ -634,6 +683,7 @@ export function describeConfig(config) {
     token: maskSecret(config.zalo.token),
     nimKey: maskSecret(config.nim.apiKey),
     deepseekKey: maskSecret(config.deepseek.apiKey),
+    refuselessKey: maskSecret(config.refuseless.apiKey),
     tavilyKey: maskSecret(config.search.apiKey),
     dryRun: config.dryRun,
   };

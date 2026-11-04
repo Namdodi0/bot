@@ -65,6 +65,7 @@ copy .env.example .env
    DISCORD_BOT_TOKEN=...
    DEEPSEEK_API_KEY=sk-...
    NIM_API_KEY=nvapi-...
+   REFUSELESS_API_KEY=abl_...
    TAVILY_API_KEY=tvly-...
    ```
 
@@ -174,7 +175,7 @@ Only two files matter:
 
 | File | Contents |
 |---|---|
-| `.env` (gitignored) | API keys/tokens only: `DISCORD_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `NIM_API_KEY`, `TAVILY_API_KEY` (and `ZALO_BOT_TOKEN` for the legacy process). |
+| `.env` (gitignored) | API keys/tokens only: `DISCORD_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `NIM_API_KEY`, `REFUSELESS_API_KEY`, `TAVILY_API_KEY` (and `ZALO_BOT_TOKEN` for the legacy process). |
 | `config.discord.json` (tracked) | Non-secret Discord settings. Never put API keys or a real `webhook.secret` here. |
 
 Variables already set in the host panel/CI win over `.env`; an empty (or whitespace-only)
@@ -191,7 +192,7 @@ Important settings:
 | `discord.respondToAllChannelIds` | Answer every message in these channels. |
 | `discord.stickers` | `enabled` + optional `ids` (`"123456789012345678:wave,..."`) when the bot cannot list guild stickers. |
 | `discord.presence` | `status` (`online/idle/dnd/invisible`), `type` (`PLAYING/STREAMING/LISTENING/WATCHING/COMPETING`), `text`, optional `url`. |
-| `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`. |
+| `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`, `glm`, `glm-flash`, `ds-abl`, `ds-fast`, `minimax`, `ds-abl-free`. |
 | `model.visionAlias` | Vision-capable alias used when an image is attached (default `nim`, the Super VL model). |
 | `ai.reasoning` | `none`, `low`, `medium`, `high`, `auto`. |
 | `ai.maxTokens` / `ai.maxToolRounds` | `null`/`0` = unlimited. |
