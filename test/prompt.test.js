@@ -24,6 +24,14 @@ test('zalo prompts use Zalo formatting and the Zalo command list', () => {
   assert.equal(text.includes('slash commands'), false);
 });
 
+test('the owner-priority rule names Nhật Nam and Namdodi', () => {
+  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /OWNER PRIORITY/);
+  assert.match(text, /Nhật Nam/);
+  assert.match(text, /Namdodi/);
+});
+
 test('the shy tone injects the flustered persona rules', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
