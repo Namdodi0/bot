@@ -10,8 +10,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Hard cap for a single send_image request. */
 export const MAX_IMAGES_PER_SEND = 5;
 
+/** Wall-clock budget for one send_image call, even when responseTimeoutMs is 0. */
+const IMAGE_SEND_BUDGET_MS = 45_000;
+
 /**
- * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, platform: import('../../platforms/contract.js').Platform, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number}} options
+ * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, platform: import('../../platforms/contract.js').Platform, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number, imageBudgetMs?: number}} options
  */
 export function createToolRuntime(options) {
   const config = options.config;
@@ -23,6 +26,7 @@ export function createToolRuntime(options) {
   const logger = options.logger;
   const metrics = options.metrics;
   const sendDelayMs = options.sendDelayMs ?? 400;
+  const imageBudgetMs = options.imageBudgetMs ?? IMAGE_SEND_BUDGET_MS;
 
   function definitions() {
     /** @type {any[]} */
@@ -298,9 +302,13 @@ export function createToolRuntime(options) {
     const capped = wantedCount > requested;
     const caption = String(args?.caption ?? '').trim() || query;
 
-    const remaining = () =>
-      Number.isFinite(ctx.deadline) ? /** @type {number} */ (ctx.deadline) - Date.now() : Number.POSITIVE_INFINITY;
-    const searchTimeout = () => (Number.isFinite(ctx.deadline) ? Math.max(1500, Math.min(9000, remaining())) : 0);
+    // A per-call budget keeps a run of bad candidate URLs from hanging the turn forever.
+    const effectiveDeadline = Math.min(
+      Number.isFinite(ctx.deadline) ? /** @type {number} */ (ctx.deadline) : Number.POSITIVE_INFINITY,
+      Date.now() + imageBudgetMs,
+    );
+    const remaining = () => effectiveDeadline - Date.now();
+    const searchTimeout = () => Math.max(1500, Math.min(9000, remaining()));
 
     // Collect a small buffer beyond the requested count so rejected URLs can be replaced.
     const wanted = requested + Math.max(3, Math.ceil(requested * 0.5));
@@ -322,10 +330,11 @@ export function createToolRuntime(options) {
         });
         const add = (image) => {
           const url = typeof image === 'string' ? image : image?.url;
-          if (typeof url === 'string' && url.startsWith('http') && !seen.has(url)) {
-            seen.add(url);
-            urls.push(url);
-          }
+          if (typeof url !== 'string' || !url.startsWith('http') || seen.has(url)) return;
+          // Site icons and SVG assets are never real photos; skip them before a slow validation.
+          if (/\.svg(?:[?#]|$)/i.test(url) || /\/assets\/img\/icons\//i.test(url)) return;
+          seen.add(url);
+          urls.push(url);
         };
         for (const image of data.images) add(image);
         for (const result of data.results) for (const image of result?.images ?? []) add(image);
@@ -340,8 +349,11 @@ export function createToolRuntime(options) {
     let sent = 0;
     /** @type {string[]} */
     const sentUrls = [];
+    const maxCandidates = Math.max(6, requested * 3);
+    let checked = 0;
     for (const url of urls) {
-      if (sent >= requested || remaining() <= 0) break;
+      if (sent >= requested || remaining() <= 0 || checked >= maxCandidates) break;
+      checked += 1;
       // Platforms that upload bytes download them here through the pinned-address validator
       // instead of letting the platform client fetch the URL on its own.
       /** @type {{data?: Buffer, contentType?: string}|null} */
@@ -385,16 +397,25 @@ export function createToolRuntime(options) {
       if (sent < requested && sendDelayMs > 0) await sleep(sendDelayMs);
     }
 
+    const timedOut = remaining() <= 0;
+    const seconds = Math.max(1, Math.round(imageBudgetMs / 1000));
     if (!sent) {
       metrics?.inc('tool.sendImage.fail');
-      return { ok: false, text: `Could not find a valid image to send for "${query}".` };
+      return {
+        ok: false,
+        text: timedOut
+          ? `Could not find a valid image for "${query}" within the ${seconds}s image limit.`
+          : `Could not find a valid image to send for "${query}".`,
+      };
     }
     const text =
       sent >= requested
         ? `Sent ${sent} image${sent === 1 ? '' : 's'} for "${query}"${
             capped ? ` (limit is ${MAX_IMAGES_PER_SEND} images per reply)` : ''
           }.`
-        : `Sent ${sent} of ${requested} requested images for "${query}" — the search ran out of valid unique images.`;
+        : `Sent ${sent} of ${requested} requested images for "${query}" — ${
+            timedOut ? `hit the ${seconds}s image time limit` : 'the search ran out of valid unique images'
+          }.`;
     return { ok: true, text, data: { sent, requested, urls: sentUrls } };
   }
 

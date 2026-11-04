@@ -380,6 +380,39 @@ test('send_image shares one 5-image budget across calls in a reply', async () =>
   assert.match(third.text, /limit reached/);
 });
 
+test('send_image stops at its time budget instead of hanging on bad candidates', async () => {
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: {
+      search: async () => ({
+        results: [],
+        images: Array.from({ length: 10 }, (_, index) => `https://img.example/${index}.jpg`),
+      }),
+    },
+    platform: makeZaloPlatform({
+      config: baseConfig(),
+      stickers: fakeStickers,
+      transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+    }),
+    validator: {
+      validate: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        return { ok: false, reason: 'slow candidate' };
+      },
+    },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+    imageBudgetMs: 2000,
+  });
+
+  const started = Date.now();
+  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'c1' });
+  assert.equal(result.ok, false);
+  assert.ok(Date.now() - started < 5000, 'must stop at the budget');
+  assert.match(result.text, /image limit/);
+});
+
 test('send_image on Discord downloads validated bytes instead of passing the URL', async () => {
   /** @type {any} */
   let photoOptions = null;
