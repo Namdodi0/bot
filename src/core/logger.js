@@ -194,7 +194,11 @@ function formatPretty(record, color) {
 function rotateFile(filePath, maxBytes) {
   if (!(maxBytes > 0)) return;
   try {
-    if (fs.statSync(filePath).size > maxBytes) fs.renameSync(filePath, `${filePath}.1`);
+    if (fs.statSync(filePath).size > maxBytes) {
+      const target = `${filePath}.1`;
+      fs.rmSync(target, { force: true });
+      fs.renameSync(filePath, target);
+    }
   } catch (error) {
     if (/** @type {any} */ (error)?.code !== 'ENOENT') throw error;
   }
@@ -223,7 +227,7 @@ export function createLogger(options = {}) {
   const stderr = options.stderr ?? process.stderr;
   const now = options.now ?? (() => new Date());
   const rotateBytes = options.rotateBytes ?? 5_000_000;
-  /** @type {Array<{stream: import('node:fs').WriteStream, level: number}>} */
+  /** @type {Array<{path: string, stream: import('node:fs').WriteStream, level: number, size: number, rotateBytes: number, rotating: boolean, queue: string[], rotation: Promise<void>|null}>} */
   const fileSinks = [];
   for (const file of options.files ?? []) {
     try {
@@ -232,7 +236,22 @@ export function createLogger(options = {}) {
       rotateFile(filePath, rotateBytes);
       const stream = fs.createWriteStream(filePath, { flags: 'a' });
       stream.on('error', () => {});
-      fileSinks.push({ stream, level: LEVELS[file.level ?? 'debug'] ?? LEVELS.debug });
+      let size = 0;
+      try {
+        size = fs.statSync(filePath).size;
+      } catch {
+        // fresh file
+      }
+      fileSinks.push({
+        path: filePath,
+        stream,
+        level: LEVELS[file.level ?? 'debug'] ?? LEVELS.debug,
+        size,
+        rotateBytes,
+        rotating: false,
+        queue: [],
+        rotation: null,
+      });
     } catch {
       // A broken log path must never take the bot down.
     }
@@ -241,18 +260,65 @@ export function createLogger(options = {}) {
   /** Attach the version to EVERY log line: the panel git-pulls on its own, so we must know which build is running. */
   const rootBindings = /** @type {Record<string, unknown>} */ (options.version ? { version: options.version } : {});
 
+  /** @param {(typeof fileSinks)[number]} sink @param {string} line */
+  function writeToSink(sink, line) {
+    if (sink.rotating) {
+      sink.queue.push(line);
+      return;
+    }
+    try {
+      sink.stream.write(line);
+      sink.size += Buffer.byteLength(line);
+    } catch {
+      return;
+    }
+    if (sink.rotateBytes > 0 && sink.size >= sink.rotateBytes && !sink.rotation) {
+      sink.rotation = rotateSink(sink);
+    }
+  }
+
+  /** @param {(typeof fileSinks)[number]} sink */
+  async function rotateSink(sink) {
+    sink.rotating = true;
+    try {
+      await new Promise((resolve) => {
+        try {
+          sink.stream.end(() => resolve(undefined));
+        } catch {
+          resolve(undefined);
+        }
+      });
+      const target = `${sink.path}.1`;
+      fs.rmSync(target, { force: true });
+      fs.renameSync(sink.path, target);
+    } catch {
+      // If rotation fails, keep appending to the same file.
+    }
+    try {
+      sink.stream = fs.createWriteStream(sink.path, { flags: 'a' });
+      sink.stream.on('error', () => {});
+    } catch {
+      // keep the old (closed) stream; writes below will be dropped
+    }
+    sink.size = 0;
+    sink.rotating = false;
+    sink.rotation = null;
+    const queued = sink.queue.splice(0);
+    for (const line of queued) writeToSink(sink, line);
+  }
+
   function close() {
     return Promise.all(
-      fileSinks.map(
-        ({ stream }) =>
-          new Promise((resolve) => {
-            try {
-              stream.end(() => resolve(undefined));
-            } catch {
-              resolve(undefined);
-            }
-          }),
-      ),
+      fileSinks.map(async (sink) => {
+        if (sink.rotation) await sink.rotation.catch(() => {});
+        await new Promise((resolve) => {
+          try {
+            sink.stream.end(() => resolve(undefined));
+          } catch {
+            resolve(undefined);
+          }
+        });
+      }),
     ).then(() => undefined);
   }
 
@@ -285,11 +351,7 @@ export function createLogger(options = {}) {
       }
       for (const sink of fileSinks) {
         if (severity < sink.level) continue;
-        try {
-          sink.stream.write(render(false));
-        } catch {
-          // never let a logging failure kill the bot
-        }
+        writeToSink(sink, render(false));
       }
     };
 

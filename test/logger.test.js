@@ -147,6 +147,31 @@ test('two file sinks split normal and debug output', async () => {
   assert.equal(normal.includes('\u001b['), false);
 });
 
+test('file sink rotates while running when it exceeds rotateBytes', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-log-rotate-'));
+  const file = path.join(dir, 'bot.log');
+  const out = sink();
+  const logger = createLogger({
+    level: 'info',
+    format: 'pretty',
+    color: 'never',
+    stdout: /** @type {any} */ (out.stream),
+    stderr: /** @type {any} */ (out.stream),
+    rotateBytes: 400,
+    files: [{ path: file, level: 'info' }],
+  });
+  for (let index = 0; index < 8; index += 1) logger.info(`line ${index} ${'x'.repeat(60)}`);
+  await logger.close();
+
+  const previous = fs.readFileSync(`${file}.1`, 'utf8');
+  const current = fs.readFileSync(file, 'utf8');
+  assert.ok(previous.length > 0, 'rotated file must exist');
+  assert.ok(current.length > 0, 'a fresh file must keep receiving lines');
+  const all = previous + current;
+  assert.match(all, /line 0 /);
+  assert.match(all, /line 7 /);
+});
+
 test('banner stays aligned even with emoji', () => {
   const out = sink();
   printBanner(out.stream, ['🤖 Bot deepseek', 'nvidia/nemotron-3.5-super-vl-120b-a12b'], { color: 'never' });

@@ -281,7 +281,7 @@ export async function createRuntime(input) {
       }
       try {
         transport.stopAllTyping();
-        agent.flushRateLimits?.();
+        await agent.flushRateLimits?.();
         await store.flush();
       } catch (error) {
         logger.warn('flush on shutdown failed', { error });

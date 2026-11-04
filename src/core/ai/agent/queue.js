@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 const MAX_CONCURRENT_CHATS = 4;
@@ -44,6 +45,10 @@ export function createRateLimiter(config, options = {}) {
   const filePath = options.file ? path.resolve(String(options.file)) : '';
   /** @type {NodeJS.Timeout|null} */
   let saveTimer = null;
+  /** @type {Promise<void>} */
+  let writeChain = Promise.resolve();
+  /** @type {Promise<void>|null} */
+  let dirReady = null;
 
   /** @param {number[]} hits @param {number} [now] */
   function fresh(hits, now = Date.now()) {
@@ -69,25 +74,37 @@ export function createRateLimiter(config, options = {}) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    if (!filePath) return;
-    try {
-      const now = Date.now();
-      /** @type {Record<string, number[]>} */
-      const hits = {};
-      for (const [key, values] of userHits) {
-        const kept = fresh(values, now);
-        if (kept.length) hits[key] = kept;
-      }
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, JSON.stringify({ savedAt: now, hits }));
-    } catch {
-      // Rate-limit persistence is best effort; never affect message handling.
+    if (!filePath) return Promise.resolve();
+    const now = Date.now();
+    /** @type {Record<string, number[]>} */
+    const hits = {};
+    for (const [key, values] of userHits) {
+      const kept = fresh(values, now);
+      if (kept.length) hits[key] = kept;
     }
+    const payload = JSON.stringify({ savedAt: now, hits });
+    // Serialize writes without blocking the event loop on a busy chat.
+    writeChain = writeChain.then(async () => {
+      try {
+        dirReady ??= fsp.mkdir(path.dirname(filePath), { recursive: true }).then(
+          () => undefined,
+          () => undefined,
+        );
+        await dirReady;
+        await fsp.writeFile(filePath, payload);
+      } catch {
+        // Rate-limit persistence is best effort; never affect message handling.
+      }
+    });
+    return writeChain;
   }
 
   function scheduleFlush() {
     if (!filePath || saveTimer) return;
-    saveTimer = setTimeout(flush, 2_000);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      void flush();
+    }, 2_000);
     saveTimer.unref?.();
   }
 
