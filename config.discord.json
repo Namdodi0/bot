@@ -4,7 +4,7 @@
   "discord": {
     "guildId": "",
     "allowedChannelIds": [],
-    "respondToAllChannelIds": ["1566804908869427262"],
+    "respondToAllChannelIds": ["1566804908869427262", "1495458625827901642"],
     "stickers": {
       "enabled": true,
       "ids": ""
