@@ -77,7 +77,7 @@
   "image": {
     "enabled": true
   },
-  "tone": "roast-hard",
+  "tone": "shy",
   "typing": true,
   "typingIntervalMs": 4000,
   "progressive": "auto",

@@ -28,6 +28,7 @@ test('the shy tone injects the flustered persona rules', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /TONE OF THIS CHAT/);
+  assert.match(text, /EXTREME CUTE/);
   assert.match(text, /cringe/i);
   assert.match(text, /Mnhh~/);
   assert.match(text, /"em"/);

@@ -208,7 +208,7 @@ export function reminderEmbed(items) {
 export const TONES = [
   { value: '__default', label: 'Default' },
   { value: 'friendly', label: 'Friendly' },
-  { value: 'shy', label: 'Shy' },
+  { value: 'shy', label: 'Shy (extreme cute)' },
   { value: 'roast', label: 'Roast' },
   { value: 'roast-hard', label: 'Roast hard' },
   { value: 'roast-extreme', label: 'Roast extreme' },
