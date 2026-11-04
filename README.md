@@ -192,7 +192,7 @@ Important settings:
 | `discord.respondToAllChannelIds` | Answer every message in these channels. |
 | `discord.stickers` | `enabled` + optional `ids` (`"123456789012345678:wave,..."`) when the bot cannot list guild stickers. |
 | `discord.presence` | `status` (`online/idle/dnd/invisible`), `type` (`PLAYING/STREAMING/LISTENING/WATCHING/COMPETING`), `text`, optional `url`. |
-| `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`, `glm`, `glm-flash`, `ds-abl`, `ds-fast`, `minimax`, `ds-abl-free`. |
+| `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`, `ds-abl-free`. |
 | `model.visionAlias` | Vision-capable alias used when an image is attached (default `nim`, the Super VL model). |
 | `ai.reasoning` | `none`, `low`, `medium`, `high`, `auto`. |
 | `ai.maxTokens` / `ai.maxToolRounds` | `null`/`0` = unlimited. |

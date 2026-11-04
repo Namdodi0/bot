@@ -44,12 +44,7 @@
   },
   "refuseless": {
     "baseUrl": "https://api.refuseless.com/v1",
-    "model": "glm-5.3-abliterated",
-    "flashModel": "glm-5.3-flash-abliterated",
-    "deepseekModel": "deepseek-v4.1-flash-abliterated",
-    "deepseekFastModel": "deepseek-v4.1-flash-fast",
-    "minimaxModel": "minimax-m3.1-flash",
-    "deepseekFreeModel": "deepseek-v4.1-flash-abliterated-free",
+    "model": "deepseek-v4.1-flash-abliterated-free",
     "temperature": 0.5,
     "timeoutMs": 0,
     "topP": 0.9,

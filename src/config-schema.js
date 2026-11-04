@@ -60,11 +60,6 @@ export const SECTION_KEYS = {
   refuseless: [
     'baseUrl',
     'model',
-    'flashModel',
-    'deepseekModel',
-    'deepseekFastModel',
-    'minimaxModel',
-    'deepseekFreeModel',
     'temperature',
     'timeoutMs',
     'topP',

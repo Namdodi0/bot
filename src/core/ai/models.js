@@ -29,34 +29,9 @@ export const MODEL_ALIASES = {
     modelKey: 'fallbackModel',
     label: 'Nemotron 3.5 Lightning',
   },
-  glm: {
-    provider: 'refuseless',
-    modelKey: 'model',
-    label: 'GLM 5.3 Abliterated',
-  },
-  'glm-flash': {
-    provider: 'refuseless',
-    modelKey: 'flashModel',
-    label: 'GLM 5.3 Flash Abliterated',
-  },
-  'ds-abl': {
-    provider: 'refuseless',
-    modelKey: 'deepseekModel',
-    label: 'DeepSeek V4.1 Flash Abliterated',
-  },
-  'ds-fast': {
-    provider: 'refuseless',
-    modelKey: 'deepseekFastModel',
-    label: 'DeepSeek V4.1 Flash',
-  },
-  minimax: {
-    provider: 'refuseless',
-    modelKey: 'minimaxModel',
-    label: 'Minimax M3.1 Flash',
-  },
   'ds-abl-free': {
     provider: 'refuseless',
-    modelKey: 'deepseekFreeModel',
+    modelKey: 'model',
     label: 'DeepSeek V4.1 Flash Abliterated FREE',
   },
 };

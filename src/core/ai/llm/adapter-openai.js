@@ -101,9 +101,9 @@ export const DEEPSEEK_REASONING_MAP = {
   auto: 'low',
 };
 
-// Refuseless exposes low/high/max (GLM has no off), so none/auto use the provider default.
+// Refuseless exposes off/low/high/max; medium is not offered, so it maps to high.
 export const REFUSELESS_REASONING_MAP = {
-  none: 'low',
+  none: 'off',
   low: 'low',
   medium: 'high',
   high: 'high',
