@@ -177,6 +177,7 @@ const KNOWN_TOP_LEVEL_KEYS = new Set([
   'maxMessagesPerReply',
   'maxQueueDepth',
   'userRateLimitPerMinute',
+  'userRateLimits',
   'responseTimeoutMs',
   'logLevel',
   'logThinking',
@@ -546,6 +547,19 @@ export function loadConfig(input = {}) {
 
   const unknownConfigKeys = collectUnknownConfigKeys(root);
 
+  /** @type {Record<string, number>} */
+  const userRateLimits = {};
+  if (root.userRateLimits !== undefined && root.userRateLimits !== null) {
+    if (typeof root.userRateLimits !== 'object' || Array.isArray(root.userRateLimits)) {
+      throw new ConfigError('config.userRateLimits must be an object mapping user ids to messages per minute');
+    }
+    for (const [rawId, rawLimit] of Object.entries(root.userRateLimits)) {
+      const id = String(rawId).trim();
+      if (!id) throw new ConfigError('config.userRateLimits cannot use an empty user id');
+      userRateLimits[id] = /** @type {number} */ (asInt(rawLimit, `config.userRateLimits.${id}`, 0, { min: 0 }));
+    }
+  }
+
   const config = {
     help: false,
     version: VERSION,
@@ -659,6 +673,7 @@ export function loadConfig(input = {}) {
     userRateLimitPerMinute: /** @type {number} */ (
       asInt(root.userRateLimitPerMinute, 'config.userRateLimitPerMinute', 12, { min: 0 })
     ),
+    userRateLimits,
     logLevel: cli.verbose ? 'debug' : asString(root.logLevel, 'config.logLevel', 'info').toLowerCase(),
     logThinking: asBool(root.logThinking, 'config.logThinking', true),
     logFormat: /** @type {'pretty'|'json'} */ (logFormat),

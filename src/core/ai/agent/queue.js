@@ -45,7 +45,8 @@ export function createRateLimiter(config) {
    * @param {string} senderId
    */
   function rateLimited(chatId, senderId) {
-    const limit = config.userRateLimitPerMinute ?? 0;
+    const override = senderId ? config.userRateLimits?.[senderId] : undefined;
+    const limit = Number.isFinite(override) ? override : (config.userRateLimitPerMinute ?? 0);
     if (!limit || !senderId) return false;
     const key = `${chatId}:${senderId}`;
     const now = Date.now();

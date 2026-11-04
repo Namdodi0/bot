@@ -49,6 +49,13 @@ test('defaults: DeepSeek primary, reasoning off, unlimited context', () => {
   assert.deepEqual(config.unknownConfigKeys, []);
 });
 
+test('userRateLimits accepts per-user overrides and rejects malformed values', () => {
+  const config = load({ userRateLimits: { 'u-1': 2, 'u-2': 0 } });
+  assert.deepEqual(config.userRateLimits, { 'u-1': 2, 'u-2': 0 });
+  assert.throws(() => load({ userRateLimits: ['u-1'] }), /userRateLimits/);
+  assert.throws(() => load({ userRateLimits: { 'u-1': -1 } }), /userRateLimits/);
+});
+
 test('reads every setting from config.json', async () => {
   const dir = await tempDir();
   const file = path.join(dir, 'config.json');

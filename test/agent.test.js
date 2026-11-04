@@ -461,6 +461,16 @@ test('USER_RATE_LIMIT_PER_MINUTE blocks spam per sender', async () => {
   assert.equal(sent.length, 1);
 });
 
+test('userRateLimits can tighten the limit for one sender only', async () => {
+  const { agent, sent } = await setup({
+    configOverrides: { userRateLimitPerMinute: 12, userRateLimits: { 'user-1': 1 } },
+  });
+  await agent.handle(textEvent('one', { messageId: 'override-1' }));
+  await agent.handle(textEvent('two', { messageId: 'override-2' }));
+  await agent.handle(textEvent('three', { messageId: 'override-3', senderId: 'user-2' }));
+  assert.equal(sent.length, 2);
+});
+
 test('rate-limited collected turns return a visible notice', async () => {
   const { agent } = await setup({ configOverrides: { userRateLimitPerMinute: 1 } });
   await agent.collect(textEvent('one'));

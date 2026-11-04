@@ -201,6 +201,7 @@ Important settings:
 | `search.enabled` / `search.auto` | Tavily on/off; `auto:false` disables model-initiated search. |
 | `tone` | `friendly`, `shy`, `roast`, `roast-hard`, `roast-extreme`. |
 | `typing` | Typing indicator for message chat. |
+| `userRateLimitPerMinute` / `userRateLimits` | Global messages-per-minute per sender, plus `{ "userId": limit }` overrides (0 = exempt). |
 | `logLevel` / `logFormat` / `logColor` | Pretty or JSON logs, with secret redaction. |
 
 `config.discord.example.json` documents the full schema.

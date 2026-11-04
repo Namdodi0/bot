@@ -85,6 +85,9 @@
   "maxMessagesPerReply": 0,
   "maxQueueDepth": 50,
   "userRateLimitPerMinute": 12,
+  "userRateLimits": {
+    "890071093673603112": 2
+  },
   "logLevel": "info",
   "logThinking": true,
   "logFormat": "pretty",
