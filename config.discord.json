@@ -43,7 +43,7 @@
     "seed": null
   },
   "model": {
-    "defaultAlias": "ultra",
+    "defaultAlias": "nim",
     "fallbackAlias": "nim",
     "visionAlias": "nim"
   },
