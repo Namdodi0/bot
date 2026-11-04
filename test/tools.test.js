@@ -307,6 +307,44 @@ test('send_image sends the requested count', async () => {
   assert.match(result.text, /Sent 10 images/);
 });
 
+test('send_image passes the image URL to an injected sink instead of the chat id', async () => {
+  /** @type {Array<{url: string, caption: string, asset: any}>} */
+  const sent = [];
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png'] }) },
+    platform: makeZaloPlatform({
+      config: baseConfig(),
+      stickers: fakeStickers,
+      transport: {
+        sendPhoto: async () => {
+          throw new Error('the transport must not be used when a sink is provided');
+        },
+        sendSticker: async () => ({ ok: true }),
+      },
+    }),
+    validator: { validate: async () => ({ ok: true }) },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+  });
+
+  const result = await tools.run(
+    'send_image',
+    { query: 'cat' },
+    {
+      chatId: 'c1',
+      sendPhoto: async (url, caption, asset) => {
+        sent.push({ url, caption, asset });
+        return { ok: true };
+      },
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(sent.map((item) => item.url), ['https://img.example/a.png']);
+  assert.equal(sent[0].caption, 'cat');
+});
+
 test('send_image on Discord downloads validated bytes instead of passing the URL', async () => {
   /** @type {any} */
   let photoOptions = null;

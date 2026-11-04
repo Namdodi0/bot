@@ -353,11 +353,12 @@ export function createToolRuntime(options) {
       }
       if (remaining() <= 0) break;
       try {
-        const sendPhoto =
-          typeof ctx.sendPhoto === 'function'
-            ? ctx.sendPhoto
-            : (chatId, photoUrl, photoCaption, asset) => transport.sendPhoto(chatId, photoUrl, photoCaption, asset);
-        await sendPhoto(ctx.chatId, url, caption, upload ?? undefined);
+        if (typeof ctx.sendPhoto === 'function') {
+          // Injected sinks collect (url, caption, asset); they add the chat id themselves.
+          await ctx.sendPhoto(url, caption, upload ?? undefined);
+        } else {
+          await transport.sendPhoto(ctx.chatId, url, caption, upload ?? undefined);
+        }
         sent += 1;
         sentUrls.push(url);
         metrics?.inc('tool.sendImage.ok');
