@@ -275,7 +275,7 @@ test('set_reminder tool: reports the per-chat limit and is absent without a stor
   assert.equal(make(null).definitions().some((tool) => tool.function.name === 'set_reminder'), false);
 });
 
-test('send_image sends the requested count', async () => {
+test('send_image caps the requested count at 5', async () => {
   /** @type {string[]} */
   const sent = [];
   const images = Array.from({ length: 12 }, (_, index) => `https://img.example/${index}.png`);
@@ -303,8 +303,9 @@ test('send_image sends the requested count', async () => {
 
   const result = await tools.run('send_image', { query: 'create mod', count: 10 }, { chatId: 'c1' });
   assert.equal(result.ok, true);
-  assert.equal(sent.length, 10);
-  assert.match(result.text, /Sent 10 images/);
+  assert.equal(sent.length, 5);
+  assert.match(result.text, /Sent 5 images/);
+  assert.match(result.text, /limit is 5/);
 });
 
 test('send_image passes the image URL to an injected sink instead of the chat id', async () => {

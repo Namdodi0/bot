@@ -7,6 +7,9 @@ import { htmlToText, youtubeVideoId } from './read-url.js';
 /** @param {number} ms */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Hard cap for a single send_image request. */
+export const MAX_IMAGES_PER_SEND = 5;
+
 /**
  * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, platform: import('../../platforms/contract.js').Platform, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number}} options
  */
@@ -64,7 +67,7 @@ export function createToolRuntime(options) {
         function: {
           name: 'send_image',
           description:
-            'Find and send images into the current conversation. Use when the user asks for pictures. Set count to the number of images requested: it sends one message per image and has no per-request cap.',
+            'Find and send images into the current conversation. Use when the user asks for pictures. Set count to the number of images requested: it sends one message per image, capped at 5 per request.',
           parameters: {
             type: 'object',
             properties: {
@@ -72,8 +75,7 @@ export function createToolRuntime(options) {
               count: {
                 type: 'integer',
                 minimum: 1,
-                description:
-                  'How many images to send (default 1). Pass the number the user asked for; never cap it yourself.',
+                description: 'How many images to send (default 1, max 5).',
               },
               caption: { type: 'string', description: 'Short caption for the image (optional)' },
             },
@@ -286,7 +288,9 @@ export function createToolRuntime(options) {
     }
     const query = String(args?.query ?? '').trim().slice(0, 200);
     if (!query) return { ok: false, text: 'Missing image keywords.' };
-    const requested = Math.max(1, Math.trunc(Number(args?.count ?? args?.number ?? 1)) || 1);
+    const wantedCount = Math.max(1, Math.trunc(Number(args?.count ?? args?.number ?? 1)) || 1);
+    const requested = Math.min(MAX_IMAGES_PER_SEND, wantedCount);
+    const capped = wantedCount > MAX_IMAGES_PER_SEND;
     const caption = String(args?.caption ?? '').trim() || query;
 
     const remaining = () =>
@@ -381,7 +385,9 @@ export function createToolRuntime(options) {
     }
     const text =
       sent >= requested
-        ? `Sent ${sent} image${sent === 1 ? '' : 's'} for "${query}".`
+        ? `Sent ${sent} image${sent === 1 ? '' : 's'} for "${query}"${
+            capped ? ` (limit is ${MAX_IMAGES_PER_SEND} per request)` : ''
+          }.`
         : `Sent ${sent} of ${requested} requested images for "${query}" — the search ran out of valid unique images.`;
     return { ok: true, text, data: { sent, requested, urls: sentUrls } };
   }

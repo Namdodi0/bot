@@ -51,7 +51,7 @@ test('Discord command options cover the native interactions', () => {
   const image = COMMANDS.find((command) => command.name === 'image');
   const count = image?.options?.find((option) => option.name === 'count');
   assert.equal(count?.min_value, 1);
-  assert.equal(count?.max_value, 25);
+  assert.equal(count?.max_value, 5);
   const catchup = COMMANDS.find((command) => command.name === 'catchup');
   const hours = catchup?.options?.find((option) => option.name === 'hours');
   assert.equal(hours?.min_value, 1);

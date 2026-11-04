@@ -4,7 +4,7 @@ export const ZALO_TOOL_GUIDANCE = {
   send_sticker:
     'When the user wants a sticker reaction ("send a sticker", "hello sticker", "cat sticker"...), call the `send_sticker` tool with an emotion keyword or pack name.',
   send_image:
-    'When the user asks for pictures ("send me a cat photo", "show me 5 pictures of ..."), call the `send_image` tool with `query` and `count` set to the number of images requested (default 1). It sends one Zalo message per image; never cap the number yourself — if the user asks for 10, pass 10. Report how many were actually sent.',
+    'When the user asks for pictures ("send me a cat photo", "show me 5 pictures of ..."), call the `send_image` tool with `query` and `count` (default 1, maximum 5). It sends one Zalo message per image. Never request more than 5 at once — if the user asks for 10, send 5 and say the limit is 5. Report how many were actually sent.',
 };
 
 /**
