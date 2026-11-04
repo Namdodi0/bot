@@ -62,6 +62,18 @@ export function createDiscordBot(deps) {
     client.on('error', (error) =>
       logger?.error('discord client error', { error: String(/** @type {any} */ (error)?.message ?? error) }),
     );
+    client.on('shardDisconnect', (event, shardId) =>
+      logger?.warn('discord gateway disconnected', { shardId, code: event?.code, reason: event?.reason }),
+    );
+    client.on('shardReconnecting', (shardId) =>
+      logger?.warn('discord gateway reconnecting', { shardId }),
+    );
+    client.on('shardError', (error, shardId) =>
+      logger?.error('discord gateway shard error', {
+        shardId,
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      }),
+    );
 
     await transport.start();
     if (!config.discord?.allowedChannelIds?.length) {
