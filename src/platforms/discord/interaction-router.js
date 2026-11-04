@@ -31,11 +31,21 @@ export function createInteractionRouter(deps) {
   return async function handleInteraction(interaction) {
     if (!(await allowedInteraction(config, interaction))) {
       if (interaction.isAutocomplete()) {
-        await interaction.respond([]).catch(() => {});
+        await interaction.respond([]).catch((error) => {
+          logger?.debug('discord autocomplete reply failed', {
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+        });
         return;
       }
       const payload = { content: 'This channel is not allowed.', flags: MessageFlags.Ephemeral };
-      if (interaction.isRepliable()) await interaction.reply(payload).catch(() => {});
+      if (interaction.isRepliable()) {
+        await interaction.reply(payload).catch((error) => {
+          logger?.warn('discord blocked-channel reply failed', {
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+        });
+      }
       return;
     }
     try {

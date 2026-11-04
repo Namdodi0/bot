@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { answerButtons, chunkContent, errorEmbed, photoAttachment } from '../ui.js';
+import { answerButtons, chunkContent, errorEmbed, photoBatches, photoPayload } from '../ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
 
@@ -82,14 +82,6 @@ export function createShared(deps) {
     return { chunks, first };
   }
 
-  /** @param {any[]} photos */
-  function photoBatches(photos) {
-    /** @type {any[][]} */
-    const batches = [];
-    for (let index = 0; index < photos.length; index += 10) batches.push(photos.slice(index, index + 10));
-    return batches;
-  }
-
   /**
    * @param {any} interaction
    * @param {{text: string, photos: any[]}} result
@@ -108,13 +100,7 @@ export function createShared(deps) {
   /** @param {any} interaction @param {any[]} photos @param {boolean} priv */
   async function sendPhotos(interaction, photos, priv) {
     for (const group of photoBatches(photos)) {
-      const content = group[0].caption?.slice(0, 2000) || undefined;
-      await interaction.followUp({
-        files: group.map(photoAttachment),
-        content,
-        ...(content ? { allowedMentions: noMentions() } : {}),
-        ...(priv ? ephemeral : {}),
-      });
+      await interaction.followUp({ ...photoPayload(group), ...(priv ? ephemeral : {}) });
     }
   }
 
@@ -131,12 +117,7 @@ export function createShared(deps) {
     else await channel.send(payload);
     for (const chunk of chunks) await channel.send({ content: chunk, allowedMentions: noMentions() });
     for (const group of photoBatches(result.photos)) {
-      const content = group[0].caption?.slice(0, 2000) || undefined;
-      await channel.send({
-        files: group.map(photoAttachment),
-        content,
-        ...(content ? { allowedMentions: noMentions() } : {}),
-      });
+      await channel.send({ ...photoPayload(group), allowedMentions: noMentions() });
     }
   }
 

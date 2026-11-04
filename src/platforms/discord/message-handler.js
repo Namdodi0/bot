@@ -1,5 +1,5 @@
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
-import { chunkContent, createPreviewer, photoAttachment } from './ui.js';
+import { chunkContent, createPreviewer, photoBatches, photoPayload } from './ui.js';
 
 // Cap concurrent streaming turns so a burst of mentions cannot open hundreds of preview
 // edits at once. agent.stream() already serializes turns per chat; this is global.
@@ -92,8 +92,23 @@ export function createMessageHandler(deps) {
       const first = chunks.shift();
       logger?.debug('discord reply ready', { chatId: event.chatId, photos: result.photos.length, chunks: chunks.length });
       if (placeholder) {
-        if (!first && !result.photos.length) await placeholder.delete().catch(() => {});
-        else await placeholder.edit({ content: first || 'Here are the images.', allowedMentions: { parse: [] } }).catch(() => {});
+        if (!first && !result.photos.length) {
+          await placeholder.delete().catch((error) => {
+            logger?.debug('discord placeholder delete failed', {
+              chatId: event.chatId,
+              error: String(/** @type {any} */ (error)?.message ?? error),
+            });
+          });
+        } else {
+          await placeholder
+            .edit({ content: first || 'Here are the images.', allowedMentions: { parse: [] } })
+            .catch((error) => {
+              logger?.debug('discord placeholder edit failed', {
+                chatId: event.chatId,
+                error: String(/** @type {any} */ (error)?.message ?? error),
+              });
+            });
+        }
       } else if (first) {
         placeholder = await message.reply({ content: first, allowedMentions: { parse: [] } });
       }
@@ -105,14 +120,9 @@ export function createMessageHandler(deps) {
           });
         });
       }
-      for (let index = 0; index < result.photos.length; index += 10) {
-        const group = result.photos.slice(index, index + 10);
+      for (const group of photoBatches(result.photos)) {
         try {
-          await message.channel.send({
-            files: group.map(photoAttachment),
-            content: group[0].caption?.slice(0, 2000) || undefined,
-            allowedMentions: { parse: [] },
-          });
+          await message.channel.send({ ...photoPayload(group), allowedMentions: { parse: [] } });
         } catch (error) {
           logger?.warn('discord photo send failed', {
             chatId: event.chatId,

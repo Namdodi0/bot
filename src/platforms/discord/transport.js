@@ -143,7 +143,12 @@ export function createDiscordTransport(options) {
     const ping = () => {
       if (stopped) return;
       const channel = /** @type {any} */ (client.channels.cache.get(id));
-      channel?.sendTyping?.().catch(() => {});
+      channel?.sendTyping?.().catch((error) => {
+        logger?.debug('discord typing indicator failed', {
+          chatId,
+          error: String(/** @type {any} */ (error)?.message ?? error),
+        });
+      });
     };
     ping();
     const timer = setInterval(ping, TYPING_REFRESH_MS);

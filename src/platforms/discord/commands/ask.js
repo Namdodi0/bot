@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { MessageFlags } from 'discord.js';
 import { eventFromInteraction } from '../events.js';
-import { answerButtons, askModal, chunkContent, createPreviewer, photoAttachment } from '../ui.js';
+import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
 
@@ -13,6 +13,7 @@ const MAX_VISION_BYTES = 8 * 1024 * 1024;
 export function createAskHandlers(shared) {
   const {
     client,
+    logger,
     runtime,
     chat,
     tokens,
@@ -225,7 +226,11 @@ export function createAskHandlers(shared) {
     }
     if (action === 'delete') {
       await interaction.deferUpdate();
-      await interaction.message.delete().catch(() => {});
+      await interaction.message.delete().catch((error) => {
+        logger?.debug('discord answer delete failed', {
+          error: String(/** @type {any} */ (error)?.message ?? error),
+        });
+      });
       return;
     }
     const prompt = action === 'continue' ? 'Continue from where you left off.' : payload.prompt;
@@ -270,15 +275,8 @@ export function createAskHandlers(shared) {
         await interaction.followUp({ content: chunk, allowedMentions: { parse: [] }, ...followFlags });
       }
     }
-    for (let index = 0; index < result.photos.length; index += 10) {
-      const group = result.photos.slice(index, index + 10);
-      const content = group[0].caption?.slice(0, 2000) || undefined;
-      await interaction.followUp({
-        files: group.map(photoAttachment),
-        content,
-        ...(content ? { allowedMentions: { parse: [] } } : {}),
-        ...followFlags,
-      });
+    for (const group of photoBatches(result.photos)) {
+      await interaction.followUp({ ...photoPayload(group), ...followFlags });
     }
   }
 

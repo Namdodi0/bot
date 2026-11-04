@@ -6,7 +6,7 @@ import { COLORS, errorEmbed, modelSelect, REASONING_MODES, settingsEmbed, settin
  * @param {ReturnType<typeof import('./shared.js').createShared>} shared
  */
 export function createSettingsHandlers(shared) {
-  const { config, runtime, chat, isAdmin, replyEphemeral } = shared;
+  const { config, logger, runtime, chat, isAdmin, replyEphemeral } = shared;
 
   /** @param {any} record */
   function settingsPayload(record) {
@@ -60,14 +60,24 @@ export function createSettingsHandlers(shared) {
 
   /** @param {any} interaction */
   async function handleAutocomplete(interaction) {
-    if (interaction.commandName !== 'model') return interaction.respond([]).catch(() => {});
+    if (interaction.commandName !== 'model') {
+      return interaction.respond([]).catch((error) => {
+        logger?.debug('discord autocomplete reply failed', {
+          error: String(/** @type {any} */ (error)?.message ?? error),
+        });
+      });
+    }
     const focused = String(interaction.options.getFocused() ?? '').toLowerCase();
     const matches = chat
       .listModels()
       .filter((item) => `${item.alias} ${item.label} ${item.model}`.toLowerCase().includes(focused))
       .slice(0, 25)
       .map((item) => ({ name: `${item.alias} — ${item.label}`.slice(0, 100), value: item.alias }));
-    return interaction.respond(matches).catch(() => {});
+    return interaction.respond(matches).catch((error) => {
+      logger?.debug('discord autocomplete reply failed', {
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      });
+    });
   }
 
   /** @param {any} interaction */

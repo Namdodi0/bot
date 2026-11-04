@@ -180,6 +180,24 @@ export function photoAttachment(photo) {
   });
 }
 
+/** @param {any[]} photos */
+export function photoBatches(photos) {
+  /** @type {any[][]} */
+  const batches = [];
+  for (let index = 0; index < photos.length; index += 10) batches.push(photos.slice(index, index + 10));
+  return batches;
+}
+
+/** @param {any[]} group */
+export function photoPayload(group) {
+  const content = group[0]?.caption?.slice(0, 2000) || undefined;
+  return {
+    files: group.map(photoAttachment),
+    content,
+    ...(content ? { allowedMentions: { parse: [] } } : {}),
+  };
+}
+
 /**
  * @param {string} title
  * @param {string} text
