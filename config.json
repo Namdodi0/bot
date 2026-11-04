@@ -93,7 +93,7 @@
     "ids": ""
   },
   "tone": "shy",
-  "typing": true,
+  "typing": false,
   "typingIntervalMs": 4000,
   "progressive": "auto",
   "progressiveAfterMs": 3000,
