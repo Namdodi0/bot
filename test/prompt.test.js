@@ -24,6 +24,12 @@ test('zalo prompts use Zalo formatting and the Zalo command list', () => {
   assert.equal(text.includes('slash commands'), false);
 });
 
+test('the prompt asks for short replies', () => {
+  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /Keep replies short/);
+});
+
 test('the owner-priority and Vũ Thế Long yandere rules are present', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
