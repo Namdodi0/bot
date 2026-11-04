@@ -1,13 +1,7 @@
 import { ConfigError, asBool, asString, asStringList, section } from '../../core/config-helpers.js';
+import { DISCORD_SECTION_KEYS } from '../../config-schema.js';
 
-/** Known keys of the `discord` section, reported by the root typo check. */
-export const DISCORD_SECTION_KEYS = new Set([
-  'guildId',
-  'allowedChannelIds',
-  'respondToAllChannelIds',
-  'stickers',
-  'presence',
-]);
+export { DISCORD_SECTION_KEYS };
 
 const PRESENCE_STATUSES = new Set(['online', 'idle', 'dnd', 'invisible']);
 const ACTIVITY_TYPES = new Set(['PLAYING', 'STREAMING', 'LISTENING', 'WATCHING', 'COMPETING']);

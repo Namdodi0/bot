@@ -13,13 +13,9 @@ import {
   asString,
   section,
 } from './core/config-helpers.js';
-import { DISCORD_SECTION_KEYS, parseDiscordConfig } from './platforms/discord/config.js';
-import {
-  STICKER_SECTION_KEYS,
-  WEBHOOK_SECTION_KEYS,
-  ZALO_SECTION_KEYS,
-  parseZaloConfig,
-} from './platforms/zalo/config.js';
+import { KNOWN_NESTED_SECTION_KEYS, KNOWN_SECTION_KEYS, KNOWN_TOP_LEVEL_KEYS } from './config-schema.js';
+import { parseDiscordConfig } from './platforms/discord/config.js';
+import { parseZaloConfig } from './platforms/zalo/config.js';
 import { VERSION } from './core/version.js';
 
 /** @typedef {'polling'|'webhook'} TransportMode */
@@ -160,95 +156,9 @@ export function collectSecrets(config) {
 }
 
 /**
- * Settings that config.js reads, used to report typos (`allowChatIds` instead of
- * `allowedChatIds`) instead of silently serving every chat. Keep in sync with loadConfig.
- */
-const KNOWN_TOP_LEVEL_KEYS = new Set([
-  'platform',
-  'mode',
-  'dataDir',
-  'allowedChatIds',
-  'adminIds',
-  'tone',
-  'typing',
-  'typingIntervalMs',
-  'progressive',
-  'progressiveAfterMs',
-  'maxMessagesPerReply',
-  'maxQueueDepth',
-  'userRateLimitPerMinute',
-  'userRateLimits',
-  'responseTimeoutMs',
-  'logLevel',
-  'logThinking',
-  'logFormat',
-  'logColor',
-  'opsPort',
-]);
-
-/** @type {Record<string, Set<string>>} */
-const KNOWN_SECTION_KEYS = {
-  zalo: ZALO_SECTION_KEYS,
-  discord: DISCORD_SECTION_KEYS,
-  webhook: WEBHOOK_SECTION_KEYS,
-  nim: new Set([
-    'baseUrl',
-    'model',
-    'ultraModel',
-    'fallbackModel',
-    'temperature',
-    'timeoutMs',
-    'topP',
-    'topK',
-    'minP',
-    'repetitionPenalty',
-    'frequencyPenalty',
-    'presencePenalty',
-    'seed',
-  ]),
-  deepseek: new Set([
-    'baseUrl',
-    'model',
-    'proModel',
-    'temperature',
-    'timeoutMs',
-    'topP',
-    'frequencyPenalty',
-    'presencePenalty',
-    'seed',
-  ]),
-  model: new Set(['defaultAlias', 'fallbackAlias', 'visionAlias']),
-  ai: new Set(['reasoning', 'maxTokens', 'maxToolRounds']),
-  context: new Set([
-    'maxTokens',
-    'maxMessages',
-    'maxCharsPerMessage',
-    'ttlHours',
-    'summary',
-    'modelWindow',
-    'compactThreshold',
-    'keepRecent',
-    'summaryMaxChars',
-    'toolResultKeepChars',
-  ]),
-  search: new Set(['enabled', 'auto', 'baseUrl', 'depth', 'maxResults', 'country', 'cacheTtlMs']),
-  image: new Set(['enabled']),
-  sticker: STICKER_SECTION_KEYS,
-};
-
-/**
- * Nested sections (second level) that have their own known keys, keyed by dotted path.
- * A typo such as `discord.presence.statuss` would otherwise pass silently.
- * @type {Record<string, Set<string>>}
- */
-const KNOWN_NESTED_SECTION_KEYS = {
-  'discord.stickers': new Set(['enabled', 'ids']),
-  'discord.presence': new Set(['status', 'type', 'text', 'url']),
-};
-
-/**
  * Dotted names of settings that config.js never reads. Reported at startup (never fatal):
  * a typo like `allowChatIds` would otherwise silently leave `allowedChatIds` empty.
+ * The key sets live in config-schema.js so parsers, examples and this check stay in sync.
  * @param {Record<string, any>} root
  */
 export function collectUnknownConfigKeys(root) {

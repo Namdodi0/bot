@@ -3,12 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { ConfigError, asInt, asString, asStringList, section } from '../../core/config-helpers.js';
+import { STICKER_SECTION_KEYS, WEBHOOK_SECTION_KEYS, ZALO_SECTION_KEYS } from '../../config-schema.js';
 import { parseStickerIds } from './stickers.js';
 
-/** Known keys of the Zalo-specific sections, reported by the root typo check. */
-export const ZALO_SECTION_KEYS = new Set(['botId', 'baseUrl', 'parseMode']);
-export const WEBHOOK_SECTION_KEYS = new Set(['port', 'host', 'path', 'secret', 'publicUrl']);
-export const STICKER_SECTION_KEYS = new Set(['enabled', 'echo', 'ids']);
+export { STICKER_SECTION_KEYS, WEBHOOK_SECTION_KEYS, ZALO_SECTION_KEYS };
 
 // Repo root derived from this file (src/platforms/zalo/..), used only when the caller
 // does not pass an already-resolved dataDir.
