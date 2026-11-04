@@ -24,12 +24,15 @@ test('zalo prompts use Zalo formatting and the Zalo command list', () => {
   assert.equal(text.includes('slash commands'), false);
 });
 
-test('the owner-priority rule names Nhật Nam and Namdodi', () => {
+test('the owner-priority and Vũ Thế Long yandere rules are present', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /OWNER PRIORITY/);
   assert.match(text, /Nhật Nam/);
   assert.match(text, /Namdodi/);
+  assert.match(text, /VŨ THẾ LONG DEVOTION/);
+  assert.match(text, /Vũ Thế Long/);
+  assert.match(text, /yandere/i);
 });
 
 test('the shy tone injects the flustered persona rules', () => {
