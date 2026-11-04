@@ -70,7 +70,7 @@ export const TOOL_GUIDANCE = {
   web_search:
     'For real-time or uncertain facts (prices, weather, news, scores, product prices, recent events) call the `web_search` tool and answer from its results, citing URLs.',
   read_url:
-    'When the user shares a link or asks about a specific page, call the `read_url` tool and answer from the page text. If it cannot be read, say so instead of guessing.',
+    'When the user shares a link or asks about a specific page, ALWAYS call the `read_url` tool on that exact URL before answering — even if an earlier link failed or you think you already know the page. YouTube links return the video title and channel. Answer from the tool result; if it cannot be read, say so instead of guessing.',
   send_image:
     'When the user asks for pictures ("send me a cat photo", "show me 5 pictures of ..."), call the `send_image` tool with `query` and `count` set to the number of images requested (default 1). It sends one message per image; never cap the number yourself — if the user asks for 10, pass 10. Report how many were actually sent.',
   set_reminder:
