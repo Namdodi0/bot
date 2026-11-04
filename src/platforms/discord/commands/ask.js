@@ -202,7 +202,7 @@ export function createAskHandlers(shared) {
     },
 
     async 'Explain message'(interaction) {
-      await contextAsk(interaction, 'Explain this Discord message clearly and concisely:');
+      await contextAsk(interaction, 'Explain this Discord message clearly:');
     },
 
     async 'Summarize message'(interaction) {
