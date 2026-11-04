@@ -113,6 +113,17 @@ copy .env.example .env
    The log shows `discord commands registered ... count=16` (14 slash commands + 2 message
    context menus).
 
+6. Optional — run both bots in one process:
+
+   ```powershell
+   npm run start:both     # node src/both.js
+   ```
+
+   Combined mode loads `config.json` + `config.discord.json`, shares `.env`, keeps separate
+   data dirs (`data/` and `data/discord/`) and shuts both down on one signal. A fatal error
+   still takes both bots down with it; two processes remain the safer default on a host that
+   supports them.
+
 The bot also answers when it is **@mentioned** or someone **replies** to one of its messages.
 DMs work as normal chat. **Typed text commands are ignored** — use the slash commands.
 With `guildId` set, slash commands are server-scoped and do not appear in DMs; DM text chat
@@ -338,7 +349,8 @@ npm run typecheck # tsc checkJs over src/ and scripts/
 
 ## Legacy Zalo process
 
-The Zalo bot still runs separately (`npm start`, `config.json`, `data/`). It keeps its own
+The Zalo bot still runs separately (`npm start`, `config.json`, `data/`), or together with
+Discord via `npm run start:both`. It keeps its own
 command surface (`/help`, `/status`, `/id`, `/reset`, `/compact`, `/summary`, `/search`,
 `/image`, `/sticker`, `/remind`, `/model`, `/tone`, `/think`, `/split`, `/ping`), polling or
 webhook mode, stickers and Zalo markdown. Zalo group chat is in beta and only delivers

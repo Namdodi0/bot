@@ -82,7 +82,7 @@ export function createBoot(input) {
 /**
  * Shared bot engine: context store, models, tools, commands, agent and lifecycle.
  * The entry point provides one platform (Zalo or Discord) and starts its transport.
- * @param {{config: any, platform: import('../platforms/contract.js').Platform, boot: ReturnType<typeof createBoot>}} input
+ * @param {{config: any, platform: import('../platforms/contract.js').Platform, boot: ReturnType<typeof createBoot>, manageSignals?: boolean}} input
  */
 export async function createRuntime(input) {
   const config = input.config;
@@ -311,20 +311,23 @@ export async function createRuntime(input) {
     });
   }
 
-  process.on('SIGINT', () => {
-    shutdown('SIGINT').then(() => process.exit(0));
-  });
-  process.on('SIGTERM', () => {
-    shutdown('SIGTERM').then(() => process.exit(0));
-  });
-  process.on('unhandledRejection', (reason) => {
-    logger.error('unhandled rejection', { error: reason });
-  });
-  process.on('uncaughtException', (error) => {
-    logger.error('uncaught exception', { error });
-    // The process is in an unknown state: stop taking work and exit instead of limping on.
-    void shutdown('uncaughtException').finally(() => process.exit(1));
-  });
+  // A combined entry (src/both.js) owns process signals and shuts both runtimes down once.
+  if (input.manageSignals !== false) {
+    process.on('SIGINT', () => {
+      shutdown('SIGINT').then(() => process.exit(0));
+    });
+    process.on('SIGTERM', () => {
+      shutdown('SIGTERM').then(() => process.exit(0));
+    });
+    process.on('unhandledRejection', (reason) => {
+      logger.error('unhandled rejection', { error: reason });
+    });
+    process.on('uncaughtException', (error) => {
+      logger.error('uncaught exception', { error });
+      // The process is in an unknown state: stop taking work and exit instead of limping on.
+      void shutdown('uncaughtException').finally(() => process.exit(1));
+    });
+  }
 
   const pruneTimer = setInterval(() => {
     store.prune().catch((error) => logger.warn('prune failed', { error }));

@@ -17,7 +17,8 @@
     "test": "node --test",
     "typecheck": "tsc -p tsconfig.json",
     "start:discord": "node src/discord.js",
-    "dev:discord": "node --watch src/discord.js"
+    "dev:discord": "node --watch src/discord.js",
+    "start:both": "node src/both.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
