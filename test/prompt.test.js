@@ -24,6 +24,12 @@ test('zalo prompts use Zalo formatting and the Zalo command list', () => {
   assert.equal(text.includes('slash commands'), false);
 });
 
+test('the prompt asks for concise replies', () => {
+  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'roast-extreme' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /Keep replies concise/);
+});
+
 test('the owner-priority rule names Nhật Nam and Namdodi', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
