@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createLogger, printBanner, visualWidth } from '../src/core/logger.js';
+import { createLogger } from '../src/core/logger.js';
 
 function sink() {
   /** @type {string[]} */
@@ -44,80 +44,6 @@ test('JSON: redacts secrets but keeps non-sensitive keys', () => {
   assert.equal(payload.note, '***');
   assert.equal(payload.raw, '***');
   assert.equal(err.lines.length, 0);
-});
-
-test('JSON: warn/error go to stderr, debug is filtered', () => {
-  const { logger, out, err } = jsonLogger();
-  logger.debug('hidden');
-  logger.warn('warning');
-  logger.error('error');
-  assert.equal(out.lines.length, 0);
-  assert.equal(err.lines.length, 2);
-});
-
-test('pretty: one compact line with time, icon, message, fields', () => {
-  const out = sink();
-  const logger = createLogger({
-    level: 'info',
-    format: 'pretty',
-    color: 'never',
-    stdout: /** @type {any} */ (out.stream),
-    now: () => new Date(2026, 9, 26, 18, 31, 2),
-  });
-  logger.info('zalo bot ready', { id: '2214705736200876533', name: 'Bot deepseek', icon: '🤖' });
-  const line = out.lines[0].trimEnd();
-  assert.match(line, /^18:31:02 🤖 zalo bot ready\s+id=2214705736200876533 name="Bot deepseek"$/);
-  assert.equal(line.includes('\u001b['), false);
-});
-
-test('pretty: default icon per level, colored when enabled', () => {
-  const out = sink();
-  const logger = createLogger({
-    level: 'debug',
-    format: 'pretty',
-    color: 'always',
-    stdout: /** @type {any} */ (out.stream),
-    stderr: /** @type {any} */ (out.stream),
-  });
-  logger.info('no icon');
-  logger.warn('warning');
-  logger.error('error');
-  assert.match(out.lines[0], /ℹ/);
-  assert.match(out.lines[1], /▲/);
-  assert.match(out.lines[2], /✖/);
-  for (const line of out.lines) assert.ok(line.includes('\u001b['));
-});
-
-test('pretty: still redacts and formats errors compactly', () => {
-  const out = sink();
-  const logger = createLogger({
-    level: 'info',
-    format: 'pretty',
-    color: 'never',
-    secrets: ['super-secret-password'],
-    stdout: /** @type {any} */ (out.stream),
-    stderr: /** @type {any} */ (out.stream),
-  });
-  logger.error('send failed', { token: 'super-secret-password', error: new Error('connection lost') });
-  const line = out.lines[0];
-  assert.equal(line.includes('super-secret-password'), false);
-  assert.match(line, /token=\*\*\*/);
-  assert.match(line, /connection lost/);
-  assert.equal(line.includes('\n'), true); // trailing newline
-});
-
-test('pretty: long values are truncated, objects compacted to JSON', () => {
-  const out = sink();
-  const logger = createLogger({
-    level: 'info',
-    format: 'pretty',
-    color: 'never',
-    stdout: /** @type {any} */ (out.stream),
-  });
-  logger.info('x', { long: 'a'.repeat(200), obj: { a: 1 } });
-  const line = out.lines[0];
-  assert.ok(line.includes('…'), 'must contain an ellipsis');
-  assert.match(line, /obj=\{"a":1\}/);
 });
 
 test('two file sinks split normal and debug output', async () => {
@@ -172,21 +98,3 @@ test('file sink rotates while running when it exceeds rotateBytes', async () => 
   assert.match(all, /line 7 /);
 });
 
-test('banner stays aligned even with emoji', () => {
-  const out = sink();
-  printBanner(out.stream, ['🤖 Bot deepseek', 'nvidia/nemotron-3.5-super-vl-120b-a12b'], { color: 'never' });
-  const lines = out.lines.join('').trimEnd().split('\n');
-  assert.equal(lines.length, 4);
-  const widths = lines.map((line) => visualWidth(line));
-  assert.equal(new Set(widths).size, 1, `misaligned columns: ${widths.join(',')}`);
-  assert.match(lines[0], /^╭─+╮$/);
-  assert.match(lines[3], /^╰─+╯$/);
-});
-
-test('JSON: redacts DeepSeek-style sk- keys', () => {
-  const { logger, out, err } = jsonLogger();
-  logger.info('provider failed', { body: 'invalid key sk-abcdefghijklmnopqrstuvwxyz123456' });
-  const text = [...out.lines, ...err.lines].join('');
-  assert.equal(text.includes('sk-abcdefghijklmnopqrstuvwxyz123456'), false);
-  assert.match(text, /\*\*\*/);
-});

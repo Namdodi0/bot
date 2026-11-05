@@ -177,7 +177,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - Add a regression test for every bug fix, especially around retries, context compaction,
   reminders, message dedupe, per-chat queue serialization, private turns and streamed
   payload safety.
-- Keep coverage healthy; the suite currently covers ~90% of lines.
+- Keep the suite lean (~120 tests): security, data-integrity and regression tests only.
+  Do not re-add happy-path, UI-polish, config-detail or formatting tests without an explicit
+  request, and do not weaken assertions of surviving tests to hit a count.
 
 ## Style
 

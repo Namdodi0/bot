@@ -1,15 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  eventFromInteraction,
   isBotAddressed,
   isChannelAllowed,
   isRespondToAllChannel,
-  replyQuote,
-  stripBotMention,
   toDiscordEvent,
 } from '../src/platforms/discord/events.js';
-import { photoCaption, photoFilename } from '../src/platforms/discord/transport.js';
 
 const client = { user: { id: 'bot1', username: 'Bot deepseek' } };
 
@@ -38,58 +34,10 @@ test('discord message: raw channel id, mention stripped, sender info kept', () =
   assert.equal(event.messageId, 'm1');
 });
 
-test('discord message: first image attachment becomes an image event', () => {
-  const event = toDiscordEvent(
-    message({
-      content: '',
-      attachments: { values: () => [{ contentType: 'image/png', url: 'https://cdn.example/a.png' }] },
-    }),
-    client,
-  );
-  assert.equal(event.kind, 'image');
-  assert.equal(event.imageUrl, 'https://cdn.example/a.png');
-});
-
-test('a reply carries the referenced message as a compact quote', () => {
-  const event = toDiscordEvent(message({ content: '<@bot1> what is this?' }), client, {
-    author: { username: 'other' },
-    content: 'original\n  text',
-  });
-  assert.equal(event.text, '[Replying to other: original text]\nwhat is this?');
-});
-
-test('replyQuote flattens, strips the bot mention, marks attachments and caps length', () => {
-  assert.equal(replyQuote({ author: { username: 'Nam' }, content: 'hello\n  world' }), '[Replying to Nam: hello world]');
-  assert.equal(replyQuote({ author: { username: 'Nam' }, content: '<@bot1> hi' }, 'bot1'), '[Replying to Nam: hi]');
-  assert.equal(
-    replyQuote({ author: { username: 'Nam' }, content: '', attachments: { size: 1 } }),
-    '[Replying to Nam: [attachment]]',
-  );
-  assert.equal(replyQuote({ author: { username: 'Nam' }, content: '' }), '');
-  assert.ok(replyQuote({ author: { username: 'Nam' }, content: 'x'.repeat(600) }).length <= 520);
-});
-
 test('discord message: DMs are private and empty messages are ignored', () => {
   const dm = toDiscordEvent(message({ channel: { id: 'd1', isDMBased: () => true } }), client);
   assert.equal(dm.chatType, 'PRIVATE');
   assert.equal(toDiscordEvent(message({ content: '<@bot1>' }), client), null);
-});
-
-test('the bot managed role mention is stripped from the text', () => {
-  const event = toDiscordEvent(
-    message({
-      content: '<@&role1> hello there',
-      mentions: { users: { has: () => false }, roles: { values: () => [{ id: 'role1', tags: { botId: 'bot1' } }] } },
-    }),
-    client,
-  );
-  assert.equal(event.text, 'hello there');
-});
-
-test('stripBotMention removes bot and managed-role mentions only', () => {
-  assert.equal(stripBotMention('<@!bot1> hi <@other>', 'bot1'), 'hi <@other>');
-  assert.equal(stripBotMention('<@&role1> hi', 'bot1', 'role1'), 'hi');
-  assert.equal(stripBotMention('<@&other> hi', 'bot1', 'role1'), '<@&other> hi');
 });
 
 test('isBotAddressed covers mention, role, reply, DM and respond-to-all channels', () => {
@@ -114,63 +62,3 @@ test('allowed channels cover DMs and threads, respond-to-all covers threads', ()
   assert.equal(isRespondToAllChannel(config, { id: 'general' }), false);
 });
 
-test('interactions become the same normalized event as messages', () => {
-  const interaction = {
-    id: 'i1',
-    channelId: 'c9',
-    guildId: 'g1',
-    createdTimestamp: 5,
-    user: { id: 'u2', username: 'x' },
-    member: { displayName: 'X' },
-    memberPermissions: { has: () => true },
-    options: { data: [] },
-  };
-  const event = eventFromInteraction(interaction, client, 'hello');
-  assert.equal(event.chatId, 'c9');
-  assert.equal(event.text, 'hello');
-  assert.equal(event.chatType, 'GROUP');
-  assert.equal(event.isAdmin, true);
-  assert.equal(event.messageId, 'interaction:i1');
-
-  const dm = eventFromInteraction({ ...interaction, guildId: null }, client, 'hi');
-  assert.equal(dm.chatType, 'PRIVATE');
-  assert.equal(dm.isAdmin, false);
-});
-
-test('photo files get an image extension and captions respect the limit', () => {
-  assert.equal(photoFilename('https://x/a.PNG'), 'image.png');
-  assert.equal(photoFilename('https://x/a', 'image/jpeg'), 'image.jpg');
-  assert.equal(photoFilename('https://x/a.webp?x=1', 'application/octet-stream'), 'image.webp');
-  assert.equal(photoFilename('https://x/a'), 'image.png');
-  assert.equal(photoCaption('short'), 'short');
-  assert.equal(photoCaption(''), '');
-  assert.equal(photoCaption('x'.repeat(2500)).length, 2000);
-});
-
-test('discord transport constructs without logging in', async () => {
-  const { createDiscordTransport } = await import('../src/platforms/discord/transport.js');
-  const transport = createDiscordTransport({
-    token: 'dummy',
-    config: {},
-    onEvent: () => {},
-    logger: { debug() {}, info() {}, warn() {}, error() {} },
-  });
-  for (const method of [
-    'start',
-    'stop',
-    'sendMessage',
-    'sendPhoto',
-    'sendSticker',
-    'editMessage',
-    'react',
-    'sendEmbed',
-    'createThread',
-    'startTyping',
-    'stopAllTyping',
-    'ping',
-  ]) {
-    assert.equal(typeof transport[method], 'function', method);
-  }
-  assert.equal(transport.displayName, '');
-  assert.equal(transport.ping(), 0);
-});

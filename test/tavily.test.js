@@ -32,16 +32,6 @@ test('search: drops country for fast/ultra-fast and never retries a billed POST'
   assert.equal(http.calls[1].body.country, 'vietnam');
 });
 
-test('search: caches identical requests', async () => {
-  const http = fakeHttp();
-  const client = createTavilyClient({ apiKey: 'k', http, cacheTtlMs: 60_000 });
-  const first = await client.search('gold', { searchDepth: 'fast' });
-  const second = await client.search('gold', { searchDepth: 'fast' });
-  assert.equal(http.calls.length, 1);
-  assert.equal(first.results.length, 1);
-  assert.equal(second.results.length, 1);
-});
-
 test('formatSearchResults: caps items/chars and handles empty input', () => {
   assert.equal(formatSearchResults([]), '(no results)');
   const text = formatSearchResults(

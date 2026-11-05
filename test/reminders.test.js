@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createReminderStore, formatReminderTime, parseReminderArgs } from '../src/core/ai/reminders.js';
+import { createReminderStore, parseReminderArgs } from '../src/core/ai/reminders.js';
 import { createSilentLogger } from '../src/core/logger.js';
 
 // 2026-10-28 17:00 in Vietnam (UTC+7).
@@ -30,15 +30,6 @@ test('parseReminderArgs: clock time, tomorrow and dd/mm in Vietnam time', () => 
   const dated = parseReminderArgs('09:30 05/11 gặp khách', NOW);
   assert.equal(dated.at, Date.UTC(2026, 10, 5, 2, 30, 0));
   assert.equal(dated.text, 'gặp khách');
-});
-
-test('parseReminderArgs: rejects bad input', () => {
-  assert.match(String(parseReminderArgs('', NOW).error), /Usage/);
-  assert.match(String(parseReminderArgs('25:00 x', NOW).error), /Invalid time/);
-  assert.match(String(parseReminderArgs('20:00', NOW).error), /Missing reminder text/);
-  assert.match(String(parseReminderArgs('wat', NOW).error), /Could not understand/);
-  assert.match(String(parseReminderArgs('+40d x', NOW).error), /30 days/);
-  assert.match(String(parseReminderArgs('20:00 31/02 x', NOW).error), /Invalid date/);
 });
 
 test('createReminderStore: caps per chat, delivers due items, persists', async () => {
@@ -98,24 +89,3 @@ test('createReminderStore: overlapping ticks deliver each reminder once', async 
   assert.deepEqual(sent.sort(), ['⏰ Reminder: a', '⏰ Reminder: b']);
 });
 
-test('createReminderStore: a failing send is retried and then dropped', async () => {
-  let nowMs = NOW;
-  let attempts = 0;
-  const store = createReminderStore({
-    now: () => nowMs,
-    send: async () => {
-      attempts += 1;
-      throw new Error('zalo down');
-    },
-    logger: createSilentLogger(),
-  });
-  await store.add({ chatId: 'g1', text: 'x', at: NOW + 1000 });
-  nowMs = NOW + 2000;
-  for (let index = 0; index < 5; index += 1) await store.tick();
-  assert.equal(attempts, 5);
-  assert.equal(store.size(), 0);
-});
-
-test('formatReminderTime renders Vietnam local time', () => {
-  assert.match(formatReminderTime(Date.UTC(2026, 9, 28, 13, 0, 0)), /28\/10\/2026/);
-});

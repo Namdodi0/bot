@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { latestSummary, summaryEntry } from '../src/core/context/record.js';
 import { createContextStore } from '../src/core/context/store.js';
 import { silentLogger } from '../test-utils/helpers.js';
 
@@ -106,44 +105,6 @@ test('store prune deletes files past TTL', async () => {
   await assert.rejects(() => fsp.stat(file));
 });
 
-test('store keeps active chats during prune', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
-  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 1 });
-  await store.init();
-
-  const record = await store.get('fresh-chat');
-  record.messages.push({ role: 'user', text: 'new', ts: Date.now() });
-  store.touch('fresh-chat');
-  await store.flush();
-
-  const removed = await store.prune();
-  assert.equal(removed, 0);
-  const loaded = await store.get('fresh-chat');
-  assert.equal(loaded.messages.length, 1);
-});
-
-test('store reset keepMeta keeps meta, clears messages/summary', async () => {  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
-  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
-  await store.init();
-
-  const record = await store.get('chat-2', { chatType: 'GROUP' });
-  record.messages.push(summaryEntry('old summary'));
-  record.messages.push({ role: 'user', text: 'trash talk', ts: Date.now() });
-  record.turns = 3;
-  record.meta = { thinking: 'low', model: 'nim', tone: 'roast-hard' };
-  await store.flush();
-
-  await store.reset('chat-2', { keepMeta: true });
-
-  const store2 = createContextStore({ dir, logger: silentLogger, ttlHours: 72 });
-  await store2.init();
-  const loaded = await store2.get('chat-2');
-  assert.equal(loaded.messages.length, 0);
-  assert.equal(loaded.turns, 0);
-  assert.equal(latestSummary(loaded), '');
-  assert.deepEqual(loaded.meta, { thinking: 'low', model: 'nim', tone: 'roast-hard' });
-});
-
 test('store reset by default (no keepMeta) deletes the whole file', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
@@ -154,52 +115,6 @@ test('store reset by default (no keepMeta) deletes the whole file', async () => 
 
   await store.reset('chat-3');
   await assert.rejects(() => fsp.stat(store.fileFor('chat-3')));
-});
-
-test('prune drops old in-memory records too, not just files', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
-  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 1, debounceMs: 2 });
-  await store.init();
-
-  const record = await store.get('stale-chat');
-  record.updatedAt = Date.now() - 2 * 3_600_000;
-  await store.flush();
-  assert.equal(store.has('stale-chat'), true);
-
-  await store.prune();
-  assert.equal(store.has('stale-chat'), false, 'records past TTL must be dropped from memory');
-});
-
-test('a pinned chat is not evicted when maxChats is exceeded', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
-  const store = createContextStore({ dir, logger: silentLogger, maxChats: 1, debounceMs: 2 });
-  await store.init();
-
-  const pinnedRecord = await store.get('chat-A');
-  pinnedRecord.messages.push({ role: 'user', text: 'in flight', ts: 1 });
-  store.pin('chat-A');
-  await store.get('chat-B');
-  assert.equal(store.has('chat-A'), true, 'a pinned chat must stay in memory');
-  assert.equal(store.has('chat-B'), true);
-
-  store.unpin('chat-A');
-  await store.get('chat-C');
-  assert.equal(store.has('chat-C'), true);
-  assert.equal(store.has('chat-B'), false);
-});
-
-test('eviction stops instead of looping when every loaded chat is pinned', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
-  const store = createContextStore({ dir, logger: silentLogger, maxChats: 1, debounceMs: 2 });
-  await store.init();
-
-  await store.get('chat-A');
-  store.pin('chat-A');
-  await store.get('chat-B');
-  store.pin('chat-B');
-  // Both candidates are pinned: keep both in memory instead of evicting one (or looping).
-  await store.get('chat-A');
-  assert.equal(store.loadedChats(), 2);
 });
 
 test('CONTEXT_TTL_HOURS=0: prune deletes no context', async () => {

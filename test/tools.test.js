@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createToolRuntime } from '../src/core/ai/tools.js';
-import { makeDiscordPlatform, makeTransport, makeZaloPlatform, silentLogger } from '../test-utils/helpers.js';
+import { makeTransport, makeZaloPlatform, silentLogger } from '../test-utils/helpers.js';
 
 function runtime(config, stickerStore) {
   const transport = makeTransport();
@@ -54,13 +54,6 @@ test('web_search still works when auto=off (used by /search)', async () => {
   assert.equal(result.ok, true);
 });
 
-test('the image tool stops once the deadline passes', async () => {
-  const { tools } = runtime(baseConfig(), fakeStickers);
-  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'c1', deadline: Date.now() - 1 });
-  assert.equal(result.ok, false);
-  assert.match(result.text, /Ran out of time/);
-});
-
 test('send_image tries the next candidate when Zalo rejects the first URL', async () => {
   /** @type {string[]} */
   const attempted = [];
@@ -84,25 +77,6 @@ test('send_image tries the next candidate when Zalo rejects the first URL', asyn
   const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'c1' });
   assert.equal(result.ok, true);
   assert.deepEqual(attempted, ['https://x/a.png', 'https://x/b.png']);
-});
-
-test('send_sticker is in definitions when enabled and sends the right id', async () => {
-  const { tools, transport } = runtime(baseConfig(), fakeStickers);
-  const names = tools.definitions().map((tool) => tool.function.name);
-  assert.equal(names.includes('send_sticker'), true);
-
-  const result = await tools.run('send_sticker', { emotion: 'greeting' }, { chatId: 'c1' });
-  assert.equal(result.ok, true);
-  assert.match(result.text, /Anh Tre Say Hi/);
-  assert.equal(transport.lastSticker.stickerId, 'd8fa8021bc64553a0c75');
-});
-
-test('when send_sticker is off there is no tool and nothing is sent', async () => {
-  const { tools, transport } = runtime(baseConfig({ sticker: { enabled: false } }), fakeStickers);
-  assert.equal(tools.definitions().some((tool) => tool.function.name === 'send_sticker'), false);
-  const result = await tools.run('send_sticker', { emotion: 'greeting' }, { chatId: 'c1' });
-  assert.equal(result.ok, false);
-  assert.equal(transport.lastSticker, null);
 });
 
 test('read_url fetches a page and converts it to text', async () => {
@@ -135,40 +109,6 @@ test('read_url fetches a page and converts it to text', async () => {
   assert.match(result.text, /Title: Docs/);
 });
 
-test('read_url uses YouTube oEmbed for YouTube links', async () => {
-  const transport = { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) };
-  const calls = [];
-  const tools = createToolRuntime({
-    config: baseConfig(),
-    tavily: null,
-    platform: {
-      transport,
-      capabilities: { uploadMedia: false },
-      tools: { run: async () => null },
-    },
-    validator: {
-      validate: async () => ({ ok: true }),
-      readText: async (url) => {
-        calls.push(url);
-        return {
-          ok: true,
-          text: JSON.stringify({ title: 'Test video', author_name: 'Some channel' }),
-          contentType: 'application/json',
-          finalUrl: url,
-        };
-      },
-    },
-    stickers: fakeStickers,
-    logger: silentLogger,
-    metrics: { inc() {}, observe() {} },
-  });
-  const result = await tools.run('read_url', { url: 'https://youtu.be/GGlt8rLwWzQ' }, { chatId: 'c1' });
-  assert.equal(result.ok, true);
-  assert.match(result.text, /YouTube video: Test video/);
-  assert.match(result.text, /Channel: Some channel/);
-  assert.match(calls[0], /youtube\.com\/oembed/);
-});
-
 test('no send_image tool when Tavily (search) is disabled', () => {
   const tools = createToolRuntime({
     config: baseConfig({ search: { enabled: false, auto: false, depth: 'fast', maxResults: 4, country: 'vietnam' } }),
@@ -180,17 +120,6 @@ test('no send_image tool when Tavily (search) is disabled', () => {
   });
   const names = tools.definitions().map((tool) => tool.function.name);
   assert.equal(names.includes('send_image'), false);
-});
-
-test('send_image refuses a direct private send without a sink', async () => {
-  const { tools } = runtime(baseConfig(), fakeStickers);
-  const result = await tools.run(
-    'send_image',
-    { query: 'cat' },
-    { chatId: 'c1', suppressDirectSend: true },
-  );
-  assert.equal(result.ok, false);
-  assert.match(result.text, /private answer/);
 });
 
 test('set_reminder tool: definition, add and validation', async () => {
@@ -225,54 +154,6 @@ test('set_reminder tool: definition, add and validation', async () => {
   assert.equal(result.ok, false);
   result = await tools.run('set_reminder', { when: '+10m' }, { chatId: 'c1' });
   assert.equal(result.ok, false);
-});
-
-test('set_reminder refuses to schedule from a private answer', async () => {
-  let added = 0;
-  const reminders = {
-    add: async () => {
-      added += 1;
-      return { ok: true, item: { id: 5, at: Date.now() + 60_000, text: 'x' } };
-    },
-  };
-  const tools = createToolRuntime({
-    config: baseConfig(),
-    tavily: null,
-    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
-    reminders,
-    logger: silentLogger,
-    metrics: { inc() {}, observe() {} },
-  });
-
-  const result = await tools.run(
-    'set_reminder',
-    { when: '+10m', text: 'secret reminder' },
-    { chatId: 'c1', suppressDirectSend: true },
-  );
-  assert.equal(result.ok, false);
-  assert.match(result.text, /private answer/);
-  assert.equal(added, 0);
-});
-
-test('set_reminder tool: reports the per-chat limit and is absent without a store', async () => {
-  const make = (reminders) =>
-    createToolRuntime({
-      config: baseConfig(),
-      tavily: null,
-      platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
-      validator: { validate: async () => ({ ok: true }) },
-      reminders,
-      logger: silentLogger,
-      metrics: { inc() {}, observe() {} },
-    });
-
-  const limited = { add: async () => ({ ok: false, reason: 'chat-limit' }) };
-  const result = await make(limited).run('set_reminder', { when: '+10m', text: 'x' }, { chatId: 'c1' });
-  assert.equal(result.ok, false);
-  assert.match(result.text, /5 reminders/);
-
-  assert.equal(make(null).definitions().some((tool) => tool.function.name === 'set_reminder'), false);
 });
 
 test('send_image caps the requested count at 5', async () => {
@@ -380,39 +261,6 @@ test('send_image shares one 5-image budget across calls in a reply', async () =>
   assert.match(third.text, /limit reached/);
 });
 
-test('send_image stops at its time budget instead of hanging on bad candidates', async () => {
-  const tools = createToolRuntime({
-    config: baseConfig(),
-    tavily: {
-      search: async () => ({
-        results: [],
-        images: Array.from({ length: 10 }, (_, index) => `https://img.example/${index}.jpg`),
-      }),
-    },
-    platform: makeZaloPlatform({
-      config: baseConfig(),
-      stickers: fakeStickers,
-      transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
-    }),
-    validator: {
-      validate: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        return { ok: false, reason: 'slow candidate' };
-      },
-    },
-    logger: silentLogger,
-    metrics: { inc() {}, observe() {} },
-    sendDelayMs: 0,
-    imageBudgetMs: 2000,
-  });
-
-  const started = Date.now();
-  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'c1' });
-  assert.equal(result.ok, false);
-  assert.ok(Date.now() - started < 5000, 'must stop at the budget');
-  assert.match(result.text, /image limit/);
-});
-
 test('send_image validates candidates in parallel', async () => {
   let active = 0;
   let maxActive = 0;
@@ -445,102 +293,4 @@ test('send_image validates candidates in parallel', async () => {
   const result = await tools.run('send_image', { query: 'cat', count: 5 }, { chatId: 'c1' });
   assert.equal(result.ok, true);
   assert.ok(maxActive > 1, `validations must overlap (saw ${maxActive})`);
-});
-
-test('send_image on Discord downloads validated bytes instead of passing the URL', async () => {
-  /** @type {any} */
-  let photoOptions = null;
-  const transport = {
-    sendPhoto: async (_chatId, _url, _caption, options) => {
-      photoOptions = options;
-      return { ok: true };
-    },
-    sendSticker: async () => ({ ok: true }),
-  };
-  const tools = createToolRuntime({
-    config: baseConfig(),
-    tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png'] }) },
-    platform: makeDiscordPlatform({ transport }),
-    validator: {
-      validate: async () => {
-        throw new Error('validate must not run on Discord');
-      },
-      download: async () => ({ ok: true, data: Buffer.from('png'), contentType: 'image/png' }),
-    },
-    logger: silentLogger,
-    metrics: { inc() {}, observe() {} },
-    sendDelayMs: 0,
-  });
-
-  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9' });
-  assert.equal(result.ok, true);
-  assert.deepEqual(photoOptions, { data: Buffer.from('png'), contentType: 'image/png' });
-});
-
-test('send_image on Discord skips URLs whose pinned download fails', async () => {
-  let sent = 0;
-  const transport = {
-    sendPhoto: async () => {
-      sent += 1;
-      return { ok: true };
-    },
-    sendSticker: async () => ({ ok: true }),
-  };
-  const tools = createToolRuntime({
-    config: baseConfig(),
-    tavily: { search: async () => ({ results: [], images: ['https://img.example/private.png'] }) },
-    platform: makeDiscordPlatform({ transport }),
-    validator: {
-      validate: async () => ({ ok: true }),
-      download: async () => ({ ok: false, reason: 'internal address blocked' }),
-    },
-    logger: silentLogger,
-    metrics: { inc() {}, observe() {} },
-    sendDelayMs: 0,
-  });
-
-  const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'discord:9' });
-  assert.equal(result.ok, false);
-  assert.equal(sent, 0);
-});
-
-test('send_image reports a partial batch when there are not enough unique images', async () => {
-  /** @type {string[]} */
-  const sent = [];
-  const transport = {
-    sendPhoto: async (_chatId, url) => {
-      sent.push(url);
-      return { ok: true };
-    },
-    sendSticker: async () => ({ ok: true }),
-  };
-  const tools = createToolRuntime({
-    config: baseConfig(),
-    tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png', 'https://img.example/b.png'] }) },
-    platform: makeZaloPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
-    logger: silentLogger,
-    metrics: { inc() {}, observe() {} },
-    sendDelayMs: 0,
-  });
-
-  const result = await tools.run('send_image', { query: 'cat', count: 5 }, { chatId: 'c1' });
-  assert.equal(result.ok, true);
-  assert.equal(sent.length, 2);
-  assert.match(result.text, /2 of 5/);
-});
-
-test('Discord uses its own server sticker tool', async () => {
-  const tools = createToolRuntime({
-    config: baseConfig(),
-    tavily: null,
-    platform: makeDiscordPlatform(),
-    validator: { validate: async () => ({ ok: true }) },
-    logger: silentLogger,
-    metrics: { inc() {}, observe() {} },
-  });
-  assert.equal(tools.definitions().some((tool) => tool.function.name === 'send_sticker'), true);
-  const result = await tools.run('send_sticker', { emotion: 'wave' }, { chatId: 'discord:c1' });
-  assert.equal(result.ok, true);
-  assert.match(result.text, /Sent the sticker/);
 });

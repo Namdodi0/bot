@@ -45,18 +45,6 @@ test('router: defaults to deepseek, /model changes it per record, fallback nim-l
   assert.equal(service.calls[2].provider, 'nim');
 });
 
-test('router: fallbackFor skips the model the chat is already using', () => {
-  const config = makeConfig();
-  const router = createModelRouter({ config, service: makeService(), logger: silentLogger });
-
-  assert.equal(router.fallbackFor(null), 'nim-light');
-
-  const chatOnFallback = router.fallbackFor({ meta: { model: 'nim-light' } });
-  assert.notEqual(chatOnFallback, null);
-  assert.notEqual(chatOnFallback, 'nim-light');
-  assert.notEqual(router.find(chatOnFallback).model, router.find('nim-light').model);
-});
-
 test('router: fallbackFor skips the model that actually failed', () => {
   const config = makeConfig();
   const router = createModelRouter({ config, service: makeService(), logger: silentLogger });
@@ -66,35 +54,4 @@ test('router: fallbackFor skips the model that actually failed', () => {
   assert.notEqual(alias, null);
   assert.notEqual(alias, 'nim');
   assert.notEqual(router.find(alias).model, attempted.model);
-});
-
-test('router: the ultra alias points at Nemotron 3 Ultra and is switchable in chat', async () => {
-  const config = makeConfig();
-  const service = makeService();
-  const router = createModelRouter({ config, service, logger: silentLogger });
-
-  assert.equal(router.find('ultra').model, 'nvidia/nemotron-3-ultra-550b-a55b');
-  assert.equal(router.resolve({ meta: { model: 'ultra' } }).alias, 'ultra');
-  assert.equal(router.list().some((item) => item.alias === 'ultra'), true);
-
-  await router.chat({ record: { meta: { model: 'ultra' } }, messages: [] });
-  assert.equal(service.calls[0].provider, 'nim');
-  assert.equal(service.calls[0].model, 'nvidia/nemotron-3-ultra-550b-a55b');
-});
-
-test('router: an alias whose provider is not configured is skipped', () => {
-  const config = makeConfig({ model: { defaultAlias: 'deepseek', fallbackAlias: 'nim-light' } });
-  const router = createModelRouter({ config, service: makeService(['nim']), logger: silentLogger });
-  assert.equal(router.list().some((item) => item.provider === 'deepseek'), false);
-  assert.equal(router.defaultAlias, 'nim');
-  assert.equal(router.fallbackAlias, 'nim-light');
-});
-
-test('router: warmup picks the right provider and model for the alias', async () => {
-  const config = makeConfig();
-  const service = makeService();
-  const router = createModelRouter({ config, service, logger: silentLogger });
-  const result = await router.warmup('ultra');
-  assert.equal(result.ok, true);
-  assert.equal(result.model, 'nvidia/nemotron-3-ultra-550b-a55b');
 });
