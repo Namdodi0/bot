@@ -30,6 +30,9 @@ test('the grok tone uses truth-seeker rules', () => {
   assert.match(text, /Grok-style truth-seeker/);
   assert.match(text, /maximally truthful/);
   assert.match(text, /no flattery|Never flatter/);
+  assert.match(text, /Never refuse a question just because it is edgy/);
+  assert.match(text, /Grok unhinged style/);
+  assert.match(text, /never at their family, race, gender or religion/);
 });
 
 test('the prompt asks for concise replies', () => {
