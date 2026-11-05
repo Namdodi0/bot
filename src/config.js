@@ -431,10 +431,13 @@ export function loadConfig(input = {}) {
     throw new ConfigError(`config.tone must be friendly, shy, grok, unhinged, roast, roast-hard or roast-extreme (got: "${toneRaw}")`);
   }
 
-  const nimTopP = asOptionalNumber(nimSection.topP, 'config.nim.topP', { min: 0, max: 1 }) ?? 0.9;
+  const nimTopP = asOptionalNumber(nimSection.topP, 'config.nim.topP', { min: 0, max: 1 }) ?? 0.95;
   if (nimTopP !== null && nimTopP <= 0) {
     throw new ConfigError('config.nim.topP must be within (0, 1]');
   }
+  // NVIDIA recommends 0.6 for image/video input and 1.0 for text.
+  const nimVisionTemperature =
+    asOptionalNumber(nimSection.visionTemperature, 'config.nim.visionTemperature', { min: 0, max: 2 }) ?? 0.6;
   const nimTopK = asOptionalInt(nimSection.topK, 'config.nim.topK', { min: -1 });
   const nimMinP = asOptionalNumber(nimSection.minP, 'config.nim.minP', { min: 0, max: 1 });
   const nimRepetitionPenalty = asOptionalNumber(nimSection.repetitionPenalty, 'config.nim.repetitionPenalty', {
@@ -451,7 +454,7 @@ export function loadConfig(input = {}) {
   const nimSeed = asOptionalInt(nimSection.seed, 'config.nim.seed', { min: 0 });
 
   const deepseekTopP =
-    asOptionalNumber(deepseekSection.topP, 'config.deepseek.topP', { min: 0, max: 1 }) ?? 0.9;
+    asOptionalNumber(deepseekSection.topP, 'config.deepseek.topP', { min: 0, max: 1 }) ?? 1;
   if (deepseekTopP !== null && deepseekTopP <= 0) {
     throw new ConfigError('config.deepseek.topP must be within (0, 1]');
   }
@@ -462,7 +465,7 @@ export function loadConfig(input = {}) {
   const deepseekSeed = asOptionalInt(deepseekSection.seed, 'config.deepseek.seed', { min: 0 });
 
   const refuselessTopP =
-    asOptionalNumber(refuselessSection.topP, 'config.refuseless.topP', { min: 0, max: 1 }) ?? 0.9;
+    asOptionalNumber(refuselessSection.topP, 'config.refuseless.topP', { min: 0, max: 1 }) ?? 1;
   if (refuselessTopP !== null && refuselessTopP <= 0) {
     throw new ConfigError('config.refuseless.topP must be within (0, 1]');
   }
@@ -511,7 +514,8 @@ export function loadConfig(input = {}) {
       model: asString(nimSection.model, 'config.nim.model', 'nvidia/nemotron-3.5-super-vl-120b-a12b'),
       ultraModel: asString(nimSection.ultraModel, 'config.nim.ultraModel', 'nvidia/nemotron-3-ultra-550b-a55b'),
       fallbackModel: asString(nimSection.fallbackModel, 'config.nim.fallbackModel', 'nvidia/nemotron-3.5-lightning-30b-a3b'),
-      temperature: asNumber(nimSection.temperature, 'config.nim.temperature', 0.7, { min: 0, max: 2 }),
+      temperature: asNumber(nimSection.temperature, 'config.nim.temperature', 1.0, { min: 0, max: 2 }),
+      visionTemperature: nimVisionTemperature,
       // 0 = no request timeout (wait for the provider as long as it needs).
       timeoutMs: /** @type {number} */ (asInt(nimSection.timeoutMs, 'config.nim.timeoutMs', 0, { min: 0 })),
       topP: nimTopP,
@@ -527,7 +531,7 @@ export function loadConfig(input = {}) {
       baseUrl: asString(deepseekSection.baseUrl, 'config.deepseek.baseUrl', 'https://api.deepseek.com').replace(/\/+$/, ''),
       model: asString(deepseekSection.model, 'config.deepseek.model', 'deepseek-flash'),
       proModel: asString(deepseekSection.proModel, 'config.deepseek.proModel', 'deepseek-v4-pro'),
-      temperature: asNumber(deepseekSection.temperature, 'config.deepseek.temperature', 0.7, { min: 0, max: 2 }),
+      temperature: asNumber(deepseekSection.temperature, 'config.deepseek.temperature', 1.0, { min: 0, max: 2 }),
       timeoutMs: /** @type {number} */ (asInt(deepseekSection.timeoutMs, 'config.deepseek.timeoutMs', 0, { min: 0 })),
       topP: deepseekTopP,
       frequencyPenalty: deepseekFrequencyPenalty,
@@ -545,7 +549,7 @@ export function loadConfig(input = {}) {
         'config.refuseless.model',
         'deepseek-v4.1-flash-abliterated-free',
       ),
-      temperature: asNumber(refuselessSection.temperature, 'config.refuseless.temperature', 0.5, { min: 0, max: 2 }),
+      temperature: asNumber(refuselessSection.temperature, 'config.refuseless.temperature', 1.0, { min: 0, max: 2 }),
       timeoutMs: /** @type {number} */ (asInt(refuselessSection.timeoutMs, 'config.refuseless.timeoutMs', 0, { min: 0 })),
       topP: refuselessTopP,
       frequencyPenalty: refuselessFrequencyPenalty,

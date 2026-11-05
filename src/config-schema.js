@@ -37,6 +37,7 @@ export const SECTION_KEYS = {
     'ultraModel',
     'fallbackModel',
     'temperature',
+    'visionTemperature',
     'timeoutMs',
     'topP',
     'topK',

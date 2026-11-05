@@ -33,6 +33,19 @@ test('invalid enum values are rejected', () => {
   assert.equal(load({ tone: 'unhinged' }).tone, 'unhinged');
 });
 
+test('sampling defaults follow provider recommendations', () => {
+  const config = load({ dataDir: os.tmpdir() });
+  assert.equal(config.nim.temperature, 1);
+  assert.equal(config.nim.topP, 0.95);
+  assert.equal(config.nim.visionTemperature, 0.6);
+  assert.equal(config.nim.frequencyPenalty, 0);
+  assert.equal(config.nim.presencePenalty, 0);
+  assert.equal(config.deepseek.temperature, 1);
+  assert.equal(config.deepseek.topP, 1);
+  assert.equal(config.refuseless.temperature, 1);
+  assert.equal(config.refuseless.topP, 1);
+});
+
 test('visionAlias must point at a vision-capable model', () => {
   assert.throws(() => load({ model: { visionAlias: 'ultra' } }), /vision-capable/);
   assert.equal(load({ model: { visionAlias: 'nim' } }).model.visionAlias, 'nim');

@@ -282,6 +282,7 @@ export function createTurnRunner(deps) {
       onDelta: progressive.onDelta,
       deadline,
       retryExecutor,
+      vision: Boolean(image),
     });
 
     // One reply may call send_image several times; share a single image budget across them.

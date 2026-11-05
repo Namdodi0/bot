@@ -5,7 +5,7 @@ import { SLOW_CALL_WARN_MS, planAttemptBudget, providerTimeout, samplingFor } fr
  * accounting. `execute()` is the normal path; `once()` is the single retry after an
  * overflow rebuild.
  *
- * @param {{config: any, logger: import('../../../logger.js').Logger, metrics: any, llm: any, record: any, target: any, chatId: string, messages: any[], toolDefs: any[], reasoning: string, streaming: boolean, onDelta: (delta: string) => void, deadline: number, retryExecutor: any}} input
+ * @param {{config: any, logger: import('../../../logger.js').Logger, metrics: any, llm: any, record: any, target: any, chatId: string, messages: any[], toolDefs: any[], reasoning: string, streaming: boolean, onDelta: (delta: string) => void, deadline: number, retryExecutor: any, vision?: boolean}} input
  */
 export function createAttemptRunner({
   config,
@@ -22,6 +22,7 @@ export function createAttemptRunner({
   onDelta,
   deadline,
   retryExecutor,
+  vision = false,
 }) {
   let llmMs = 0;
 
@@ -55,6 +56,8 @@ export function createAttemptRunner({
         tools: toolDefs.length ? toolDefs : undefined,
         reasoning,
         maxTokens: config.ai.maxTokens,
+        // Providers that recommend a lower vision temperature (NVIDIA: 0.6) opt in here.
+        temperature: vision ? config?.[target.provider]?.visionTemperature : undefined,
         sampling: samplingFor(config, target.provider),
         stream: streaming,
         onDelta,

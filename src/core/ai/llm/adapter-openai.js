@@ -147,7 +147,7 @@ export function createOpenAiCompatAdapter(options) {
   const http = options.http;
   const logger = options.logger;
   const metrics = options.metrics;
-  const defaultTemperature = options.defaultTemperature ?? 0.6;
+  const defaultTemperature = options.defaultTemperature ?? 1.0;
   const reasoningMap = options.reasoningMap ?? NIM_REASONING_MAP;
 
   const endpoint = `${baseUrl}/chat/completions`;
