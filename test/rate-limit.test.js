@@ -5,6 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRateLimiter } from '../src/core/ai/agent/queue.js';
 
+test('rate limit overrides also accept a sender name', () => {
+  const limiter = createRateLimiter({ userRateLimitPerMinute: 12, userRateLimits: { 'Lê Việt': 2 } });
+  assert.equal(limiter('c1', 'id-1', 'Lê Việt'), false);
+  assert.equal(limiter('c1', 'id-1', 'Lê Việt'), false);
+  assert.equal(limiter('c1', 'id-1', 'Lê Việt'), true);
+  assert.equal(limiter('c1', 'id-2', 'Người khác'), false);
+});
+
 test('rate limit windows survive a restart', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-rate-'));
   const file = path.join(dir, 'rate-limits.json');

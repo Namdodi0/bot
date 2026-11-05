@@ -100,6 +100,9 @@
   "maxMessagesPerReply": 0,
   "maxQueueDepth": 50,
   "userRateLimitPerMinute": 12,
+  "userRateLimits": {
+    "Lê Việt": 2
+  },
   "logLevel": "info",
   "logThinking": true,
   "logFormat": "pretty",

@@ -95,7 +95,7 @@ export function createAgent(deps) {
         store.touch(event.chatId);
       }
 
-      if (rateLimited(event.chatId, event.senderId)) {
+      if (rateLimited(event.chatId, event.senderId, event.senderName)) {
         metrics.inc('messages.rateLimited');
         logger.warn('sender rate limited, ignoring', {
           chatId: event.chatId,

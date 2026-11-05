@@ -114,9 +114,12 @@ export function createRateLimiter(config, options = {}) {
    * Ignore silently (no reply) so we do not encourage spam.
    * @param {string} chatId
    * @param {string} senderId
+   * @param {string} [senderName]
    */
-  function rateLimited(chatId, senderId) {
-    const override = senderId ? config.userRateLimits?.[senderId] : undefined;
+  function rateLimited(chatId, senderId, senderName) {
+    const override =
+      (senderId ? config.userRateLimits?.[senderId] : undefined) ??
+      (senderName ? config.userRateLimits?.[senderName] : undefined);
     const limit = Number.isFinite(override) ? override : (config.userRateLimitPerMinute ?? 0);
     if (!limit || !senderId) return false;
     const key = `${chatId}:${senderId}`;
