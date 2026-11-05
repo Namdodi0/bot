@@ -4,6 +4,8 @@ import {
   isBotAddressed,
   isChannelAllowed,
   isRespondToAllChannel,
+  messageText,
+  replyQuote,
   toDiscordEvent,
 } from '../src/platforms/discord/events.js';
 
@@ -38,6 +40,16 @@ test('discord message: DMs are private and empty messages are ignored', () => {
   const dm = toDiscordEvent(message({ channel: { id: 'd1', isDMBased: () => true } }), client);
   assert.equal(dm.chatType, 'PRIVATE');
   assert.equal(toDiscordEvent(message({ content: '<@bot1>' }), client), null);
+});
+
+test('reply quotes read text from a Components V2 message', () => {
+  const referenced = {
+    author: { username: 'Bot' },
+    content: '',
+    components: [{ toJSON: () => ({ type: 10, content: 'Câu trả lời cũ' }) }],
+  };
+  assert.equal(messageText(referenced), 'Câu trả lời cũ');
+  assert.equal(replyQuote(referenced, 'bot1'), '[Replying to Bot: Câu trả lời cũ]');
 });
 
 test('isBotAddressed covers mention, role, reply, DM and respond-to-all channels', () => {

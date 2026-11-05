@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { MessageFlags } from 'discord.js';
-import { eventFromInteraction } from '../events.js';
+import { eventFromInteraction, messageText } from '../events.js';
 import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload, v2Message } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
@@ -152,7 +152,7 @@ export function createAskHandlers(shared) {
 
   /** @param {any} interaction @param {string} prefix */
   async function contextAsk(interaction, prefix) {
-    const content = String(interaction.targetMessage?.content ?? '').trim().slice(0, 3000);
+    const content = messageText(interaction.targetMessage).trim().slice(0, 3000);
     if (!content) {
       await replyEphemeral(interaction, { content: 'That message has no text to work with.' });
       return;

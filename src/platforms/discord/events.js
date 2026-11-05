@@ -86,6 +86,30 @@ export function isBotAddressed(flags = {}) {
 }
 
 /**
+ * Visible text of a message, including Components V2 TextDisplay blocks. The bot's own
+ * V2 answers have an empty `content`, so reply quotes would otherwise be blank.
+ * @param {any} message
+ * @returns {string}
+ */
+export function messageText(message) {
+  if (!message) return '';
+  const content = String(message.content ?? '').trim();
+  if (content) return content;
+  /** @param {any[]} components */
+  const collect = (components) => {
+    const parts = [];
+    for (const component of components ?? []) {
+      const json = typeof component?.toJSON === 'function' ? component.toJSON() : component;
+      if (!json) continue;
+      if (json.type === 10 && json.content) parts.push(String(json.content));
+      else if (Array.isArray(json.components)) parts.push(collect(json.components));
+    }
+    return parts.filter(Boolean).join('\n');
+  };
+  return collect(message.components).trim();
+}
+
+/**
  * Compact quote of the message a user replied to, safe to prepend to the new message text.
  * Mentions of the bot are stripped, whitespace is flattened and long content is clipped.
  * @param {any} referenced discord.js Message-like
@@ -101,7 +125,7 @@ export function replyQuote(referenced, botId = '', maxChars = 500) {
       referenced.author?.username ??
       'someone',
   );
-  const flat = stripBotMention(referenced.content, botId).replace(/\s+/g, ' ').trim();
+  const flat = stripBotMention(messageText(referenced), botId).replace(/\s+/g, ' ').trim();
   const attachmentCount = Number(referenced.attachments?.size ?? referenced.attachments?.length ?? 0);
   const body = flat
     ? attachmentCount > 0
