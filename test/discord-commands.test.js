@@ -8,17 +8,16 @@ function isV2(payload) {
 }
 
 function payloadJson(payload) {
-  return payload?.components?.[0]?.toJSON?.() ?? null;
+  return (payload?.components ?? []).map((component) => component?.toJSON?.()).filter(Boolean);
 }
 
 function payloadText(payload) {
   if (!isV2(payload)) return String(payload?.content ?? '');
-  const row = payloadJson(payload)?.components.find((component) => component.type === 10);
-  return String(row?.content ?? '');
+  return String(payloadJson(payload).find((component) => component.type === 10)?.content ?? '');
 }
 
 function payloadButtons(payload) {
-  return payloadJson(payload)?.components.find((component) => component.type === 1) ?? null;
+  return payloadJson(payload).find((component) => component.type === 1) ?? null;
 }
 
 test('/ask streams a preview edit and then renders the final answer with buttons', async () => {
