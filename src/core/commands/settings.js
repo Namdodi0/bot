@@ -155,6 +155,11 @@ export function createSettingsCommands({ canManage, config, store, logger, platf
       markTone('Ok, from now on I talk politely and drop the roasting completely.');
       return { kind: 'text', text: 'Back to the polite tone for this chat.' };
     }
+    if (['grok', 'truth', 'truthful'].includes(value)) {
+      ctx.record.meta.tone = 'grok';
+      markTone('Ok, from now on I answer like a straight-talking truth-seeker.');
+      return { kind: 'text', text: '**Grok** tone enabled for this chat (truthful, dry wit, no flattery).' };
+    }
     if (['shy', 'cute', 'timid', 'ngai', 'ng\u1EA1i'].includes(value)) {
       ctx.record.meta.tone = 'shy';
       markTone('Um... okay... from now on I will speak softly and get a little shy... please be gentle with me...');
