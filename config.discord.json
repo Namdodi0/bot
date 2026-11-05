@@ -23,6 +23,7 @@
     "fallbackModel": "nvidia/nemotron-3.5-lightning-30b-a3b",
     "temperature": 1.0,
     "visionTemperature": 0.6,
+    "visionTimeoutMs": 60000,
     "timeoutMs": 0,
     "topP": 0.95,
     "topK": null,

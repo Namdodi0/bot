@@ -343,6 +343,10 @@ export function createToolRuntime(options) {
           query: searchQuery,
           error: String(/** @type {any} */ (error)?.message ?? error),
         });
+        // Auth/quota errors will reject every follow-up query too: fail fast instead of
+        // burning the remaining budget on four variants of the same search.
+        const status = Number(/** @type {any} */ (error)?.status);
+        if (status === 401 || status === 403 || status === 429 || status === 432) break;
       }
     }
 

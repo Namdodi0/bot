@@ -261,6 +261,33 @@ test('send_image shares one 5-image budget across calls in a reply', async () =>
   assert.match(third.text, /limit reached/);
 });
 
+test('send_image stops after a provider quota error instead of retrying queries', async () => {
+  let searches = 0;
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: {
+      search: async () => {
+        searches += 1;
+        const error = new Error('tavily quota exceeded');
+        /** @type {any} */ (error).status = 432;
+        throw error;
+      },
+    },
+    platform: makeZaloPlatform({
+      config: baseConfig(),
+      stickers: fakeStickers,
+      transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+    }),
+    validator: { validate: async () => ({ ok: true }) },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+
+  const result = await tools.run('send_image', { query: 'cat', count: 5 }, { chatId: 'c1' });
+  assert.equal(result.ok, false);
+  assert.equal(searches, 1, 'a 432 must not trigger the query-variant loop');
+});
+
 test('send_image validates candidates in parallel', async () => {
   let active = 0;
   let maxActive = 0;

@@ -34,7 +34,7 @@ export function createTurnRunner(deps) {
   async function run(event, record, options = {}, stopTyping = async () => {}, sink = null) {
     const startedAt = Date.now();
     // config.responseTimeoutMs=0 means no deadline: wait for the model as long as it takes.
-    const deadline =
+    let deadline =
       config.responseTimeoutMs > 0 ? startedAt + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
     const sender = sink ?? makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
     const responseSink = sink ?? {
@@ -47,6 +47,10 @@ export function createTurnRunner(deps) {
 
     const rawText = normalizeWhitespace(event.text ?? '');
     const image = event.imageData?.data ? event.imageData : null;
+    // A 120B vision model can stall for minutes; cap image turns without touching text turns.
+    if (image && config.nim?.visionTimeoutMs > 0) {
+      deadline = Math.min(deadline, Date.now() + config.nim.visionTimeoutMs);
+    }
     const selectedTarget = llm.resolve(record);
     // Image turns use a vision-capable alias (config.model.visionAlias) when the selected
     // model cannot see images. If none is configured, the turn stays text-only.

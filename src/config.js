@@ -438,6 +438,11 @@ export function loadConfig(input = {}) {
   // NVIDIA recommends 0.6 for image/video input and 1.0 for text.
   const nimVisionTemperature =
     asOptionalNumber(nimSection.visionTemperature, 'config.nim.visionTemperature', { min: 0, max: 2 }) ?? 0.6;
+  // Vision turns get their own wall-clock cap: a stalled 120B VL request must not hold
+  // the chat for minutes. 0 disables the cap and falls back to the turn deadline.
+  const nimVisionTimeoutMs = /** @type {number} */ (
+    asInt(nimSection.visionTimeoutMs, 'config.nim.visionTimeoutMs', 60_000, { min: 0 })
+  );
   const nimTopK = asOptionalInt(nimSection.topK, 'config.nim.topK', { min: -1 });
   const nimMinP = asOptionalNumber(nimSection.minP, 'config.nim.minP', { min: 0, max: 1 });
   const nimRepetitionPenalty = asOptionalNumber(nimSection.repetitionPenalty, 'config.nim.repetitionPenalty', {
@@ -516,6 +521,7 @@ export function loadConfig(input = {}) {
       fallbackModel: asString(nimSection.fallbackModel, 'config.nim.fallbackModel', 'nvidia/nemotron-3.5-lightning-30b-a3b'),
       temperature: asNumber(nimSection.temperature, 'config.nim.temperature', 1.0, { min: 0, max: 2 }),
       visionTemperature: nimVisionTemperature,
+      visionTimeoutMs: nimVisionTimeoutMs,
       // 0 = no request timeout (wait for the provider as long as it needs).
       timeoutMs: /** @type {number} */ (asInt(nimSection.timeoutMs, 'config.nim.timeoutMs', 0, { min: 0 })),
       topP: nimTopP,

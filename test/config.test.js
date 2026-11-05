@@ -38,6 +38,7 @@ test('sampling defaults follow provider recommendations', () => {
   assert.equal(config.nim.temperature, 1);
   assert.equal(config.nim.topP, 0.95);
   assert.equal(config.nim.visionTemperature, 0.6);
+  assert.equal(config.nim.visionTimeoutMs, 60000);
   assert.equal(config.nim.frequencyPenalty, 0);
   assert.equal(config.nim.presencePenalty, 0);
   assert.equal(config.deepseek.temperature, 1);

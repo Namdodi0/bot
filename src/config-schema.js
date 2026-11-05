@@ -38,6 +38,7 @@ export const SECTION_KEYS = {
     'fallbackModel',
     'temperature',
     'visionTemperature',
+    'visionTimeoutMs',
     'timeoutMs',
     'topP',
     'topK',
