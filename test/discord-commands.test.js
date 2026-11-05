@@ -36,6 +36,21 @@ test('/ask streams a preview edit and then renders the final answer with buttons
   assert.match(customId, /^ask:regen:/);
 });
 
+test('/ask puts images in the same V2 answer message', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.agent.stream = async () => ({
+    text: 'Here are the cats.',
+    photos: [{ url: 'https://x/a.png', caption: 'cat', data: Buffer.from('png'), contentType: 'image/png' }],
+  });
+  const i = interaction('ask', { prompt: 'cats', private: true });
+  await commands.handleCommand(i);
+
+  const final = i.edits.at(-1);
+  assert.equal(final.files?.length, 1);
+  assert.ok(payloadJson(final).some((component) => component.type === 12), 'a MediaGallery is required');
+  assert.equal(i.follows.some((payload) => payload.files?.length), false, 'no separate photo message');
+});
+
 test('/ask rejects a non-image attachment without calling the agent', async () => {
   const { commands, runtime } = makeCommands();
   let called = false;

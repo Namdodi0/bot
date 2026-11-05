@@ -4,6 +4,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
+  MediaGalleryBuilder,
   MessageFlags,
   ModalBuilder,
   StringSelectMenuBuilder,
@@ -34,6 +35,34 @@ export function v2Message(content, rows = [], options = {}) {
     flags: MessageFlags.IsComponentsV2 | (options.ephemeral ? MessageFlags.Ephemeral : 0),
     allowedMentions: { parse: [] },
   };
+}
+
+/**
+ * V2 answer that also carries images in a MediaGallery, so text and pictures share one
+ * message. Attachment names are unique because `photoFilename` returns the same name for
+ * every photo of a format.
+ * @param {string} content
+ * @param {any[]} [rows]
+ * @param {any[]} [photos]
+ * @param {{ephemeral?: boolean}} [options]
+ */
+export function v2Answer(content, rows = [], photos = [], options = {}) {
+  const payload = v2Message(content, rows, options);
+  const list = (photos ?? []).slice(0, 10);
+  if (!list.length) return payload;
+  const gallery = new MediaGalleryBuilder();
+  const files = [];
+  list.forEach((photo, index) => {
+    const extension = photoFilename(photo?.url ?? '', photo?.contentType).split('.').pop() || 'png';
+    const name = `image-${index + 1}.${extension}`;
+    files.push(
+      new AttachmentBuilder(photo?.data ? Buffer.from(photo.data) : String(photo?.url ?? ''), { name }),
+    );
+    gallery.addItems({ media: { url: `attachment://${name}` } });
+  });
+  payload.components.splice(1, 0, gallery);
+  payload.files = files;
+  return payload;
 }
 
 /**

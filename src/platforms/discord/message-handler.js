@@ -1,5 +1,5 @@
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
-import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Message } from './ui.js';
+import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from './ui.js';
 
 // Cap concurrent streaming turns so a burst of mentions cannot open hundreds of preview
 // edits at once. agent.stream() already serializes turns per chat; this is global.
@@ -90,9 +90,11 @@ export function createMessageHandler(deps) {
       await previewer.flush();
       const chunks = result.text ? chunkContent(result.text) : [];
       const first = chunks.shift();
-      logger?.debug('discord reply ready', { chatId: event.chatId, photos: result.photos.length, chunks: chunks.length });
+      const photos = result.photos ?? [];
+      let photosEmbedded = false;
+      logger?.debug('discord reply ready', { chatId: event.chatId, photos: photos.length, chunks: chunks.length });
       if (placeholder) {
-        if (!first && !result.photos.length) {
+        if (!first && !photos.length) {
           await placeholder.delete().catch((error) => {
             logger?.debug('discord placeholder delete failed', {
               chatId: event.chatId,
@@ -100,17 +102,35 @@ export function createMessageHandler(deps) {
             });
           });
         } else {
-          await placeholder
-            .edit(v2Message(first || 'Here are the images.'))
-            .catch((error) => {
-              logger?.debug('discord placeholder edit failed', {
-                chatId: event.chatId,
-                error: String(/** @type {any} */ (error)?.message ?? error),
-              });
+          try {
+            await placeholder.edit(v2Answer(first || 'Here are the images.', [], photos));
+            photosEmbedded = photos.length > 0;
+          } catch (error) {
+            logger?.debug('discord combined photo answer failed', {
+              chatId: event.chatId,
+              error: String(/** @type {any} */ (error)?.message ?? error),
             });
+            await placeholder
+              .edit(v2Message(first || 'Here are the images.'))
+              .catch((editError) => {
+                logger?.debug('discord placeholder edit failed', {
+                  chatId: event.chatId,
+                  error: String(/** @type {any} */ (editError)?.message ?? editError),
+                });
+              });
+          }
         }
-      } else if (first) {
-        placeholder = await message.reply(v2Message(first));
+      } else if (first || photos.length) {
+        try {
+          placeholder = await message.reply(v2Answer(first || 'Here are the images.', [], photos));
+          photosEmbedded = photos.length > 0;
+        } catch (error) {
+          logger?.warn('discord combined photo reply failed', {
+            chatId: event.chatId,
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+          placeholder = await message.reply(v2Message(first || 'Here are the images.'));
+        }
       }
       for (const chunk of chunks) {
         await message.channel.send(v2Message(chunk)).catch((error) => {
@@ -120,7 +140,7 @@ export function createMessageHandler(deps) {
           });
         });
       }
-      for (const group of photoBatches(result.photos)) {
+      for (const group of photosEmbedded ? [] : photoBatches(photos)) {
         try {
           await message.channel.send({ ...photoPayload(group), allowedMentions: { parse: [] } });
         } catch (error) {

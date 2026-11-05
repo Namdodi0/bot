@@ -10,6 +10,8 @@ import {
   remindModal,
   statusEmbed,
   textEmbed,
+  v2Answer,
+  v2Message,
 } from '../ui.js';
 
 /**
@@ -20,6 +22,7 @@ import {
 export function createBasicHandlers(shared) {
   const {
     config,
+    logger,
     runtime,
     platform,
     chat,
@@ -245,12 +248,18 @@ export function createBasicHandlers(shared) {
         await interaction.editReply({ embeds: [errorEmbed(result.text || 'No images found.')] });
         return;
       }
-      await interaction.editReply({
-        content: result.text || `Here ${photos.length === 1 ? 'is' : 'are'} ${photos.length} image${photos.length === 1 ? '' : 's'}.`,
-        components: [],
-        allowedMentions: { parse: [] },
-      });
-      await sendPhotos(interaction, photos, priv);
+      const text =
+        result.text ||
+        `Here ${photos.length === 1 ? 'is' : 'are'} ${photos.length} image${photos.length === 1 ? '' : 's'}.`;
+      try {
+        await interaction.editReply(v2Answer(text, [], photos));
+      } catch (error) {
+        logger?.warn('combined image reply failed, sending separately', {
+          error: String(/** @type {any} */ (error)?.message ?? error),
+        });
+        await interaction.editReply(v2Message(text));
+        await sendPhotos(interaction, photos, priv);
+      }
     },
 
     async remind(interaction) {

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { MessageFlags } from 'discord.js';
 import { eventFromInteraction, messageText } from '../events.js';
-import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload, v2Message } from '../ui.js';
+import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
 
@@ -22,7 +22,6 @@ export function createAskHandlers(shared) {
     privateReply,
     reportError,
     replyEphemeral,
-    sendPhotos,
     sendChannelAnswer,
     sendInteractionAnswer,
   } = shared;
@@ -176,12 +175,7 @@ export function createAskHandlers(shared) {
       userId: interaction.user.id,
       ephemeral: true,
     });
-    const chunks = chunkContent(result.text || 'No answer.');
-    await interaction.editReply(v2Message(chunks[0], answerButtons(token)));
-    for (const chunk of chunks.slice(1)) {
-      await interaction.followUp(v2Message(chunk, [], { ephemeral: true }));
-    }
-    await sendPhotos(interaction, result.photos, true);
+    await sendInteractionAnswer(interaction, result, token, true);
   }
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
@@ -272,20 +266,24 @@ export function createAskHandlers(shared) {
     await previewer.flush();
     const newToken = makeToken({ ...payload });
     const chunks = chunkContent(result.text || 'No answer.');
+    const photos = result.photos ?? [];
     const followFlags = privateReply(payload.ephemeral);
-    if (regenerating) {
-      await interaction.message.edit(v2Message(chunks[0], answerButtons(newToken)));
-      for (const chunk of chunks.slice(1)) {
-        await interaction.followUp(v2Message(chunk, [], { ephemeral: payload.ephemeral }));
-      }
-    } else {
-      await interaction.editReply(v2Message(chunks[0], answerButtons(newToken)));
-      for (const chunk of chunks.slice(1)) {
-        await interaction.followUp(v2Message(chunk, [], { ephemeral: payload.ephemeral }));
+    const editFinal = regenerating
+      ? (value) => interaction.message.edit(value)
+      : (value) => interaction.editReply(value);
+    try {
+      await editFinal(v2Answer(chunks[0], answerButtons(newToken), photos));
+    } catch (error) {
+      logger?.warn('combined photo answer failed, sending photos separately', {
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      });
+      await editFinal(v2Message(chunks[0], answerButtons(newToken)));
+      for (const group of photoBatches(photos)) {
+        await interaction.followUp({ ...photoPayload(group), ...followFlags });
       }
     }
-    for (const group of photoBatches(result.photos)) {
-      await interaction.followUp({ ...photoPayload(group), ...followFlags });
+    for (const chunk of chunks.slice(1)) {
+      await interaction.followUp(v2Message(chunk, [], { ephemeral: payload.ephemeral }));
     }
   }
 

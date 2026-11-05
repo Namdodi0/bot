@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { answerButtons, chunkContent, errorEmbed, paginationRow, photoBatches, photoPayload, textEmbed, v2Message } from '../ui.js';
+import { answerButtons, chunkContent, errorEmbed, paginationRow, photoBatches, photoPayload, textEmbed, v2Answer, v2Message } from '../ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
 
@@ -127,11 +127,19 @@ export function createShared(deps) {
    */
   async function sendInteractionAnswer(interaction, result, token, priv) {
     const { chunks, first } = splitAnswer(result);
-    await interaction.editReply(v2Message(first, answerButtons(token)));
+    const photos = result.photos ?? [];
+    try {
+      await interaction.editReply(v2Answer(first, answerButtons(token), photos));
+    } catch (error) {
+      logger?.warn('combined photo answer failed, sending photos separately', {
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      });
+      await interaction.editReply(v2Message(first, answerButtons(token)));
+      await sendPhotos(interaction, photos, priv);
+    }
     for (const chunk of chunks) {
       await interaction.followUp(v2Message(chunk, [], { ephemeral: priv }));
     }
-    await sendPhotos(interaction, result.photos, priv);
   }
 
   /** @param {any} interaction @param {any[]} photos @param {boolean} priv */
@@ -149,12 +157,26 @@ export function createShared(deps) {
    */
   async function sendChannelAnswer(channel, result, token, existing = null) {
     const { chunks, first } = splitAnswer(result);
-    const payload = v2Message(first, answerButtons(token));
-    if (existing?.edit) await existing.edit(payload);
-    else await channel.send(payload);
+    const photos = result.photos ?? [];
+    let attached = false;
+    try {
+      const payload = v2Answer(first, answerButtons(token), photos);
+      if (existing?.edit) await existing.edit(payload);
+      else await channel.send(payload);
+      attached = photos.length > 0;
+    } catch (error) {
+      logger?.warn('combined photo answer failed, sending photos separately', {
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      });
+      const payload = v2Message(first, answerButtons(token));
+      if (existing?.edit) await existing.edit(payload);
+      else await channel.send(payload);
+    }
     for (const chunk of chunks) await channel.send(v2Message(chunk));
-    for (const group of photoBatches(result.photos)) {
-      await channel.send({ ...photoPayload(group), allowedMentions: noMentions() });
+    if (!attached) {
+      for (const group of photoBatches(photos)) {
+        await channel.send({ ...photoPayload(group), allowedMentions: noMentions() });
+      }
     }
   }
 
