@@ -195,6 +195,18 @@ test('vision turns send the image as an image_url block', async () => {
   assert.doesNotMatch(String(record.messages[0].text), /cannot see/);
 });
 
+test('foreign-script leakage is removed from the sent reply', async () => {
+  const { agent, sent, store } = await setup({
+    replies: [{ content: 'Xin chào 你好 bạn', toolCalls: [] }],
+  });
+  await agent.handle(textEvent('chào bạn', { messageId: 'lang-1' }));
+  const joined = sent.map((item) => item.text).join(' ');
+  assert.equal(joined.includes('你'), false);
+  assert.match(joined, /Xin chào/);
+  const record = await store.get('chat-1');
+  assert.equal(String(record.messages.at(-1)?.text ?? '').includes('你'), false);
+});
+
 test('private turns are never kept in the shared record', async () => {
   const { agent, sent, store } = await setup();
   await agent.handle(textEvent('my secret', { private: true, messageId: 'private-1' }));

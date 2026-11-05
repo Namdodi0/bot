@@ -1,6 +1,7 @@
 import { assembleRequest } from '../../context/assembler.js';
 import { searchEntry, syncContexts, turnEntry } from '../../context/record.js';
 import { normalizeWhitespace, truncate } from '../../text/format.js';
+import { isVietnameseText, languageAllowsForeign, stripForeignScript } from '../../text/language.js';
 import { LLM_ERROR } from '../llm/errors.js';
 import { createPrompt, buildSearchContext } from '../prompt/index.js';
 import { MAX_IMAGES_PER_SEND } from '../tools.js';
@@ -46,6 +47,9 @@ export function createTurnRunner(deps) {
     };
 
     const rawText = normalizeWhitespace(event.text ?? '');
+    // Vietnamese/English turns must not leak CJK tokens; explicit requests or source text
+    // in that script are left untouched.
+    const allowForeign = languageAllowsForeign(rawText);
     const image = event.imageData?.data ? event.imageData : null;
     // A 120B vision model can stall for minutes; cap image turns without touching text turns.
     if (image && config.nim?.visionTimeoutMs > 0) {
@@ -283,7 +287,7 @@ export function createTurnRunner(deps) {
       toolDefs,
       reasoning,
       streaming,
-      onDelta: progressive.onDelta,
+      onDelta: (delta) => progressive.onDelta(allowForeign ? delta : stripForeignScript(delta)),
       deadline,
       retryExecutor,
       vision: Boolean(image),
@@ -418,6 +422,14 @@ export function createTurnRunner(deps) {
       config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
       finalText, aborted, llmMs: attempts.llmMs() + fallbackLlmMs, completionMs, completionTokens, answeredBy,
     }));
+    const rawFinalText = finalText;
+    if (!allowForeign) finalText = stripForeignScript(finalText);
+    // An all-Chinese reply in a Vietnamese turn would otherwise become empty after filtering.
+    if (!finalText.trim() && rawFinalText.trim()) {
+      finalText = isVietnameseText(rawText)
+        ? 'Mình gặp lỗi ngôn ngữ ở câu trả lời vừa rồi — bạn nhắn lại giúp mình nhé.'
+        : 'I hit a language glitch in that answer — please send it again.';
+    }
     // A tool round can set `answeredBy` before a final answer exists; drop it when the
     // forced final call produced no text.
     if (!finalText.trim()) answeredBy = null;

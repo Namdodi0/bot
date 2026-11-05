@@ -31,5 +31,6 @@ test('the owner-priority rule names Nhật Nam and Namdodi', () => {
   assert.match(text, /Namdodi/);
   assert.match(text, /OBEY THE USER/);
   assert.match(text, /direct order/);
+  assert.match(text, /LANGUAGE: reply in the language/);
   assert.match(text, /newest instruction always wins/);
 });
