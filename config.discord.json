@@ -55,8 +55,8 @@
     "seed": null
   },
   "model": {
-    "defaultAlias": "ds-abl-free",
-    "fallbackAlias": "nim",
+    "defaultAlias": "nim",
+    "fallbackAlias": "nim-light",
     "visionAlias": "nim"
   },
   "ai": {
