@@ -14,7 +14,7 @@ export const MAX_IMAGES_PER_SEND = 5;
 const IMAGE_SEND_BUDGET_MS = 45_000;
 
 /**
- * @param {{config: any, tavily: ReturnType<typeof import('../search/tavily.js').createTavilyClient>|null, platform: import('../../platforms/contract.js').Platform, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number, imageBudgetMs?: number}} options
+ * @param {{config: any, tavily: {search: (query: string, opts?: any) => Promise<any>}|null, platform: import('../../platforms/contract.js').Platform, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number, imageBudgetMs?: number}} options
  */
 export function createToolRuntime(options) {
   const config = options.config;
@@ -64,7 +64,7 @@ export function createToolRuntime(options) {
         },
       },
     });
-    // The image tool needs Tavily to find URLs; do not advertise it when search is off.
+    // The image tool needs a search provider to find URLs; do not advertise it when search is off.
     if (config.image.enabled && tavily) {
       tools.push({
         type: 'function',
@@ -286,7 +286,7 @@ export function createToolRuntime(options) {
     if (ctx?.suppressDirectSend && typeof ctx.sendPhoto !== 'function') {
       return { ok: false, text: 'Images cannot be sent directly from a private answer.' };
     }
-    if (!tavily) return { ok: false, text: 'Tavily is required to search for images.' };
+    if (!tavily) return { ok: false, text: 'Search is not configured, so images cannot be found.' };
     if (ctx.deadline && Date.now() > ctx.deadline) {
       return { ok: false, text: 'Ran out of time before the image search could run.' };
     }

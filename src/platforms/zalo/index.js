@@ -71,7 +71,7 @@ export async function createZaloPlatform(input) {
       definitions: zaloToolDefinitions,
       run: createZaloToolRunner({ config, stickers, transport: client, logger, metrics }),
     },
-    healthServices: ['zalo', 'tavily'],
+    healthServices: ['zalo', 'firecrawl', 'tavily'],
     explainError: (/** @type {any} */ error) =>
       error instanceof ZaloApiError && (error.status === 401 || error.code === 401)
         ? 'Zalo rejected the bot token. Admin, please check ZALO_BOT_TOKEN.'

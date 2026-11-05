@@ -151,6 +151,7 @@ export function collectSecrets(config) {
     config.deepseek.apiKey,
     config.refuseless?.apiKey,
     config.search.apiKey,
+    config.search.firecrawlApiKey,
     config.discord?.token,
     config.webhook.secret,
   ].filter(Boolean);
@@ -313,6 +314,7 @@ export function loadConfig(input = {}) {
   const deepseekKey = asString(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY');
   const refuselessKey = asString(env.REFUSELESS_API_KEY, 'REFUSELESS_API_KEY');
   const tavilyKey = asString(env.TAVILY_API_KEY, 'TAVILY_API_KEY');
+  const firecrawlKey = asString(env.FIRECRAWL_API_KEY, 'FIRECRAWL_API_KEY');
   if (platform === 'discord' && !discord.token) {
     throw new ConfigError('Missing DISCORD_BOT_TOKEN (required when config.platform is "discord")');
   }
@@ -395,8 +397,10 @@ export function loadConfig(input = {}) {
   }
 
   const searchEnabled = cli['no-search'] ? false : asBool(searchSection.enabled, 'config.search.enabled', true);
-  if (searchEnabled && !tavilyKey) {
-    throw new ConfigError('config.search.enabled is true but TAVILY_API_KEY is missing (or use --no-search)');
+  if (searchEnabled && !tavilyKey && !firecrawlKey) {
+    throw new ConfigError(
+      'config.search.enabled is true but TAVILY_API_KEY and FIRECRAWL_API_KEY are missing (or use --no-search)',
+    );
   }
 
   const depthRaw = asString(searchSection.depth, 'config.search.depth', 'fast');
@@ -602,6 +606,7 @@ export function loadConfig(input = {}) {
       enabled: searchEnabled,
       auto: asBool(searchSection.auto, 'config.search.auto', true),
       apiKey: tavilyKey,
+      firecrawlApiKey: firecrawlKey,
       baseUrl: asString(searchSection.baseUrl, 'config.search.baseUrl', 'https://api.tavily.com').replace(/\/+$/, ''),
       depth: /** @type {'fast'|'basic'|'advanced'|'ultra-fast'} */ (depthRaw),
       maxResults: /** @type {number} */ (asInt(searchSection.maxResults, 'config.search.maxResults', 4, { min: 1, max: 10 })),
@@ -683,6 +688,7 @@ export function describeConfig(config) {
     deepseekKey: maskSecret(config.deepseek.apiKey),
     refuselessKey: maskSecret(config.refuseless.apiKey),
     tavilyKey: maskSecret(config.search.apiKey),
+    firecrawlKey: maskSecret(config.search.firecrawlApiKey),
     dryRun: config.dryRun,
   };
 }

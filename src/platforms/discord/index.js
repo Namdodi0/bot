@@ -49,7 +49,7 @@ export function createDiscordPlatform(input) {
       run: runStickerTool,
     },
     stickers,
-    healthServices: ['tavily'],
+    healthServices: ['firecrawl', 'tavily'],
     explainError: () => null,
     start: async () => {
       await transport.start();

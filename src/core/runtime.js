@@ -20,6 +20,8 @@ import { closeHttpServer, createHttp } from './http.js';
 import { createLogger } from './logger.js';
 import { createImageValidator } from './media/validate.js';
 import { createMetrics } from './metrics.js';
+import { createFirecrawlClient } from './search/firecrawl.js';
+import { createSearchRouter } from './search/router.js';
 import { createTavilyClient } from './search/tavily.js';
 import { createChatServices } from './services/chat.js';
 import { createReminderService } from './services/reminders.js';
@@ -159,16 +161,30 @@ export async function createRuntime(input) {
   const service = createLlmService({ adapters, logger, metrics });
   const models = createModelRouter({ config, service, logger });
 
-  const tavily = config.search.enabled
-    ? createTavilyClient({
-        apiKey: config.search.apiKey,
-        baseUrl: config.search.baseUrl,
-        http: httpClient,
-        logger,
-        metrics,
-        cacheTtlMs: config.search.cacheTtlMs,
-      })
-    : null;
+  const firecrawl =
+    config.search.enabled && config.search.firecrawlApiKey
+      ? createFirecrawlClient({
+          apiKey: config.search.firecrawlApiKey,
+          http: httpClient,
+          logger,
+          metrics,
+          cacheTtlMs: config.search.cacheTtlMs,
+        })
+      : null;
+  const tavily =
+    config.search.enabled && config.search.apiKey
+      ? createTavilyClient({
+          apiKey: config.search.apiKey,
+          baseUrl: config.search.baseUrl,
+          http: httpClient,
+          logger,
+          metrics,
+          cacheTtlMs: config.search.cacheTtlMs,
+        })
+      : null;
+  // Firecrawl is primary; Tavily covers quota/outage failures. The tool runtime only
+  // depends on the shared `search` surface, so it receives this router under the old name.
+  const search = firecrawl || tavily ? createSearchRouter({ primary: firecrawl, fallback: tavily, logger, metrics }) : null;
 
   const validator = createImageValidator({ logger, timeoutMs: 4000 });
 
@@ -183,7 +199,7 @@ export async function createRuntime(input) {
   const reminderService = createReminderService({ reminders });
   const tools = createToolRuntime({
     config,
-    tavily,
+    tavily: search,
     platform,
     validator,
     reminders,
@@ -380,7 +396,8 @@ export async function createRuntime(input) {
     store,
     models,
     service,
-    tavily,
+    tavily: search,
+    search,
     validator,
     reminders,
     reminderService,

@@ -48,6 +48,17 @@ test('sampling defaults keep the tail tight to limit language drift', () => {
   assert.equal(config.refuseless.topP, 0.9);
 });
 
+test('FIRECRAWL_API_KEY enables search without a Tavily key', () => {
+  const config = loadConfig({
+    argv: [],
+    env: { ZALO_BOT_TOKEN: '123:abc', NIM_API_KEY: 'nvapi-test', FIRECRAWL_API_KEY: 'fc-test' },
+    config: { dataDir: os.tmpdir(), model: { defaultAlias: 'ultra' } },
+  });
+  assert.equal(config.search.enabled, true);
+  assert.equal(config.search.firecrawlApiKey, 'fc-test');
+  assert.equal(config.search.apiKey, '');
+});
+
 test('visionAlias must point at a vision-capable model', () => {
   assert.throws(() => load({ model: { visionAlias: 'ultra' } }), /vision-capable/);
   assert.equal(load({ model: { visionAlias: 'nim' } }).model.visionAlias, 'nim');
