@@ -1,4 +1,4 @@
-import { catchupEmbed, createPreviewer } from '../ui.js';
+import { catchupEmbed, createPreviewer, paginationRow, textEmbed } from '../ui.js';
 
 const CATCHUP_MAX_MESSAGES = 500;
 const CATCHUP_PAGE_SIZE = 100;
@@ -26,7 +26,7 @@ function tailTranscript(lines, maxChars) {
  * @param {ReturnType<typeof import('./shared.js').createShared>} shared
  */
 export function createCatchupHandlers(shared) {
-  const { chat, logger, ephemeral, runtime, replyEphemeral } = shared;
+  const { chat, logger, ephemeral, runtime, replyEphemeral, makePager, splitPages } = shared;
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
   const handlers = {
@@ -116,6 +116,16 @@ export function createCatchupHandlers(shared) {
       await previewer.flush();
       if (!summary.ok) {
         await interaction.editReply({ content: 'I could not summarize those messages right now.' });
+        return;
+      }
+      const pages = splitPages(summary.text);
+      if (pages.length > 1) {
+        const title = `Catch-up — last ${hours} hour${hours === 1 ? '' : 's'}`;
+        const pager = makePager(interaction.user.id, pages, title);
+        await interaction.editReply({
+          embeds: [textEmbed(title, pages[0])],
+          components: paginationRow(pager, 0, pages.length),
+        });
         return;
       }
       await interaction.editReply({ embeds: [catchupEmbed(hours, transcript.count, summary.text)] });

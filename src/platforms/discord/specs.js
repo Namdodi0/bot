@@ -134,7 +134,7 @@ export const COMMANDS = [
         type: 1,
         name: 'cancel',
         description: 'Cancel a reminder by id',
-        options: [{ name: 'id', description: 'Reminder id from /remind list', type: 4, required: true, min_value: 1 }],
+        options: [{ name: 'id', description: 'Reminder id from /remind list', type: 4, required: true, min_value: 1, autocomplete: true }],
       },
     ],
   },

@@ -110,6 +110,78 @@ test('/settings replies with an ephemeral panel and selects update record.meta',
   assert.equal(runtime.record.meta.model, 'nim');
 });
 
+test('answer feedback buttons record a rating', async () => {
+  const { commands, runtime } = makeCommands();
+  const ratings = [];
+  runtime.metrics.inc = (name) => ratings.push(name);
+  const ask = interaction('ask', { prompt: 'hi' });
+  await commands.handleCommand(ask);
+  const final = ask.edits[ask.edits.length - 1];
+  const token = String(final.components[0].components[0].data.custom_id).split(':')[2];
+  const click = interaction('', {}, { customId: `ask:good:${token}`, user: { id: 'u1' } });
+  await commands.handleButton(click);
+  assert.equal(click.replies.length, 1);
+  assert.ok(click.replies[0].flags);
+  assert.deepEqual(ratings.filter((name) => name.startsWith('feedback')), ['feedback.good']);
+});
+
+test('/help paginates and page buttons update the embed', async () => {
+  const { commands } = makeCommands();
+  const help = interaction('help');
+  await commands.handleCommand(help);
+  const nextId = help.replies[0].components[0].components[2].data.custom_id;
+  const click = interaction('', {}, { customId: nextId, user: { id: 'u1' } });
+  await commands.handleButton(click);
+  assert.equal(click.edits.length, 1);
+  assert.match(JSON.stringify(click.edits[0]), /Page 2/);
+});
+
+test('/remind autocomplete lists reminders and the list exposes a modal', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.reminders.list = () => [{ id: 7, at: Date.now() + 60_000, text: 'water' }];
+  let choices = null;
+  const autocomplete = {
+    commandName: 'remind',
+    channelId: 'c1',
+    options: { getSubcommand: () => 'cancel', getFocused: () => '' },
+    respond: async (items) => {
+      choices = items;
+    },
+  };
+  await commands.handleAutocomplete(autocomplete);
+  assert.deepEqual(choices, [{ name: '#7 — water', value: '7' }]);
+
+  const list = interaction('remind', { __sub: 'list' });
+  await commands.handleCommand(list);
+  const button = interaction('', {}, { customId: 'remind:new', user: { id: 'u1' } });
+  await commands.handleButton(button);
+  assert.match(JSON.stringify(button.modal), /remind-form/);
+});
+
+test('the remind modal creates a reminder', async () => {
+  const { commands, runtime } = makeCommands();
+  const added = [];
+  runtime.reminders.add = async (input) => {
+    added.push(input);
+    return { ok: true, item: { id: 3, at: input.at, text: input.text } };
+  };
+  const modal = {
+    customId: 'remind-form',
+    channelId: 'c1',
+    user: { id: 'u1' },
+    fields: { getTextInputValue: (key) => (key === 'remind-when' ? '+10m' : 'water') },
+    reply: async (payload) => {
+      modal.payload = payload;
+    },
+  };
+  await commands.handleModal(modal);
+  assert.equal(added[0].chatId, 'c1');
+  assert.equal(added[0].text, 'water');
+  assert.equal(added[0].createdBy, 'u1');
+  assert.ok(added[0].at > Date.now());
+  assert.match(modal.payload.content, /Reminder #3/);
+});
+
 test('/catchup summarizes the channel transcript within the requested window', async () => {
   const { commands, runtime } = makeCommands();
   const now = Date.now();

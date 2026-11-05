@@ -1,6 +1,16 @@
 import { REMINDER_LIMITS } from '../../../core/ai/reminders.js';
 import { COMMANDS, HELP_NOTE } from '../specs.js';
-import { createPreviewer, errorEmbed, helpEmbed, reminderEmbed, statusEmbed, textEmbed } from '../ui.js';
+import {
+  createPreviewer,
+  errorEmbed,
+  helpEmbed,
+  paginationRow,
+  reminderEmbed,
+  remindButtons,
+  remindModal,
+  statusEmbed,
+  textEmbed,
+} from '../ui.js';
 
 /**
  * The remaining slash commands that do not stream an agent turn: help/status/ping,
@@ -19,7 +29,36 @@ export function createBasicHandlers(shared) {
     isAdmin,
     replyEphemeral,
     sendPhotos,
+    makePager,
+    splitPages,
   } = shared;
+
+  /** Split the command list into pages that fit a mobile embed. */
+  function helpPages() {
+    const lines = [
+      ...COMMANDS.filter((command) => command.type === 1).map((command) => `**/${command.name}** — ${command.description}`),
+      '',
+      '*Message menus*',
+      ...COMMANDS.filter((command) => command.type === 3).map((command) => `**${command.name}** — message menu`),
+    ];
+    const pages = [];
+    for (let index = 0; index < lines.length; index += 8) pages.push(lines.slice(index, index + 8).join('\n'));
+    pages[pages.length - 1] = `${pages[pages.length - 1]}\n\n${HELP_NOTE}`;
+    return pages;
+  }
+
+  /** @param {string} reason */
+  function reminderError(reason) {
+    const messages = {
+      'invalid-time': 'Invalid reminder time.',
+      'too-long': `The reminder text is too long (max ${REMINDER_LIMITS.MAX_REMINDER_CHARS}).`,
+      'chat-limit': `This channel already has ${REMINDER_LIMITS.MAX_PER_CHAT} reminders; cancel one first.`,
+      'total-limit': 'The reminder limit has been reached.',
+      invalid: 'Invalid reminder.',
+      'not-configured': 'Reminders are not configured.',
+    };
+    return messages[/** @type {keyof typeof messages} */ (reason)] ?? 'Could not create the reminder.';
+  }
 
   function deadline() {
     return config.responseTimeoutMs > 0 ? Date.now() + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
@@ -61,7 +100,16 @@ export function createBasicHandlers(shared) {
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
   const handlers = {
     async help(interaction) {
-      await replyEphemeral(interaction, { embeds: [helpEmbed(COMMANDS, HELP_NOTE)] });
+      const pages = helpPages();
+      if (pages.length <= 1) {
+        await replyEphemeral(interaction, { embeds: [helpEmbed(COMMANDS, HELP_NOTE)] });
+        return;
+      }
+      const pager = makePager(interaction.user.id, pages, 'AI bot commands');
+      await replyEphemeral(interaction, {
+        embeds: [textEmbed('AI bot commands', pages[0])],
+        components: paginationRow(pager, 0, pages.length),
+      });
     },
 
     async status(interaction) {
@@ -153,9 +201,17 @@ export function createBasicHandlers(shared) {
         });
         return;
       }
-      await interaction.editReply({
-        embeds: [textEmbed(`Summary of the last ${result.count} messages`, result.text)],
-      });
+      const title = `Summary of the last ${result.count} messages`;
+      const pages = splitPages(result.text);
+      if (pages.length > 1) {
+        const pager = makePager(interaction.user.id, pages, title);
+        await interaction.editReply({
+          embeds: [textEmbed(title, pages[0])],
+          components: paginationRow(pager, 0, pages.length),
+        });
+        return;
+      }
+      await interaction.editReply({ embeds: [textEmbed(title, result.text)] });
     },
 
     async search(interaction) {
@@ -205,7 +261,10 @@ export function createBasicHandlers(shared) {
       const chatId = String(interaction.channelId);
       const sub = interaction.options.getSubcommand();
       if (sub === 'list') {
-        await replyEphemeral(interaction, { embeds: [reminderEmbed(reminderService.list(chatId))] });
+        await replyEphemeral(interaction, {
+          embeds: [reminderEmbed(reminderService.list(chatId))],
+          components: remindButtons(),
+        });
         return;
       }
       if (sub === 'cancel') {
@@ -240,5 +299,56 @@ export function createBasicHandlers(shared) {
     },
   };
 
-  return { handlers };
+  /** @param {any} interaction */
+  async function handleButton(interaction) {
+    if (interaction.customId !== 'remind:new') return false;
+    await interaction.showModal(remindModal());
+    return true;
+  }
+
+  /** @param {any} interaction */
+  async function handleModal(interaction) {
+    if (interaction.customId !== 'remind-form') return false;
+    const chatId = String(interaction.channelId);
+    const when = String(interaction.fields?.getTextInputValue('remind-when') ?? '').trim();
+    const text = String(interaction.fields?.getTextInputValue('remind-text') ?? '').trim();
+    const created = await reminderService.add(chatId, when, text, interaction.user.id);
+    if (!created.ok) {
+      await replyEphemeral(interaction, { content: reminderError(created.reason) });
+      return true;
+    }
+    const seconds = Math.floor(created.item.at / 1000);
+    await replyEphemeral(interaction, {
+      content: `Reminder #${created.item.id} set for <t:${seconds}:f> (<t:${seconds}:R>): ${created.item.text}`,
+    });
+    return true;
+  }
+
+  /** @param {any} interaction */
+  async function handleAutocomplete(interaction) {
+    if (interaction.commandName !== 'remind') return false;
+    let sub = '';
+    try {
+      sub = interaction.options.getSubcommand(false) ?? '';
+    } catch {
+      sub = '';
+    }
+    if (sub !== 'cancel') {
+      await interaction.respond([]);
+      return true;
+    }
+    const chatId = String(interaction.channelId);
+    const focused = String(interaction.options.getFocused() ?? '').toLowerCase();
+    const choices = reminderService
+      .list(chatId)
+      .slice()
+      .sort((a, b) => a.at - b.at)
+      .map((item) => ({ name: `#${item.id} — ${item.text}`.slice(0, 100), value: String(item.id) }))
+      .filter((item) => item.name.toLowerCase().includes(focused) || item.value.includes(focused))
+      .slice(0, 25);
+    await interaction.respond(choices);
+    return true;
+  }
+
+  return { handlers, handleButton, handleModal, handleAutocomplete };
 }

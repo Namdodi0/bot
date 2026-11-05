@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { answerButtons, chunkContent, errorEmbed, photoBatches, photoPayload } from '../ui.js';
+import { answerButtons, chunkContent, errorEmbed, paginationRow, photoBatches, photoPayload, textEmbed } from '../ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
 
@@ -24,10 +24,47 @@ export function createShared(deps) {
 
   /** @type {Map<string, {prompt: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, at: number}>} */
   const tokens = new Map();
+  /** @type {Map<string, {pages: string[], title: string, userId: string, at: number}>} */
+  const pagers = new Map();
 
   function pruneTokens() {
     const now = Date.now();
     for (const [id, value] of tokens) if (now - value.at > TOKEN_TTL_MS) tokens.delete(id);
+    for (const [id, value] of pagers) if (now - value.at > TOKEN_TTL_MS) pagers.delete(id);
+  }
+
+  /**
+   * Store page text under a short id and return it for the pagination buttons.
+   * @param {string} userId
+   * @param {string[]} pages
+   * @param {string} title
+   */
+  function makePager(userId, pages, title) {
+    pruneTokens();
+    const id = crypto.randomUUID().slice(0, 12);
+    pagers.set(id, { pages, title, userId, at: Date.now() });
+    return id;
+  }
+
+  /** @param {any} interaction */
+  async function handlePager(interaction) {
+    const [prefix, pagerId, rawPage] = String(interaction.customId ?? '').split(':');
+    if (prefix !== 'page') return false;
+    const pager = pagers.get(pagerId);
+    if (!pager) {
+      await interaction.reply({ content: 'This list is too old — run the command again.', flags: MessageFlags.Ephemeral });
+      return true;
+    }
+    if (interaction.user.id !== pager.userId) {
+      await interaction.reply({ content: 'This is not your list.', flags: MessageFlags.Ephemeral });
+      return true;
+    }
+    const page = Math.max(0, Math.min(pager.pages.length - 1, Number(rawPage) || 0));
+    await interaction.update({
+      embeds: [textEmbed(pager.title, pager.pages[page])],
+      components: paginationRow(pagerId, page, pager.pages.length),
+    });
+    return true;
   }
 
   /** @param {{prompt: string, chatId: string, chatType: string, userId: string, ephemeral: boolean}} payload */
@@ -121,6 +158,26 @@ export function createShared(deps) {
     }
   }
 
+  /**
+   * Split long text into readable pages without cutting a line when possible.
+   * @param {string} text
+   * @param {number} [maxChars]
+   */
+  function splitPages(text, maxChars = 1800) {
+    const clean = String(text ?? '').trim();
+    if (clean.length <= maxChars) return [clean];
+    const pages = [];
+    let rest = clean;
+    while (rest.length > maxChars) {
+      let cut = rest.lastIndexOf('\n', maxChars);
+      if (cut < Math.floor(maxChars * 0.5)) cut = maxChars;
+      pages.push(rest.slice(0, cut).trim());
+      rest = rest.slice(cut).trim();
+    }
+    if (rest) pages.push(rest);
+    return pages;
+  }
+
   return {
     config,
     logger,
@@ -131,6 +188,10 @@ export function createShared(deps) {
     reminderService,
     tokens,
     makeToken,
+    pagers,
+    makePager,
+    handlePager,
+    splitPages,
     ephemeral,
     privateReply,
     isAdmin,

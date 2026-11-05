@@ -41,9 +41,20 @@ export function createCommandRuntime(deps) {
 
   return {
     handleCommand,
-    handleAutocomplete: settings.handleAutocomplete,
+    handleAutocomplete: async (/** @type {any} */ interaction) => {
+      if (interaction.commandName === 'remind') return basic.handleAutocomplete(interaction);
+      return settings.handleAutocomplete(interaction);
+    },
     handleSelect: settings.handleSelect,
-    handleButton: ask.handleButton,
-    handleModal: ask.handleModal,
+    handleButton: async (/** @type {any} */ interaction) => {
+      const customId = String(interaction.customId ?? '');
+      if (customId.startsWith('page:')) return shared.handlePager(interaction);
+      if (customId.startsWith('remind:')) return basic.handleButton(interaction);
+      return ask.handleButton(interaction);
+    },
+    handleModal: async (/** @type {any} */ interaction) => {
+      if (interaction.customId === 'remind-form') return basic.handleModal(interaction);
+      return ask.handleModal(interaction);
+    },
   };
 }

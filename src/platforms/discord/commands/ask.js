@@ -224,6 +224,19 @@ export function createAskHandlers(shared) {
       await interaction.reply({ content: 'This is not your conversation.', flags: MessageFlags.Ephemeral });
       return;
     }
+    if (action === 'good' || action === 'bad') {
+      runtime.metrics?.inc(`feedback.${action}`);
+      logger?.info('discord answer feedback', {
+        chatId: payload.chatId,
+        userId: interaction.user.id,
+        rating: action,
+      });
+      await interaction.reply({
+        content: action === 'good' ? 'Thanks for the feedback 👍' : 'Got it — I will try to do better 👎',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
     if (action === 'delete') {
       await interaction.deferUpdate();
       await interaction.message.delete().catch((error) => {

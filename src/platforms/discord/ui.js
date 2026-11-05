@@ -149,8 +149,73 @@ export function answerButtons(token) {
     new ButtonBuilder().setCustomId(`ask:regen:${token}`).setLabel('Regenerate').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`ask:continue:${token}`).setLabel('Continue').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`ask:delete:${token}`).setLabel('Delete').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`ask:good:${token}`).setLabel('👍').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`ask:bad:${token}`).setLabel('👎').setStyle(ButtonStyle.Danger),
   );
   return [row];
+}
+
+/**
+ * Previous / page indicator / Next row for a stored pager.
+ * @param {string} pagerId
+ * @param {number} page
+ * @param {number} total
+ */
+export function paginationRow(pagerId, page, total) {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`page:${pagerId}:${page - 1}`)
+      .setLabel('Previous')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page <= 0),
+    new ButtonBuilder()
+      .setCustomId(`page:${pagerId}:${page}`)
+      .setLabel(`Page ${page + 1}/${total}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true),
+    new ButtonBuilder()
+      .setCustomId(`page:${pagerId}:${page + 1}`)
+      .setLabel('Next')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page >= total - 1),
+  );
+  return [row];
+}
+
+/** Add-reminder button shown on the reminder list. */
+export function remindButtons() {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('remind:new').setLabel('Add reminder').setStyle(ButtonStyle.Primary),
+  );
+  return [row];
+}
+
+/** Modal used by the Add reminder button. */
+export function remindModal() {
+  const whenRow = /** @type {ActionRowBuilder<TextInputBuilder>} */ (
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('remind-when')
+        .setLabel('When (HH:MM, HH:MM tomorrow, +10m)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(50),
+    )
+  );
+  const textRow = /** @type {ActionRowBuilder<TextInputBuilder>} */ (
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('remind-text')
+        .setLabel('What to remind you about')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(500),
+    )
+  );
+  return new ModalBuilder()
+    .setCustomId('remind-form')
+    .setTitle('New reminder')
+    .addComponents(whenRow, textRow);
 }
 
 /**
