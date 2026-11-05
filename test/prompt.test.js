@@ -35,6 +35,15 @@ test('the grok tone uses truth-seeker rules', () => {
   assert.match(text, /never at their family, race, gender or religion/);
 });
 
+test('the unhinged tone uses the leaked Grok comedian rules', () => {
+  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'unhinged' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /Unhinged Comedian/);
+  assert.match(text, /Curse like a sailor/);
+  assert.match(text, /no sexual content/);
+  assert.match(text, /never aim at the user's family/);
+});
+
 test('the prompt asks for concise replies', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'roast-extreme' });
   const text = registry.render(registry.assemble({ text: 'hi' }));

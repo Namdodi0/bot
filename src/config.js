@@ -427,8 +427,8 @@ export function loadConfig(input = {}) {
     'ng\u1EA1i': 'shy',
   };
   const tone = toneAlias[toneRaw] ?? toneRaw;
-  if (!['friendly', 'shy', 'grok', 'roast', 'roast-hard', 'roast-extreme'].includes(tone)) {
-    throw new ConfigError(`config.tone must be friendly, shy, grok, roast, roast-hard or roast-extreme (got: "${toneRaw}")`);
+  if (!['friendly', 'shy', 'grok', 'unhinged', 'roast', 'roast-hard', 'roast-extreme'].includes(tone)) {
+    throw new ConfigError(`config.tone must be friendly, shy, grok, unhinged, roast, roast-hard or roast-extreme (got: "${toneRaw}")`);
   }
 
   const nimTopP = asOptionalNumber(nimSection.topP, 'config.nim.topP', { min: 0, max: 1 }) ?? 0.9;

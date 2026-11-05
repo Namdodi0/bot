@@ -156,6 +156,7 @@ test('invalid enum values are rejected', () => {
   assert.throws(() => load({ model: { defaultAlias: 'gpt-9' } }), /config\.model\.defaultAlias/);
   assert.throws(() => load({ model: { visionAlias: 'gpt-9' } }), /config\.model\.visionAlias/);
   assert.throws(() => load({ tone: 'shouty' }), /config\.tone/);
+  assert.equal(load({ tone: 'unhinged' }).tone, 'unhinged');
 });
 
 test('visionAlias must point at a vision-capable model', () => {

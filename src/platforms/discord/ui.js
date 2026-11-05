@@ -293,6 +293,7 @@ export const TONES = [
   { value: 'friendly', label: 'Friendly' },
   { value: 'shy', label: 'Shy (extreme cute)' },
   { value: 'grok', label: 'Grok' },
+  { value: 'unhinged', label: 'Unhinged comedian' },
   { value: 'roast', label: 'Roast' },
   { value: 'roast-hard', label: 'Roast hard' },
   { value: 'roast-extreme', label: 'Roast extreme' },
