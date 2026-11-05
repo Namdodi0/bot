@@ -3,10 +3,13 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
   EmbedBuilder,
+  MessageFlags,
   ModalBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
@@ -15,6 +18,27 @@ import { photoFilename } from './transport.js';
 
 export const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
 export const PREVIEW_INTERVAL_MS = 1000;
+
+/**
+ * Components V2 answer payload: one container holding the text (and optional button rows).
+ * V2 messages cannot carry `content` or `embeds`, hence every answer payload uses this.
+ * @param {string} content
+ * @param {any[]} [rows]
+ * @param {{ephemeral?: boolean}} [options]
+ */
+export function v2Message(content, rows = [], options = {}) {
+  const raw = String(content ?? '');
+  const text = raw.trim() ? raw.slice(0, 4000) : '…';
+  const container = new ContainerBuilder().addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(text),
+  );
+  if (rows.length) container.addActionRowComponents(...rows);
+  return {
+    components: [container],
+    flags: MessageFlags.IsComponentsV2 | (options.ephemeral ? MessageFlags.Ephemeral : 0),
+    allowedMentions: { parse: [] },
+  };
+}
 
 /**
  * Serialized, throttled message preview. Identical (often clamped) previews are skipped so a

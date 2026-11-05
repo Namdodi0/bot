@@ -61,8 +61,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   tool/command, markdown sanitizing, admission/admin policy.
 - `src/platforms/discord/` — native Discord bot: `specs.js` (slash/context-menu surface),
   `commands/` (router, ask/streaming, settings, catchup, stickers, basic handlers, shared
-  helpers), `ui.js` (embeds/attachments/components/modals), `bot.js` (client + registration),
-  `message-handler.js` (admission + streaming chat), `interaction-router.js`, `presence.js`,
+  helpers), `ui.js` (embeds/attachments/components V2/modals), `bot.js` (client + registration),
+  `message-handler.js` (admission + streaming chat), `message-sync.js` (edit/delete context
+  sync), `interaction-router.js`, `presence.js`,
   `transport.js`, `events.js` (normalization/admission), `stickers.js`, `prompt.js` and
   `config.js`. Native commands collect answers via `agent.stream()`/`agent.collect()`; no
   second agent or Zalo import. Private asks/context menus mark `event.private`.
@@ -128,7 +129,10 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`,
   `/sticker`, `/remind`), message context menus are `Explain message`/`Summarize message`,
   and native handlers own the interaction lifecycle (embeds, buttons, selects, modals,
-  ephemeral replies). `/ask` can open a prompt modal; `discord.stickers` enables server
+  ephemeral replies). Model answers use Components V2 (`v2Message`: one container +
+  `TextDisplay` + optional action row) while command panels keep embeds. User edits and
+  deletions sync into the stored context through `message-sync.js` under the per-chat
+  queue. `/ask` can open a prompt modal; `discord.stickers` enables server
   stickers (command + tool); `discord.presence` sets the bot activity on startup.
   Model-generated replies stream through `agent.stream()` into one edited message (`/ask`,
   mention/reply chat, context menus, Regenerate/Continue, `/summary`, `/catchup`); tool-only

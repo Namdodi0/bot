@@ -1,6 +1,7 @@
 import { createCommandRuntime } from './commands.js';
 import { createInteractionRouter } from './interaction-router.js';
 import { createMessageHandler } from './message-handler.js';
+import { createMessageSync } from './message-sync.js';
 import { applyPresence } from './presence.js';
 import { COMMANDS } from './specs.js';
 
@@ -19,6 +20,7 @@ export function createDiscordBot(deps) {
   const commands = createCommandRuntime({ config, logger, platform, runtime });
   const handleMessage = createMessageHandler({ config, logger, metrics, transport, runtime, client });
   const handleInteraction = createInteractionRouter({ config, logger, commands });
+  const syncMessage = createMessageSync({ config, logger, metrics, runtime, client });
 
   async function registerCommands() {
     const application = client.application;
@@ -46,6 +48,15 @@ export function createDiscordBot(deps) {
       handleInteraction(interaction).catch((error) =>
         logger?.error('discord interaction failed', { error: String(/** @type {any} */ (error)?.message ?? error) }),
       );
+    });
+    client.on('messageUpdate', (oldMessage, newMessage) => {
+      syncMessage.update(oldMessage, newMessage);
+    });
+    client.on('messageDelete', (message) => {
+      syncMessage.remove(message);
+    });
+    client.on('messageDeleteBulk', (messages) => {
+      syncMessage.removeBulk(messages);
     });
     client.once('clientReady', () => {
       applyPresence({ client, presence: config.discord?.presence, logger });

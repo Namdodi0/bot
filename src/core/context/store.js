@@ -358,6 +358,21 @@ export function createContextStore(options) {
     return memory.has(chatId);
   }
 
+  /**
+   * Whether a chat already has stored context, without loading it into memory.
+   * Used by edit/delete sync so unrelated channels never get an empty record.
+   * @param {string} chatId
+   */
+  async function exists(chatId) {
+    if (memory.has(chatId)) return true;
+    try {
+      await fsp.access(fileFor(chatId));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function loadedChats() {
     return memory.size;
   }
@@ -373,5 +388,5 @@ export function createContextStore(options) {
     return entries.filter((name) => name.endsWith('.json')).length;
   }
 
-  return { init, get, reset, touch, flush, prune, has, loadedChats, count, scheduleSave, fileFor, pin, unpin };
+  return { init, get, reset, touch, flush, prune, has, exists, loadedChats, count, scheduleSave, fileFor, pin, unpin };
 }

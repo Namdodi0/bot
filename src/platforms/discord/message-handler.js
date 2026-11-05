@@ -1,5 +1,5 @@
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
-import { chunkContent, createPreviewer, photoBatches, photoPayload } from './ui.js';
+import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Message } from './ui.js';
 
 // Cap concurrent streaming turns so a burst of mentions cannot open hundreds of preview
 // edits at once. agent.stream() already serializes turns per chat; this is global.
@@ -72,11 +72,11 @@ export function createMessageHandler(deps) {
     let streamed = '';
     const previewer = createPreviewer(async (text) => {
       if (!placeholder) {
-        placeholder = await message.reply({ content: text, allowedMentions: { parse: [] } });
+        placeholder = await message.reply(v2Message(text));
         await stopTyping();
         return;
       }
-      await placeholder.edit({ content: text, allowedMentions: { parse: [] } });
+      await placeholder.edit(v2Message(text));
     });
 
     try {
@@ -101,7 +101,7 @@ export function createMessageHandler(deps) {
           });
         } else {
           await placeholder
-            .edit({ content: first || 'Here are the images.', allowedMentions: { parse: [] } })
+            .edit(v2Message(first || 'Here are the images.'))
             .catch((error) => {
               logger?.debug('discord placeholder edit failed', {
                 chatId: event.chatId,
@@ -110,10 +110,10 @@ export function createMessageHandler(deps) {
             });
         }
       } else if (first) {
-        placeholder = await message.reply({ content: first, allowedMentions: { parse: [] } });
+        placeholder = await message.reply(v2Message(first));
       }
       for (const chunk of chunks) {
-        await message.channel.send({ content: chunk, allowedMentions: { parse: [] } }).catch((error) => {
+        await message.channel.send(v2Message(chunk)).catch((error) => {
           logger?.warn('discord chunk send failed', {
             chatId: event.chatId,
             error: String(/** @type {any} */ (error)?.message ?? error),

@@ -1,6 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { MessageFlags } from 'discord.js';
 import { makeDiscordCommands as makeCommands, makeInteraction as interaction } from '../test-utils/discord.js';
+
+function isV2(payload) {
+  return Boolean(payload?.flags && (payload.flags & MessageFlags.IsComponentsV2) !== 0);
+}
+
+function payloadJson(payload) {
+  return payload?.components?.[0]?.toJSON?.() ?? null;
+}
+
+function payloadText(payload) {
+  if (!isV2(payload)) return String(payload?.content ?? '');
+  const row = payloadJson(payload)?.components.find((component) => component.type === 10);
+  return String(row?.content ?? '');
+}
+
+function payloadButtons(payload) {
+  return payloadJson(payload)?.components.find((component) => component.type === 1) ?? null;
+}
 
 test('/ask streams a preview edit and then renders the final answer with buttons', async () => {
   const { commands } = makeCommands();
@@ -8,12 +27,13 @@ test('/ask streams a preview edit and then renders the final answer with buttons
   await commands.handleCommand(i);
   assert.equal(i.deferred, true);
   assert.ok(
-    i.edits.some((payload) => payload.content === 'Answer ' && !payload.components),
-    'a preview edit should arrive before the final answer',
+    i.edits.some((payload) => isV2(payload) && payloadText(payload) === 'Answer '),
+    'a V2 preview edit should arrive before the final answer',
   );
   const finalPayload = i.edits[i.edits.length - 1];
-  assert.equal(finalPayload.content, 'Answer text');
-  const customId = finalPayload.components[0].components[0].data.custom_id;
+  assert.equal(payloadText(finalPayload), 'Answer text');
+  assert.ok(isV2(finalPayload), 'the final answer must use Components V2');
+  const customId = payloadButtons(finalPayload).components[0].custom_id;
   assert.match(customId, /^ask:regen:/);
 });
 
@@ -31,7 +51,7 @@ test('/ask rejects a non-image attachment without calling the agent', async () =
   await commands.handleCommand(i);
   assert.equal(called, false);
   assert.equal(i.deferred, true);
-  assert.match(i.edits[0].content, /must be an image/);
+  assert.match(payloadText(i.edits[0]), /must be an image/);
 });
 
 test('answer feedback buttons record a rating', async () => {
@@ -41,7 +61,7 @@ test('answer feedback buttons record a rating', async () => {
   const ask = interaction('ask', { prompt: 'hi' });
   await commands.handleCommand(ask);
   const final = ask.edits[ask.edits.length - 1];
-  const token = String(final.components[0].components[0].data.custom_id).split(':')[2];
+  const token = String(payloadButtons(final).components[0].custom_id).split(':')[2];
   const click = interaction('', {}, { customId: `ask:good:${token}`, user: { id: 'u1' } });
   await commands.handleButton(click);
   assert.equal(click.replies.length, 1);
@@ -96,7 +116,7 @@ test('private /ask wins over thread and never creates a public thread', async ()
 
   assert.deepEqual(threads, [], 'a private answer must not post to a thread');
   assert.ok(i.deferPayload.flags, 'the deferral must be ephemeral');
-  assert.equal(i.edits.at(-1).content, 'secret answer');
+  assert.equal(payloadText(i.edits.at(-1)), 'secret answer');
   assert.equal(seen.private, true);
   const note = i.follows.at(-1);
   assert.match(note.content, /skip threads/);
@@ -108,10 +128,9 @@ test('every model-text payload from /ask disables mention parsing', async () => 
   const i = interaction('ask', { prompt: 'hello @everyone', private: true });
   await commands.handleCommand(i);
   const payloads = [...i.edits, ...i.follows];
-  assert.ok(payloads.some((payload) => payload.content === 'Answer '), 'a preview edit should be present');
+  assert.ok(payloads.some((payload) => payloadText(payload) === 'Answer '), 'a preview edit should be present');
   for (const payload of payloads) {
-    if (!payload.content) continue;
-    assert.deepEqual(payload.allowedMentions, { parse: [] }, `payload ${JSON.stringify(payload.content)} must not ping`);
+    assert.deepEqual(payload.allowedMentions, { parse: [] }, 'every answer payload must not ping');
   }
 });
 

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { answerButtons, chunkContent, errorEmbed, paginationRow, photoBatches, photoPayload, textEmbed } from '../ui.js';
+import { answerButtons, chunkContent, errorEmbed, paginationRow, photoBatches, photoPayload, textEmbed, v2Message } from '../ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
 
@@ -127,9 +127,9 @@ export function createShared(deps) {
    */
   async function sendInteractionAnswer(interaction, result, token, priv) {
     const { chunks, first } = splitAnswer(result);
-    await interaction.editReply({ content: first, components: answerButtons(token), allowedMentions: noMentions() });
+    await interaction.editReply(v2Message(first, answerButtons(token)));
     for (const chunk of chunks) {
-      await interaction.followUp({ content: chunk, allowedMentions: noMentions(), ...privateReply(priv) });
+      await interaction.followUp(v2Message(chunk, [], { ephemeral: priv }));
     }
     await sendPhotos(interaction, result.photos, priv);
   }
@@ -149,10 +149,10 @@ export function createShared(deps) {
    */
   async function sendChannelAnswer(channel, result, token, existing = null) {
     const { chunks, first } = splitAnswer(result);
-    const payload = { content: first, components: answerButtons(token), allowedMentions: noMentions() };
+    const payload = v2Message(first, answerButtons(token));
     if (existing?.edit) await existing.edit(payload);
     else await channel.send(payload);
-    for (const chunk of chunks) await channel.send({ content: chunk, allowedMentions: noMentions() });
+    for (const chunk of chunks) await channel.send(v2Message(chunk));
     for (const group of photoBatches(result.photos)) {
       await channel.send({ ...photoPayload(group), allowedMentions: noMentions() });
     }

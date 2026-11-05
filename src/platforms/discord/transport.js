@@ -51,7 +51,7 @@ export function createDiscordTransport(options) {
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
       ],
-      partials: [Partials.Channel],
+      partials: [Partials.Channel, Partials.Message, Partials.User],
     });
 
   /** @type {Map<string, NodeJS.Timeout>} */

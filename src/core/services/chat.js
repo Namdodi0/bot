@@ -134,6 +134,76 @@ export function createChatServices({ config, store, models, compaction }) {
     return { ok: true, count: transcript.count, text: result.text };
   }
 
+  /**
+   * Keep the group sender prefix and a stored "[Replying to ...]" quote when the body changes.
+   * @param {any} entry
+   * @param {string} text
+   * @param {boolean} isGroup
+   * @param {string} name
+   */
+  function editedTurnText(entry, text, isGroup, name) {
+    const oldPrefix = entry.name ? `${entry.name}: ` : '';
+    const body = String(entry.text ?? '').startsWith(oldPrefix)
+      ? String(entry.text).slice(oldPrefix.length)
+      : String(entry.text ?? '');
+    const quote = body.match(/^(\[Replying to [^\n]*\])\n/)?.[1] ?? '';
+    const prefix = isGroup && name ? `${name}: ` : '';
+    return `${prefix}${quote ? `${quote}\n` : ''}${text}`;
+  }
+
+  /**
+   * Update the stored text of a user turn by its platform message id.
+   * The caller must serialize this with turns (agent.exclusive).
+   * @param {string} chatId
+   * @param {{messageId: string, text: string, senderName?: string, chatType?: string}} input
+   */
+  async function editTurn(chatId, input) {
+    const messageId = String(input?.messageId ?? '');
+    const text = String(input?.text ?? '').trim();
+    if (!messageId || !text) return { ok: false, reason: 'invalid' };
+    if (typeof store.exists === 'function' && !(await store.exists(chatId))) {
+      return { ok: false, reason: 'missing' };
+    }
+    const record = await store.get(chatId, input.chatType ? { chatType: input.chatType } : {});
+    const entry = (record.messages ?? []).find(
+      (message) => message.role === 'user' && (message.kind ?? 'turn') === 'turn' && message.messageId === messageId,
+    );
+    if (!entry) return { ok: false, reason: 'missing' };
+    const name = String(input.senderName ?? entry.name ?? '');
+    const isGroup = String(input.chatType ?? record.chatType ?? 'GROUP') !== 'PRIVATE';
+    if (name) entry.name = name;
+    entry.text = editedTurnText(entry, text, isGroup, name);
+    store.touch?.(chatId);
+    return { ok: true };
+  }
+
+  /**
+   * Remove user turns by platform message id (assistant/tool entries are kept).
+   * The caller must serialize this with turns (agent.exclusive).
+   * @param {string} chatId
+   * @param {string[]} messageIds
+   */
+  async function deleteTurns(chatId, messageIds) {
+    const ids = new Set((messageIds ?? []).map(String).filter(Boolean));
+    if (!ids.size) return { ok: false, reason: 'invalid', removed: 0 };
+    if (typeof store.exists === 'function' && !(await store.exists(chatId))) {
+      return { ok: false, reason: 'missing', removed: 0 };
+    }
+    const record = await store.get(chatId);
+    const before = record.messages?.length ?? 0;
+    record.messages = (record.messages ?? []).filter(
+      (message) =>
+        !(
+          message.role === 'user' &&
+          (message.kind ?? 'turn') === 'turn' &&
+          ids.has(String(message.messageId ?? ''))
+        ),
+    );
+    const removed = before - record.messages.length;
+    if (removed) store.touch?.(chatId);
+    return { ok: removed > 0, removed };
+  }
+
   return {
     getRecord,
     currentModel,
@@ -144,5 +214,7 @@ export function createChatServices({ config, store, models, compaction }) {
     compact,
     summarize,
     summarizeText,
+    editTurn,
+    deleteTurns,
   };
 }

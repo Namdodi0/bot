@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { MessageFlags } from 'discord.js';
 import { eventFromInteraction } from '../events.js';
-import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload } from '../ui.js';
+import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload, v2Message } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
 
@@ -87,7 +87,7 @@ export function createAskHandlers(shared) {
     if (withImage) {
       const image = await askImage(interaction);
       if (!image.ok) {
-        await interaction.editReply({ content: String(/** @type {any} */ (image).reason ?? 'That image is not usable.') });
+        await interaction.editReply(v2Message(String(/** @type {any} */ (image).reason ?? 'That image is not usable.')));
         return;
       }
       imageData = image.imageData;
@@ -101,13 +101,13 @@ export function createAskHandlers(shared) {
     if (useThread) {
       const channel = /** @type {any} */ (interaction.channel);
       if (!channel?.threads?.create) {
-        await interaction.editReply({ content: 'Threads are not available in this channel.' });
+        await interaction.editReply(v2Message('Threads are not available in this channel.'));
         return;
       }
       const name = prompt.replace(/\s+/g, ' ').slice(0, 90) || 'AI answer';
       const thread = await channel.threads.create({ name, autoArchiveDuration: 1440, reason: `AI answer for ${interaction.user.username}` });
-      const placeholder = await thread.send({ content: '…', allowedMentions: { parse: [] } });
-      const previewer = createPreviewer((text) => placeholder.edit({ content: text, allowedMentions: { parse: [] } }));
+      const placeholder = await thread.send(v2Message('…'));
+      const previewer = createPreviewer((text) => placeholder.edit(v2Message(text)));
       const result = await streamAsk(interaction, prompt, {
         chatId: thread.id,
         imageData,
@@ -123,7 +123,7 @@ export function createAskHandlers(shared) {
       return;
     }
 
-    const previewer = createPreviewer((text) => interaction.editReply({ content: text, allowedMentions: { parse: [] } }));
+    const previewer = createPreviewer((text) => interaction.editReply(v2Message(text)));
     const result = await streamAsk(interaction, prompt, {
       imageData,
       private: priv,
@@ -160,7 +160,7 @@ export function createAskHandlers(shared) {
     await interaction.deferReply(ephemeral);
     const prompt = `${prefix}\n\n${content}`;
     let streamed = '';
-    const previewer = createPreviewer((text) => interaction.editReply({ content: text, allowedMentions: { parse: [] } }));
+    const previewer = createPreviewer((text) => interaction.editReply(v2Message(text)));
     const result = await runtime.agent.stream(askEvent(interaction, prompt, { private: true }), {
       skipCommands: true,
       onDelta: (delta) => {
@@ -177,9 +177,9 @@ export function createAskHandlers(shared) {
       ephemeral: true,
     });
     const chunks = chunkContent(result.text || 'No answer.');
-    await interaction.editReply({ content: chunks[0], components: answerButtons(token), allowedMentions: { parse: [] } });
+    await interaction.editReply(v2Message(chunks[0], answerButtons(token)));
     for (const chunk of chunks.slice(1)) {
-      await interaction.followUp({ content: chunk, allowedMentions: { parse: [] }, ...ephemeral });
+      await interaction.followUp(v2Message(chunk, [], { ephemeral: true }));
     }
     await sendPhotos(interaction, result.photos, true);
   }
@@ -253,8 +253,8 @@ export function createAskHandlers(shared) {
 
     let streamed = '';
     const edit = regenerating
-      ? (text) => interaction.message.edit({ content: text, allowedMentions: { parse: [] } })
-      : (text) => interaction.editReply({ content: text, allowedMentions: { parse: [] } });
+      ? (text) => interaction.message.edit(v2Message(text))
+      : (text) => interaction.editReply(v2Message(text));
     const previewer = createPreviewer(edit);
     const event = askEvent(interaction, prompt, {
       chatId: payload.chatId,
@@ -274,18 +274,14 @@ export function createAskHandlers(shared) {
     const chunks = chunkContent(result.text || 'No answer.');
     const followFlags = privateReply(payload.ephemeral);
     if (regenerating) {
-      await interaction.message.edit({
-        content: chunks[0],
-        components: answerButtons(newToken),
-        allowedMentions: { parse: [] },
-      });
+      await interaction.message.edit(v2Message(chunks[0], answerButtons(newToken)));
       for (const chunk of chunks.slice(1)) {
-        await interaction.followUp({ content: chunk, allowedMentions: { parse: [] }, ...followFlags });
+        await interaction.followUp(v2Message(chunk, [], { ephemeral: payload.ephemeral }));
       }
     } else {
-      await interaction.editReply({ content: chunks[0], components: answerButtons(newToken), allowedMentions: { parse: [] } });
+      await interaction.editReply(v2Message(chunks[0], answerButtons(newToken)));
       for (const chunk of chunks.slice(1)) {
-        await interaction.followUp({ content: chunk, allowedMentions: { parse: [] }, ...followFlags });
+        await interaction.followUp(v2Message(chunk, [], { ephemeral: payload.ephemeral }));
       }
     }
     for (const group of photoBatches(result.photos)) {
