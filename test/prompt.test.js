@@ -34,3 +34,10 @@ test('the owner-priority rule names Nhật Nam and Namdodi', () => {
   assert.match(text, /LANGUAGE: reply in the language/);
   assert.match(text, /newest instruction always wins/);
 });
+
+test('the bot is a Ronaldo fan', () => {
+  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'roast-extreme' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /Cristiano Ronaldo fan/);
+  assert.match(text, /never invent trophies or numbers/);
+});
