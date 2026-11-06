@@ -88,6 +88,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/core/ai/router.js`, `src/core/ai/models.js` — per-chat model choice and aliases.
 - `src/core/ai/tools.js` — `web_search`, `read_url`, `send_image`, `set_reminder` + platform
   tool hook. It receives the search router through the legacy `tavily` option name.
+- `src/core/ai/read-url.js` — charset-aware HTML→text extraction (`main`/`article` first,
+  meta description fallback) and YouTube link parsing for `read_url`.
 - `src/core/search/` — Firecrawl client (primary), Tavily client (fallback) and the
   `createSearchRouter` failover; both expose the same normalized `search()` shape.
 - `src/core/ai/reminders.js` — persisted reminders, single-flight tick, VN-time parsing.
@@ -99,7 +101,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/core/commands/registry.js` — shared command metadata; platforms append specs and
   help overrides.
 - `src/core/media/validate.js` — SSRF-safe image URL validation/download and public page
-  text fetching (pinned DNS, redirects, size).
+  text fetching (pinned DNS, redirects, headers, 4 MB cap, charset decoding).
 - `src/core/http.js` — fetch wrapper: timeout, retry (honors `Retry-After`), per-service
   breaker (only retryable failures count; streaming outcomes are recorded after the body),
   SSE opening.
@@ -127,9 +129,11 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   `capabilities.uploadMedia` download validated bytes first.
 - **Vision input is current-turn only.** Validated image bytes travel on `event.imageData`,
   the vision model is chosen via `config.model.visionAlias`, and that alias must be passed to
-  the actual LLM call (not just used for metadata). Fallback selection excludes the model
+  the actual LLM call (not just used for metadata). The `core:vision` prompt section is only
+  registered when an image is actually visible; no-tools/fallback prompts must not claim
+  vision because their image blocks are stripped. Fallback selection excludes the model
   that was actually attempted. The durable record keeps a text note instead of the image
-  bytes; tool/fallback calls strip image content blocks.
+  bytes.
 - **Zalo mutating POSTs** are not retried (duplicate messages).
 - **Discord is slash-first.** Chat input is `/ask` (plus `/help`, `/status`, `/ping`,
   `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`,
@@ -194,7 +198,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - Add a regression test for every bug fix, especially around retries, context compaction,
   reminders, message dedupe, per-chat queue serialization, private turns and streamed
   payload safety.
-- Keep the suite lean (~165 tests): security, data-integrity and regression tests only.
+- Keep the suite lean (~172 tests): security, data-integrity and regression tests only.
   Do not re-add happy-path, UI-polish, config-detail or formatting tests without an explicit
   request, and do not weaken assertions of surviving tests to hit a count.
 

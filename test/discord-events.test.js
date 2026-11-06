@@ -109,3 +109,13 @@ test('allowed channels cover DMs and threads, respond-to-all covers threads', ()
   assert.equal(isRespondToAllChannel(config, { id: 'general' }), false);
 });
 
+
+test('discord message: the largest image attachment wins', () => {
+  const small = { url: 'https://cdn.example/small.png', contentType: 'image/png', width: 32, height: 32, size: 900 };
+  const big = { url: 'https://cdn.example/photo.jpg', contentType: 'image/jpeg', width: 1920, height: 1080, size: 5000 };
+  const event = toDiscordEvent(
+    message({ content: '', attachments: { values: () => [small, big] } }),
+    client,
+  );
+  assert.equal(event.imageUrl, 'https://cdn.example/photo.jpg');
+});

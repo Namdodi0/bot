@@ -99,6 +99,8 @@ export function createTurnRunner(deps) {
       chatType: isGroup ? 'GROUP' : 'PRIVATE',
       // Only advertise the image tool when its schema is actually sent.
       imageEnabled: toolNames.has('send_image'),
+      // Tell the model to actually inspect a visible image instead of guessing from the caption.
+      visionInput: useImage,
       tone,
     };
     const promptRegistry = createPrompt({
@@ -109,7 +111,8 @@ export function createTurnRunner(deps) {
     const promptAssembly = promptRegistry.assemble({ text: effectiveText, now: new Date() });
     const systemPrompt = promptRegistry.render(promptAssembly);
     // Same prompt without tool guidance, for the calls that send no tool schemas.
-    const noToolsRegistry = createPrompt({ ...promptOptions, imageEnabled: false, tools: [] });
+    // Those calls are text-only (image blocks are stripped), so claim no vision there.
+    const noToolsRegistry = createPrompt({ ...promptOptions, imageEnabled: false, visionInput: false, tools: [] });
     const noToolsSystemPrompt = noToolsRegistry.render(
       noToolsRegistry.assemble({ text: effectiveText, now: new Date() }),
     );

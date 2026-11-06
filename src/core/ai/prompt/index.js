@@ -7,7 +7,7 @@ export { createPromptRegistry } from './registry.js';
 /**
  * Build the prompt registry for one turn: shared sections + platform sections + tool
  * guidance + runtime context.
- * @param {{platform?: import('../../../platforms/contract.js').Platform, botName?: string, chatType?: string, searchEnabled?: boolean, imageEnabled?: boolean, tone?: string, tools?: any[]}} [options]
+ * @param {{platform?: import('../../../platforms/contract.js').Platform, botName?: string, chatType?: string, searchEnabled?: boolean, imageEnabled?: boolean, visionInput?: boolean, tone?: string, tools?: any[]}} [options]
  */
 export function createPrompt(options = {}) {
   const registry = createPromptRegistry();

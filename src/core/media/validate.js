@@ -2,9 +2,25 @@ import dns from 'node:dns/promises';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
+import { decodeBody } from '../ai/read-url.js';
 
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
-const MAX_REDIRECTS = 3;
+const MAX_REDIRECTS = 5;
+/** Cap for a page read by `read_url`; large enough for docs and long articles. */
+const MAX_PAGE_BYTES = 4_000_000;
+
+/** Identify the bot politely; many sites reject requests without a User-Agent outright. */
+const USER_AGENT =
+  'Mozilla/5.0 (compatible; Namdodi0Bot/1.0; +https://github.com/Namdodi0/bot) read-url';
+const PAGE_HEADERS = {
+  'user-agent': USER_AGENT,
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+  'accept-language': 'en-US,en;q=0.9,vi;q=0.8',
+};
+const BINARY_HEADERS = {
+  'user-agent': USER_AGENT,
+  accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5',
+};
 
 /**
  * Expand an IPv6 address into 8 hextets (embedded IPv4 is converted).
@@ -183,7 +199,7 @@ export function createImageValidator(options = {}) {
    * @param {string[]} addresses
    * @returns {Promise<{ok: boolean, status: number, headers: {get: (name: string) => string|null}, body: {cancel: () => Promise<void>}, arrayBuffer: () => Promise<Buffer>}>}
    */
-  function pinnedGet(url, addresses, limit = maxBytes) {
+  function pinnedGet(url, addresses, limit = maxBytes, headers = {}) {
     return new Promise((resolve, reject) => {
       const lib = url.protocol === 'https:' ? https : http;
       let settled = false;
@@ -196,6 +212,7 @@ export function createImageValidator(options = {}) {
         url,
         {
           method: 'GET',
+          headers,
           lookup: (hostname, options_, callback) => {
             const list = addresses.map((address) => ({ address, family: net.isIP(address) }));
             const wantsAll = Boolean(/** @type {any} */ (options_)?.all);
@@ -253,10 +270,11 @@ export function createImageValidator(options = {}) {
   /**
    * Fetch a URL with redirect re-validation, pinned DNS and a hard size cap.
    * @param {string} url
-   * @param {{maxSize: number, label: string, typeError: string, isAllowedType: (type: string) => boolean, fallbackExtensions?: RegExp|null}} options
+   * @param {{maxSize: number, label: string, typeError: string, isAllowedType: (type: string) => boolean, fallbackExtensions?: RegExp|null, headers?: Record<string,string>}} options
    * @returns {Promise<{ok: boolean, reason?: string, data?: Buffer, contentType?: string, finalUrl?: string}>}
    */
   async function fetchResource(url, options) {
+    const headers = { ...BINARY_HEADERS, ...(options.headers ?? {}) };
     let current;
     try {
       current = new URL(String(url ?? '').trim());
@@ -280,10 +298,11 @@ export function createImageValidator(options = {}) {
         response = customFetch
           ? await customFetch(current.toString(), {
               method: 'GET',
+              headers,
               redirect: 'manual',
               signal: AbortSignal.timeout(timeoutMs),
             })
-          : await pinnedGet(current, addresses, options.maxSize);
+          : await pinnedGet(current, addresses, options.maxSize, headers);
       } catch (error) {
         return {
           ok: false,
@@ -382,9 +401,10 @@ export function createImageValidator(options = {}) {
    */
   async function readText(url) {
     const result = await fetchResource(url, {
-      maxSize: Math.min(maxBytes, 1_000_000),
+      maxSize: Math.min(maxBytes, MAX_PAGE_BYTES),
       label: 'page',
       typeError: 'unsupported content-type',
+      headers: PAGE_HEADERS,
       isAllowedType: (type) =>
         type.startsWith('text/') ||
         type.includes('json') ||
@@ -395,7 +415,7 @@ export function createImageValidator(options = {}) {
     if (!result.ok || !result.data) return result;
     return {
       ok: true,
-      text: result.data.toString('utf8'),
+      text: decodeBody(result.data, result.contentType),
       contentType: result.contentType,
       finalUrl: result.finalUrl,
     };
@@ -423,6 +443,7 @@ export function createImageValidator(options = {}) {
    * @param {Record<string,string>} [headers]
    */
   async function request(url, method, headers = {}) {
+    const merged = { ...BINARY_HEADERS, ...headers };
     let current = new URL(url);
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       if (!/^https?:$/.test(current.protocol)) {
@@ -432,11 +453,11 @@ export function createImageValidator(options = {}) {
       const response = customFetch
         ? await customFetch(current.toString(), {
             method,
-            headers,
+            headers: merged,
             redirect: 'manual',
             signal: AbortSignal.timeout(timeoutMs),
           })
-        : await pinnedRequest(current, method, headers, addresses);
+        : await pinnedRequest(current, method, merged, addresses);
       const location = response.headers.get('location');
       if (!REDIRECT_STATUS.has(response.status) || !location) return response;
       try {

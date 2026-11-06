@@ -139,6 +139,34 @@ export function replyQuote(referenced, botId = '', maxChars = 500) {
   return `[Replying to ${author}: ${clipped}]`;
 }
 
+/** @param {any} item */
+function isImageAttachment(item) {
+  if (typeof item?.contentType === 'string' && item.contentType.toLowerCase().startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(item?.url ?? ''));
+}
+
+/**
+ * Pick the most useful image when a message carries several (stickers, emoji and a photo):
+ * the largest by pixel area, then by byte size. Discord lists attachments in arbitrary order,
+ * so "first image" can miss the actual photo.
+ * @param {any[]} attachments
+ */
+function largestImage(attachments) {
+  /** @type {any|null} */
+  let best = null;
+  let bestScore = -1;
+  for (const item of attachments) {
+    if (!isImageAttachment(item)) continue;
+    const area = (Number(item?.width) || 0) * (Number(item?.height) || 0);
+    const score = area || Number(item?.size) || 0;
+    if (score > bestScore) {
+      best = item;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 /**
  * Normalize a Discord message for the shared engine.
  * @param {any} message discord.js Message-like
@@ -151,9 +179,7 @@ export function toDiscordEvent(message, client, referenced = null) {
   if (!channel?.id) return null;
   const author = message.author ?? {};
   const attachments = [...(message.attachments?.values?.() ?? [])];
-  const image =
-    attachments.find((item) => typeof item?.contentType === 'string' && item.contentType.startsWith('image/')) ??
-    attachments.find((item) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(item?.url ?? '')));
+  const image = largestImage(attachments);
   let text = stripBotMention(message.content, client?.user?.id, botRoleId(message, client?.user?.id));
   const quote = replyQuote(referenced, client?.user?.id);
   if (quote) text = text ? `${quote}\n${text}` : quote;

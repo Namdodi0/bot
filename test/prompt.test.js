@@ -41,3 +41,18 @@ test('the bot is a Ronaldo fan', () => {
   assert.match(text, /Cristiano Ronaldo fan/);
   assert.match(text, /never invent trophies or numbers/);
 });
+test('vision guidance appears only when the turn can actually see an image', () => {
+  const withImage = createPrompt({
+    platform: makeZaloPlatform(),
+    chatType: 'GROUP',
+    tone: 'friendly',
+    visionInput: true,
+  });
+  assert.match(withImage.render(withImage.assemble({ text: 'what is this?' })), /VISION: an image is attached/);
+
+  const withoutImage = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'friendly' });
+  assert.doesNotMatch(
+    withoutImage.render(withoutImage.assemble({ text: 'what is this?' })),
+    /VISION: an image is attached/,
+  );
+});

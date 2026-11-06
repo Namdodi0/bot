@@ -383,3 +383,31 @@ test('send_image validates candidates in parallel', async () => {
   assert.equal(result.ok, true);
   assert.ok(maxActive > 1, `validations must overlap (saw ${maxActive})`);
 });
+
+test('read_url truncates long pages and marks the cut', async () => {
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: {
+      transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+      capabilities: { uploadMedia: false },
+      tools: { run: async () => null },
+    },
+    validator: {
+      validate: async () => ({ ok: true }),
+      readText: async () => ({
+        ok: true,
+        text: `<html><body><p>${'word '.repeat(4000)}</p></body></html>`,
+        contentType: 'text/html',
+        finalUrl: 'https://example.com/long',
+      }),
+    },
+    stickers: fakeStickers,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+  const result = await tools.run('read_url', { url: 'https://example.com/long' }, { chatId: 'c1' });
+  assert.equal(result.ok, true);
+  assert.match(result.text, /content truncated/);
+  assert.ok(result.text.length < 12_400, `unexpected length ${result.text.length}`);
+});

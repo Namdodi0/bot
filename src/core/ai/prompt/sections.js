@@ -82,6 +82,7 @@ export const SECTION_ORDER = {
   rules: 0,
   chatShape: 10,
   formatting: 40,
+  vision: 45,
   image: 50,
   long: 60,
   toolGuidance: 100,
@@ -116,10 +117,11 @@ const RULES = [
  * Register the platform-neutral prompt sections. Identity, chat shape, formatting and
  * command guidance belong to each platform package (options.platform.prompt.register).
  * @param {ReturnType<typeof import('./registry.js').createPromptRegistry>} registry
- * @param {{imageEnabled?: boolean, tone?: string, toolGuidance?: Record<string, string>}} [options]
+ * @param {{imageEnabled?: boolean, visionInput?: boolean, tone?: string, toolGuidance?: Record<string, string>}} [options]
  */
 export function registerCoreSections(registry, options = {}) {
   const imageEnabled = Boolean(options.imageEnabled);
+  const visionInput = Boolean(options.visionInput);
   const tone = options.tone ?? 'friendly';
   const toneRules = TONE_RULES[tone] ?? [];
   const toolGuidance = { ...TOOL_GUIDANCE, ...(options.toolGuidance ?? {}) };
@@ -129,6 +131,15 @@ export function registerCoreSections(registry, options = {}) {
     order: SECTION_ORDER.rules,
     text: ['', 'MANDATORY RULES:', ...RULES].join('\n'),
   });
+
+  if (visionInput) {
+    registry.section({
+      name: 'core:vision',
+      order: SECTION_ORDER.vision,
+      text:
+        '- VISION: an image is attached to this turn. Inspect it directly before answering: describe only what is actually visible, transcribe its text when the question is about that text, and say so when a detail cannot be read. The image exists for this turn only and is not part of earlier history.',
+    });
+  }
 
   registry.section({
     name: 'core:image',

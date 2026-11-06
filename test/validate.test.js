@@ -148,3 +148,18 @@ test('blocks a redirect loop with too many hops', async () => {
   assert.equal(result.ok, false);
   assert.match(String(result.reason), /redirect/i);
 });
+
+test('readText sends a user agent and decodes the declared charset', async () => {
+  /** @type {any} */
+  let init = null;
+  const validator = makeValidator(async (_url, options) => {
+    init = options;
+    return bodyResponse(Buffer.from([0x63, 0x61, 0x66, 0xe9]), {
+      headers: { 'content-type': 'text/html; charset=windows-1252' },
+    });
+  });
+  const result = await validator.readText('https://example.com/old-page');
+  assert.equal(result.ok, true);
+  assert.equal(result.text, 'café');
+  assert.match(String(init?.headers?.['user-agent']), /Namdodi0Bot/);
+});

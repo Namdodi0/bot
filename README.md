@@ -45,7 +45,8 @@ Nothing in the Discord code imports the Zalo integration.
   Pictures found by the model share the answer message (a MediaGallery) instead of arriving as
   a separate follow-up.
 - **Read pages** — share a link and the model calls `read_url`, which fetches public
-  HTML/text/JSON/XML through the same SSRF-safe path and answers from the page text.
+  HTML/text/JSON/XML through the same SSRF-safe path, extracts the main article with the
+  right charset, and answers from the page text.
 - **Persona and tone** — a built-in football persona (Ronaldo is the GOAT pick, facts stay
   accurate) plus a configurable tone: `friendly`, `shy`, `grok`, `unhinged`, `roast`,
   `roast-hard`, `roast-extreme`.
@@ -345,6 +346,7 @@ Discord gateway ──► bot.js ──► native commands (commands.js, ui.js)
 | `src/platforms/discord/events.js` | Message/interaction normalization and allow-list helpers. |
 | `src/platforms/discord/prompt.js` | Discord prompt sections. |
 | `src/core/search/` | Firecrawl client (primary), Tavily client (fallback) and the failover router. |
+| `src/core/ai/read-url.js` | Charset-aware HTML→text extraction and YouTube link parsing for `read_url`. |
 | `src/core/` | Platform-neutral engine: agent/queue, LLM service, context, tools, HTTP, logs. |
 | `src/platforms/zalo/` | Legacy Zalo process; not imported by Discord. |
 
@@ -382,7 +384,9 @@ config, tokens, context or reminders.
   Expressions, otherwise configure ids manually; standard/Nitro stickers are not used.
 - Presence is static config; it is set on startup and not updated dynamically.
 - `read_url` fetches public HTML/text/JSON/XML only (no JavaScript rendering or PDF parsing),
-  caps pages at 1 MB and passes only the first part of long pages to the model.
+  caps pages at 4 MB, decodes legacy charsets and passes the first 12,000 characters to the
+  model. It prefers the page's `<main>`/`<article>` content and falls back to og/meta
+  description on script-rendered pages.
 - Vision sees the image attached to the current turn; the durable context keeps a text note,
   so old images are not replayed on later questions.
 - Slash commands are guild-scoped when `guildId` is set, so they are unavailable in DMs;
