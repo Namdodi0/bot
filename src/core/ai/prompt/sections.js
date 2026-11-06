@@ -137,7 +137,7 @@ export function registerCoreSections(registry, options = {}) {
       name: 'core:vision',
       order: SECTION_ORDER.vision,
       text:
-        '- VISION: an image is attached to this turn. Inspect it directly before answering: describe only what is actually visible, transcribe its text when the question is about that text, and say so when a detail cannot be read. The image exists for this turn only and is not part of earlier history.',
+        '- VISION: one or more images are attached to this turn. Inspect every image directly before answering: describe only what is actually visible, transcribe their text when the question is about that text, and say so when a detail cannot be read. The images exist for this turn only and are not part of earlier history.',
     });
   }
 

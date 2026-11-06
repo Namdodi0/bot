@@ -48,11 +48,11 @@ test('vision guidance appears only when the turn can actually see an image', () 
     tone: 'friendly',
     visionInput: true,
   });
-  assert.match(withImage.render(withImage.assemble({ text: 'what is this?' })), /VISION: an image is attached/);
+  assert.match(withImage.render(withImage.assemble({ text: 'what is this?' })), /VISION: one or more images are attached/);
 
   const withoutImage = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'friendly' });
   assert.doesNotMatch(
     withoutImage.render(withoutImage.assemble({ text: 'what is this?' })),
-    /VISION: an image is attached/,
+    /VISION: one or more images are attached/,
   );
 });

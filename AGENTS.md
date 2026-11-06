@@ -127,7 +127,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   and generated zips with secrets stay out of git.
 - **Image URLs** must pass `createImageValidator` before `sendPhoto`; platforms with
   `capabilities.uploadMedia` download validated bytes first.
-- **Vision input is current-turn only.** Validated image bytes travel on `event.imageData`,
+- **Vision input is current-turn only.** Validated image bytes travel on `event.imageDataList`
+  (largest first, at most `MAX_VISION_IMAGES` = 5; `event.imageData` remains the first item),
   the vision model is chosen via `config.model.visionAlias`, and that alias must be passed to
   the actual LLM call (not just used for metadata). Image turns use
   `config.model.visionReasoning` (default `high`) instead of the chat's normal reasoning.

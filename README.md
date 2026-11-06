@@ -29,8 +29,9 @@ Nothing in the Discord code imports the Zalo integration.
   stickers; optional configured ids when the bot cannot list them.
 - **Presence** — configurable activity/status in `config.discord.json` (the example uses
   `WATCHING /ask`).
-- **Vision** — attach an image to `/ask`, or @mention the bot with an image; the turn switches
-  to the configured vision model and sends the image as an OpenAI `image_url` block.
+- **Vision** — attach an image to `/ask`, or @mention the bot with images (up to five per
+  message, largest first); the turn switches to the configured vision model and sends them
+  as OpenAI `image_url` blocks.
 - **Channel settings** — `/settings` (admin) controls model, tone, think effort, default
   privacy and auto-thread per channel.
 - **Catch-up** — `/catchup [hours]` summarizes what happened in the channel since a time window.
@@ -388,10 +389,10 @@ config, tokens, context or reminders.
   caps pages at 4 MB, decodes legacy charsets and passes the first 12,000 characters to the
   model. It prefers the page's `<main>`/`<article>` content and falls back to og/meta
   description on script-rendered pages.
-- Vision sees the image attached to the current turn; the durable context keeps a text note,
-  so old images are not replayed on later questions.
+- Vision sees the images attached to the current turn (at most five, largest first); the
+  durable context keeps a text note, so old images are not replayed on later questions.
 - Slash commands are guild-scoped when `guildId` is set, so they are unavailable in DMs;
   DM text chat still works.
-- Only the first image attachment of an incoming message is considered.
+- At most five image attachments of an incoming message are used.
 - Reminder input is parsed in Vietnam time; Discord displays local timestamps.
 - The Zalo integration remains in the repository but is legacy and independent.

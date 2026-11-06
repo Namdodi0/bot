@@ -14,7 +14,9 @@
  * @property {boolean} isBot
  * @property {string} text
  * @property {string|null} imageUrl
+ * @property {string[]} [imageUrls] every image attachment, largest first (max 5)
  * @property {{data: Buffer, contentType?: string}|null} [imageData] validated bytes for vision models
+ * @property {{data: Buffer, contentType?: string}[]} [imageDataList] validated bytes for every image
  * @property {string|null} sticker
  * @property {string} messageId
  * @property {number} date

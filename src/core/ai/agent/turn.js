@@ -6,6 +6,7 @@ import { createPrompt, buildSearchContext } from '../prompt/index.js';
 import { MAX_IMAGES_PER_SEND } from '../tools.js';
 import {
   DEFAULT_MAX_TOOL_ROUNDS,
+  MAX_VISION_IMAGES,
   TOOL_ROUND_WARN,
   effectiveReasoning,
   fallbackMessages,
@@ -46,33 +47,48 @@ export function createTurnRunner(deps) {
     };
 
     const rawText = normalizeWhitespace(event.text ?? '');
-    const image = event.imageData?.data ? event.imageData : null;
+    const images = (
+      Array.isArray(event.imageDataList)
+        ? event.imageDataList
+        : event.imageData?.data
+          ? [event.imageData]
+          : []
+    )
+      .filter((item) => item?.data)
+      .slice(0, MAX_VISION_IMAGES);
     // A 120B vision model can stall for minutes; cap image turns without touching text turns.
-    if (image && config.nim?.visionTimeoutMs > 0) {
+    if (images.length && config.nim?.visionTimeoutMs > 0) {
       deadline = Math.min(deadline, Date.now() + config.nim.visionTimeoutMs);
     }
     const selectedTarget = llm.resolve(record);
     // Image turns use a vision-capable alias (config.model.visionAlias) when the selected
     // model cannot see images. If none is configured, the turn stays text-only.
-    const visionTarget = image && !selectedTarget.vision ? llm.find(config.model?.visionAlias ?? 'nim') : null;
+    const visionTarget = images.length && !selectedTarget.vision ? llm.find(config.model?.visionAlias ?? 'nim') : null;
     const target =
-      image && selectedTarget.vision ? selectedTarget : visionTarget?.vision ? visionTarget : selectedTarget;
-    const useImage = Boolean(image && target?.vision);
-    const hasImage = Boolean(event.imageUrl || image);
+      images.length && selectedTarget.vision ? selectedTarget : visionTarget?.vision ? visionTarget : selectedTarget;
+    const useImage = Boolean(images.length && target?.vision);
+    const attachedCount = Math.max(
+      images.length,
+      Array.isArray(event.imageUrls) ? event.imageUrls.length : 0,
+      event.imageUrl ? 1 : 0,
+    );
+    const hasImage = attachedCount > 0;
+    const imageLabel = (count) => (count === 1 ? 'an image' : `${count} images`);
     const imageNote = useImage
-      ? 'the user attached an image'
-      : 'the user attached an image — the bot cannot see its content';
+      ? `the user attached ${imageLabel(images.length)}`
+      : `the user attached ${imageLabel(attachedCount)} — the bot cannot see the content`;
     const effectiveText =
       rawText ||
       (hasImage
         ? useImage
-          ? 'The user sent an image.'
-          : 'The user sent an image — the bot cannot see its content.'
+          ? `The user sent ${imageLabel(images.length)}.`
+          : `The user sent ${imageLabel(attachedCount)} — the bot cannot see the content.`
         : '');
     if (!effectiveText) return;
-    if (image && !useImage) {
+    if (images.length && !useImage) {
       logger.debug('image attached but the selected model is text-only', {
         chatId: event.chatId,
+        images: images.length,
         model: target.model,
         icon: '🖼️',
       });
@@ -191,24 +207,23 @@ export function createTurnRunner(deps) {
     }
 
     const messages = built.messages;
-    const imageContent =
-      useImage && image
-        ? {
-            type: 'image_url',
-            image_url: {
-              url: `data:${image.contentType || 'image/png'};base64,${Buffer.from(image.data).toString('base64')}`,
-            },
-          }
-        : null;
-    // The image belongs to the current turn only; the durable record keeps the text note.
+    const imageContent = useImage
+      ? images.map((item) => ({
+          type: 'image_url',
+          image_url: {
+            url: `data:${item.contentType || 'image/png'};base64,${Buffer.from(item.data).toString('base64')}`,
+          },
+        }))
+      : [];
+    // Images belong to the current turn only; the durable record keeps the text note.
     // Re-apply after an overflow rebuild, which replaces the message array.
     const applyImage = () => {
-      if (!imageContent) return;
+      if (!imageContent.length) return;
       const index = messages.findLastIndex((message) => message.role === 'user');
       if (index < 0 || Array.isArray(messages[index].content)) return;
       messages[index] = {
         ...messages[index],
-        content: [{ type: 'text', text: String(messages[index].content ?? '') }, imageContent],
+        content: [{ type: 'text', text: String(messages[index].content ?? '') }, ...imageContent],
       };
     };
     applyImage();
@@ -291,7 +306,7 @@ export function createTurnRunner(deps) {
       onDelta: progressive.onDelta,
       deadline,
       retryExecutor,
-      vision: Boolean(image),
+      vision: useImage,
     });
 
     // One reply may call send_image several times; share a single image budget across them.

@@ -118,4 +118,22 @@ test('discord message: the largest image attachment wins', () => {
     client,
   );
   assert.equal(event.imageUrl, 'https://cdn.example/photo.jpg');
+  assert.deepEqual(event.imageUrls, ['https://cdn.example/photo.jpg', 'https://cdn.example/small.png']);
+});
+
+test('discord message: image urls are capped at five, largest first', () => {
+  const attachments = Array.from({ length: 8 }, (_, index) => ({
+    url: `https://cdn.example/${index}.png`,
+    contentType: 'image/png',
+    width: 100 + index,
+    height: 100,
+  }));
+  attachments.splice(3, 0, { url: 'https://cdn.example/note.txt', contentType: 'text/plain', size: 9999 });
+  const event = toDiscordEvent(message({ content: 'look', attachments: { values: () => attachments } }), client);
+  assert.equal(event.imageUrls.length, 5);
+  assert.deepEqual(
+    event.imageUrls,
+    [7, 6, 5, 4, 3].map((index) => `https://cdn.example/${index}.png`),
+  );
+  assert.equal(event.imageUrl, 'https://cdn.example/7.png');
 });

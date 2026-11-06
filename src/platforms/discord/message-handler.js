@@ -36,15 +36,33 @@ export function createMessageHandler(deps) {
         if (!event) return;
         // Slash-only command surface: a typed "/ask ..." is not a command.
         if (String(event.text ?? '').trimStart().startsWith('/')) return;
-        if (event.imageUrl && runtime.validator?.download) {
-          // Vision bytes are optional: if the download fails the text note still reaches the model.
-          try {
-            const downloaded = await runtime.validator.download(event.imageUrl);
-            if (downloaded?.ok && downloaded.data) {
-              event.imageData = { data: downloaded.data, contentType: downloaded.contentType };
-            }
-          } catch (error) {
-            logger?.debug('discord image download failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
+        const urls = Array.isArray(event.imageUrls) && event.imageUrls.length
+          ? event.imageUrls
+          : event.imageUrl
+            ? [event.imageUrl]
+            : [];
+        if (urls.length && runtime.validator?.download) {
+          // Vision bytes are optional: if a download fails the text note still reaches the model.
+          const assets = await Promise.all(
+            urls.map(async (url) => {
+              try {
+                const downloaded = await runtime.validator.download(url);
+                if (downloaded?.ok && downloaded.data) {
+                  return { data: downloaded.data, contentType: downloaded.contentType };
+                }
+              } catch (error) {
+                logger?.debug('discord image download failed', {
+                  url,
+                  error: String(/** @type {any} */ (error)?.message ?? error),
+                });
+              }
+              return null;
+            }),
+          );
+          const imageDataList = assets.filter(Boolean);
+          if (imageDataList.length) {
+            event.imageDataList = imageDataList;
+            event.imageData = imageDataList[0];
           }
         }
         metrics?.inc('discord.messages.in');

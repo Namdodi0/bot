@@ -1,3 +1,5 @@
+import { MAX_VISION_IMAGES } from '../../core/ai/agent/helpers.js';
+
 /**
  * Pure Discord normalization and admission helpers (no discord.js import, easy to test).
  * Channel ids are used as-is; the Discord process never shares a chat namespace with Zalo.
@@ -146,25 +148,24 @@ function isImageAttachment(item) {
 }
 
 /**
- * Pick the most useful image when a message carries several (stickers, emoji and a photo):
- * the largest by pixel area, then by byte size. Discord lists attachments in arbitrary order,
- * so "first image" can miss the actual photo.
+ * Order image attachments by usefulness (largest pixel area, then byte size) and keep at
+ * most `MAX_VISION_IMAGES`. Discord lists attachments in arbitrary order, so the first
+ * image can be an emoji rather than the actual photo.
  * @param {any[]} attachments
  */
-function largestImage(attachments) {
-  /** @type {any|null} */
-  let best = null;
-  let bestScore = -1;
-  for (const item of attachments) {
+function sortedImages(attachments) {
+  /** @type {{item: any, index: number, score: number}[]} */
+  const ranked = [];
+  for (let index = 0; index < attachments.length; index += 1) {
+    const item = attachments[index];
     if (!isImageAttachment(item)) continue;
     const area = (Number(item?.width) || 0) * (Number(item?.height) || 0);
-    const score = area || Number(item?.size) || 0;
-    if (score > bestScore) {
-      best = item;
-      bestScore = score;
-    }
+    ranked.push({ item, index, score: area || Number(item?.size) || 0 });
   }
-  return best;
+  return ranked
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, MAX_VISION_IMAGES)
+    .map((entry) => entry.item);
 }
 
 /**
@@ -179,11 +180,11 @@ export function toDiscordEvent(message, client, referenced = null) {
   if (!channel?.id) return null;
   const author = message.author ?? {};
   const attachments = [...(message.attachments?.values?.() ?? [])];
-  const image = largestImage(attachments);
+  const images = sortedImages(attachments);
   let text = stripBotMention(message.content, client?.user?.id, botRoleId(message, client?.user?.id));
   const quote = replyQuote(referenced, client?.user?.id);
   if (quote) text = text ? `${quote}\n${text}` : quote;
-  if (!text && !image) return null;
+  if (!text && !images.length) return null;
   const kind = text ? 'text' : 'image';
   return {
     kind,
@@ -193,7 +194,8 @@ export function toDiscordEvent(message, client, referenced = null) {
     senderName: String(message.member?.displayName ?? author.displayName ?? author.username ?? 'Member'),
     isBot: Boolean(author.bot),
     text,
-    imageUrl: image?.url ? String(image.url) : null,
+    imageUrl: images[0]?.url ? String(images[0].url) : null,
+    imageUrls: images.map((item) => String(item.url ?? '')).filter(Boolean),
     sticker: null,
     messageId: String(message.id ?? ''),
     date: Number(message.createdTimestamp) || Date.now(),
@@ -223,6 +225,7 @@ export function eventFromInteraction(interaction, client, text, extra = {}) {
     isBot: false,
     text: String(text ?? ''),
     imageUrl: null,
+    imageUrls: [],
     sticker: null,
     messageId: String(extra.messageId ?? `interaction:${interaction.id ?? Date.now()}`),
     date: Number(interaction.createdTimestamp) || Date.now(),

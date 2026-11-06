@@ -196,6 +196,28 @@ test('vision turns send the image as an image_url block', async () => {
   assert.doesNotMatch(String(record.messages[0].text), /cannot see/);
 });
 
+test('vision turns send up to five image_url blocks from one message', async () => {
+  const { agent, nimCalls } = await setup({ replies: [{ content: 'I see them' }] });
+  const imageDataList = Array.from({ length: 7 }, (_, index) => ({
+    data: Buffer.from(`image-${index}`),
+    contentType: 'image/png',
+  }));
+  await agent.handle(
+    textEvent('compare these', {
+      imageUrls: imageDataList.map((_, index) => `https://cdn.example/${index}.png`),
+      imageDataList,
+      messageId: 'vision-many',
+    }),
+  );
+  assert.equal(nimCalls[0].alias, 'nim');
+  const lastUser = [...nimCalls[0].messages].reverse().find((message) => message.role === 'user');
+  assert.ok(Array.isArray(lastUser.content));
+  const blocks = lastUser.content.filter((part) => part.type === 'image_url');
+  assert.equal(blocks.length, 5, 'the per-turn limit is five images');
+  assert.match(blocks[4].image_url.url, /^data:image\/png;base64,/);
+  assert.match(String(lastUser.content[0].text), /attached 5 images/);
+});
+
 test('private turns are never kept in the shared record', async () => {
   const { agent, sent, store } = await setup();
   await agent.handle(textEvent('my secret', { private: true, messageId: 'private-1' }));
