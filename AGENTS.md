@@ -129,7 +129,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   `capabilities.uploadMedia` download validated bytes first.
 - **Vision input is current-turn only.** Validated image bytes travel on `event.imageData`,
   the vision model is chosen via `config.model.visionAlias`, and that alias must be passed to
-  the actual LLM call (not just used for metadata). The `core:vision` prompt section is only
+  the actual LLM call (not just used for metadata). Image turns use
+  `config.model.visionReasoning` (default `high`) instead of the chat's normal reasoning.
+  The `core:vision` prompt section is only
   registered when an image is actually visible; no-tools/fallback prompts must not claim
   vision because their image blocks are stripped. Fallback selection excludes the model
   that was actually attempted. The durable record keeps a text note instead of the image
@@ -198,7 +200,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - Add a regression test for every bug fix, especially around retries, context compaction,
   reminders, message dedupe, per-chat queue serialization, private turns and streamed
   payload safety.
-- Keep the suite lean (~172 tests): security, data-integrity and regression tests only.
+- Keep the suite lean (~173 tests): security, data-integrity and regression tests only.
   Do not re-add happy-path, UI-polish, config-detail or formatting tests without an explicit
   request, and do not weaken assertions of surviving tests to hit a count.
 

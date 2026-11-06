@@ -117,7 +117,9 @@ export function createTurnRunner(deps) {
       noToolsRegistry.assemble({ text: effectiveText, now: new Date() }),
     );
 
-    const reasoning = effectiveReasoning(config, record, effectiveText);
+    const reasoning = useImage
+      ? String(config.model?.visionReasoning ?? 'high')
+      : effectiveReasoning(config, record, effectiveText);
     // `/split` is per chat and takes priority over config.progressive.
     const splitMode = ['auto', 'on', 'off'].includes(record?.meta?.split)
       ? record.meta.split

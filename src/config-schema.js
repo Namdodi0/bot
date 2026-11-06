@@ -69,7 +69,7 @@ export const SECTION_KEYS = {
     'presencePenalty',
     'seed',
   ],
-  model: ['defaultAlias', 'fallbackAlias', 'visionAlias'],
+  model: ['defaultAlias', 'fallbackAlias', 'visionAlias', 'visionReasoning'],
   ai: ['reasoning', 'maxTokens', 'maxToolRounds'],
   context: [
     'maxTokens',

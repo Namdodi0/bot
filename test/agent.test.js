@@ -185,6 +185,7 @@ test('vision turns send the image as an image_url block', async () => {
     }),
   );
   assert.equal(nimCalls[0].alias, 'nim', 'the vision alias must be the one actually called');
+  assert.equal(nimCalls[0].reasoning, 'high', 'vision turns always use the highest reasoning');
   const lastUser = [...nimCalls[0].messages].reverse().find((message) => message.role === 'user');
   assert.ok(Array.isArray(lastUser.content));
   const image = lastUser.content.find((part) => part.type === 'image_url');

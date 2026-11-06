@@ -378,6 +378,15 @@ export function loadConfig(input = {}) {
       `config.model.visionAlias must point to a vision-capable alias (got: "${visionAlias}"). Choose: ${Object.keys(MODEL_ALIASES).filter((alias) => MODEL_ALIASES[alias].vision === true).join(', ')}`,
     );
   }
+  // Image turns use their own reasoning level; the highest is "high" (providers cap here).
+  const visionReasoning = String(
+    asString(modelSection.visionReasoning, 'config.model.visionReasoning', 'high'),
+  ).toLowerCase();
+  if (!['none', 'low', 'medium', 'high', 'auto'].includes(visionReasoning)) {
+    throw new ConfigError(
+      `config.model.visionReasoning must be none|low|medium|high|auto (got: "${visionReasoning}")`,
+    );
+  }
   if (fallbackAlias === defaultAlias) {
     fallbackAlias = defaultAlias === 'nim-light' ? 'deepseek' : 'nim-light';
   }
@@ -571,6 +580,7 @@ export function loadConfig(input = {}) {
       defaultAlias,
       fallbackAlias,
       visionAlias,
+      visionReasoning: /** @type {ReasoningMode} */ (visionReasoning),
     },
     ai: {
       reasoning: /** @type {ReasoningMode} */ (reasoning),

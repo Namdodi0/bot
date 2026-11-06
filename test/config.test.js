@@ -64,6 +64,12 @@ test('visionAlias must point at a vision-capable model', () => {
   assert.equal(load({ model: { visionAlias: 'nim' } }).model.visionAlias, 'nim');
 });
 
+test('vision reasoning defaults to high and rejects unknown modes', () => {
+  assert.equal(load({ dataDir: os.tmpdir() }).model.visionReasoning, 'high');
+  assert.equal(load({ model: { visionReasoning: 'medium' } }).model.visionReasoning, 'medium');
+  assert.throws(() => load({ model: { visionReasoning: 'max' } }), /config\.model\.visionReasoning/);
+});
+
 test('config.webhook.secret overrides the generated secret', () => {
   const config = load({ mode: 'webhook', dataDir: os.tmpdir(), webhook: { secret: 'fixed-secret-123' } });
   assert.equal(config.webhook.secret, 'fixed-secret-123');

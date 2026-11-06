@@ -219,6 +219,7 @@ Important settings:
 | `discord.presence` | `status` (`online/idle/dnd/invisible`), `type` (`PLAYING/STREAMING/LISTENING/WATCHING/COMPETING`), `text`, optional `url`. |
 | `model.defaultAlias` / `fallbackAlias` | Aliases: `ultra` (shipped Discord default), `deepseek`, `pro`, `nim`, `nim-light`, `ds-abl-free`. |
 | `model.visionAlias` | Vision-capable alias used when an image is attached (default `nim`, the Super VL model). |
+| `model.visionReasoning` | Reasoning level for image turns: `none`, `low`, `medium`, `high`, `auto` (default `high`). |
 | `ai.reasoning` | `none`, `low`, `medium`, `high`, `auto`. |
 | `ai.maxTokens` / `ai.maxToolRounds` | `null`/`0` = unlimited. |
 | `responseTimeoutMs` | `0` = no deadline. |
