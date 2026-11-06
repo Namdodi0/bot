@@ -130,6 +130,29 @@ test('parses tool_calls from the response', async () => {
   assert.equal(result.reasoning, '');
 });
 
+test('an empty 200 completion is reported to the breaker as a protocol failure', async () => {
+  /** @type {string[]} */
+  const failures = [];
+  const client = makeClient({
+    async requestJson() {
+      return {
+        status: 200,
+        data: { choices: [{ message: { content: '' }, finish_reason: 'stop' }] },
+        headers: new Headers(),
+      };
+    },
+    async openStream() {
+      throw new Error('not used');
+    },
+    recordStreamFailure: () => failures.push('failure'),
+  });
+  await assert.rejects(
+    () => client.chat({ messages: [{ role: 'user', content: 'x' }], reasoning: 'none' }),
+    /empty completion/,
+  );
+  assert.deepEqual(failures, ['failure']);
+});
+
 test('stream: a tool-call delta then a stream error rejects as retryable', async () => {
   const client = makeClient(streamFrom([TOOL_DELTA], { failWith: new TypeError('terminated') }));
   await assert.rejects(
@@ -147,6 +170,76 @@ test('stream: a tool-call delta then a stream error rejects as retryable', async
       return true;
     },
   );
+});
+
+test('stream: clean EOF without a completion marker never releases tool calls', async () => {
+  const client = makeClient(streamFrom([TOOL_DELTA]));
+  await assert.rejects(
+    () =>
+      client.chat({
+        messages: [{ role: 'user', content: 'hi' }],
+        reasoning: 'none',
+        stream: true,
+        ttftMs: 0,
+        timeoutMs: 5000,
+      }),
+    (error) => {
+      assert.equal(error instanceof HttpError, true);
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+});
+
+test('stream: partial content without a completion marker is aborted and tool calls are dropped', async () => {
+  const client = makeClient(
+    streamFrom(['data: {"choices":[{"index":0,"delta":{"content":"Partial answer"}}]}\n\n', TOOL_DELTA]),
+  );
+  const result = await client.chat({
+    messages: [{ role: 'user', content: 'hi' }],
+    reasoning: 'none',
+    stream: true,
+    ttftMs: 0,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.content, 'Partial answer');
+  assert.deepEqual(result.toolCalls, []);
+  assert.equal(result.aborted, true);
+});
+
+test('stream: plain text from a provider without a completion marker stays usable', async () => {
+  const client = makeClient(streamFrom(['data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}\n\n']));
+  const result = await client.chat({
+    messages: [{ role: 'user', content: 'hi' }],
+    reasoning: 'none',
+    stream: true,
+    ttftMs: 0,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.content, 'Hello');
+  assert.equal(result.aborted, false);
+  assert.deepEqual(result.toolCalls, []);
+});
+
+test('truncated tool-call arguments are marked as a parse error, not executed as {}', async () => {
+  const client = makeClient(
+    streamFrom([
+      TOOL_DELTA,
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+      'data: [DONE]\n\n',
+    ]),
+  );
+  const result = await client.chat({
+    messages: [{ role: 'user', content: 'hi' }],
+    reasoning: 'none',
+    stream: true,
+    ttftMs: 0,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.toolCalls.length, 1);
+  assert.equal(result.toolCalls[0].parseError, true);
+  assert.deepEqual(result.toolCalls[0].arguments, {});
+  assert.equal(result.toolCalls[0].rawArguments, '{}');
 });
 
 test('stream: content plus a partial tool-call delta returns no tool calls and is aborted', async () => {

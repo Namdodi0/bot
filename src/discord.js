@@ -26,7 +26,7 @@ async function main() {
   const { logger } = boot;
   const platform = createDiscordPlatform({ config, boot });
   const runtime = await createRuntime({ config, platform, boot });
-  const { primary, fallback, contextFiles, shutdown, addCleanup, waitForShutdown } = runtime;
+  const { primary, fallback, contextFiles, shutdown, addDispose, waitForShutdown } = runtime;
 
   if (config.dryRun) {
     logger.info('dry-run: Discord transport not started');
@@ -35,7 +35,7 @@ async function main() {
   }
 
   const bot = createDiscordBot({ config, boot, platform, runtime });
-  addCleanup(() => bot.stop());
+  addDispose(() => bot.stop());
 
   try {
     await bot.start();

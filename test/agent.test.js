@@ -470,3 +470,87 @@ test('the sender rate limit is scoped per chat', async () => {
   await agent.handle(textEvent('three', { messageId: 'rl-3', chatId: 'chat-2' }));
   assert.equal(nimCalls.length, 2);
 });
+
+test('stopAccepting drops new messages and rejects new exclusive work', async () => {
+  const { agent, nimCalls } = await setup();
+  agent.stopAccepting();
+  await agent.enqueue(textEvent('too late'));
+  assert.equal(nimCalls.length, 0);
+  await assert.rejects(
+    () => agent.exclusive('chat-1', async () => {}),
+    (error) => /** @type {any} */ (error)?.name === 'QueueFullError',
+  );
+});
+
+test('exclusive work also respects maxQueueDepth', async () => {
+  const { agent } = await setup({ configOverrides: { maxQueueDepth: 1 } });
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const first = agent.exclusive('chat-1', () => gate);
+  await assert.rejects(
+    () => agent.exclusive('chat-1', async () => {}),
+    (error) => /** @type {any} */ (error)?.name === 'QueueFullError',
+  );
+  release();
+  await first;
+});
+
+test('a tool call with unparseable arguments is recorded as an error instead of executed', async () => {
+  let ran = false;
+  const toolRuntime = {
+    definitions: () => [
+      {
+        type: 'function',
+        function: { name: 'web_search', parameters: { type: 'object', properties: { query: { type: 'string' } } } },
+      },
+    ],
+    run: async () => {
+      ran = true;
+      return { ok: true, text: 'should not run' };
+    },
+  };
+  const { agent, store } = await setup({
+    toolRuntime,
+    replies: [
+      {
+        content: '',
+        toolCalls: [{ id: 'call_1', name: 'web_search', arguments: {}, rawArguments: '{}', parseError: true }],
+      },
+      { content: 'Recovered answer', toolCalls: [] },
+    ],
+  });
+
+  await agent.handle(textEvent('search something'));
+  assert.equal(ran, false);
+  const record = await store.get('chat-1');
+  assert.ok(
+    record.messages.some(
+      (message) => message.kind === 'tool-result' && /not valid JSON/.test(String(message.text)),
+    ),
+  );
+});
+
+test('a progressive head that failed to send is included in the final answer', async () => {
+  const longText = `${'A'.repeat(90)}. ${'B'.repeat(90)}`;
+  const { agent, platform } = await setup({
+    configOverrides: { progressive: 'on', maxMessagesPerReply: 3 },
+    replies: [{ content: longText, toolCalls: [] }],
+    deltaText: longText,
+  });
+  /** @type {string[]} */
+  const delivered = [];
+  let sends = 0;
+  platform.transport.sendMessage = async (_chatId, text) => {
+    sends += 1;
+    if (sends === 1) throw new Error('transport rejected the progressive head');
+    delivered.push(String(text));
+    return { ok: true };
+  };
+
+  await agent.handle(textEvent('write a long answer'));
+  const joined = delivered.join('\n');
+  assert.match(joined, /^A{80}/, 'the final delivery must include the unsent head');
+  assert.match(joined, /B{80}/);
+});

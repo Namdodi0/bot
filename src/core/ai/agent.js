@@ -1,7 +1,7 @@
 import { createTokenMeter } from '../context/token-meter.js';
 import { CircuitOpenError, HttpError } from '../http.js';
 import { stripMention } from '../text/format.js';
-import { QUEUE_BUSY_TEXT, createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
+import { QUEUE_BUSY_TEXT, QueueFullError, createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
 import { createCollectorSink, createSenderFactory } from './agent/sending.js';
 import { FALLBACK_MIN_MS, findBreak, planAttemptBudget, preview, sleep } from './agent/helpers.js';
 import { createTurnRunner } from './agent/turn.js';
@@ -232,7 +232,7 @@ export function createAgent(deps) {
     }
   }
 
-  const { enqueue, exclusive, isFull, pending, drain } = createQueue({
+  const { enqueue: enqueueQueued, exclusive: exclusiveQueued, isFull, pending, drain } = createQueue({
     config,
     logger,
     metrics,
@@ -240,29 +240,46 @@ export function createAgent(deps) {
     handle,
   });
 
+  /** Shutdown stops admission first, then drains what is already queued. */
+  let accepting = true;
+  function stopAccepting() {
+    accepting = false;
+  }
+  function enqueue(event) {
+    if (!accepting) return Promise.resolve();
+    return enqueueQueued(event);
+  }
+  function exclusive(chatId, task) {
+    if (!accepting) return Promise.reject(new QueueFullError());
+    return exclusiveQueued(chatId, task);
+  }
+
   /**
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean}} options
+   * @param {{skipCommands?: boolean, scheduled?: boolean}} options
    * @param {ReturnType<typeof import('./agent/sending.js').createCollectorSink>} collector
    */
   function runCollected(event, options, collector) {
     const chatId = String(event?.chatId ?? '');
-    if (isFull()) {
+    const run = async () => {
+      await handle(event, { collector, skipCommands: options.skipCommands !== false });
+      return collector.result();
+    };
+    // Native callers that already hold the chat slot must not schedule it again.
+    if (options.scheduled === true) return run();
+    if (!accepting || isFull()) {
       metrics.inc('queue.dropped');
       logger.warn('queue is full, skipping slash turn', { chatId, icon: '🧯' });
       return Promise.resolve({ text: QUEUE_BUSY_TEXT, photos: [] });
     }
-    return exclusive(chatId, async () => {
-      await handle(event, { collector, skipCommands: options.skipCommands !== false });
-      return collector.result();
-    });
+    return exclusive(chatId, run);
   }
 
   /**
    * Run one turn and collect its output instead of sending it (native slash commands).
    * Turns are serialized per chat so they cannot interleave writes to the same record.
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean}} [options]
+   * @param {{skipCommands?: boolean, scheduled?: boolean}} [options] `scheduled` = caller already holds the chat slot
    * @returns {Promise<{text: string, photos: any[]}>}
    */
   function collect(event, options = {}) {
@@ -272,7 +289,7 @@ export function createAgent(deps) {
   /**
    * Same as `collect`, but streams content deltas to `onDelta` for live message edits.
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean, onDelta?: (delta: string) => void}} [options]
+   * @param {{skipCommands?: boolean, onDelta?: (delta: string) => void, scheduled?: boolean}} [options]
    * @returns {Promise<{text: string, photos: any[]}>}
    */
   function stream(event, options = {}) {
@@ -294,6 +311,7 @@ export function createAgent(deps) {
     flushRateLimits: () => rateLimited.flush?.(),
     pending,
     drain,
+    stopAccepting,
     seenSize: () => seen.size(),
   };
 }

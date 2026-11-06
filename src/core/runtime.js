@@ -262,8 +262,10 @@ export async function createRuntime(input) {
   }
 
   const controller = new AbortController();
-  /** @type {Array<() => Promise<void>|void>} */
+  /** @type {Array<() => Promise<void>|void>} Stops new work; runs before the queue is drained. */
   const cleanups = [];
+  /** @type {Array<() => Promise<void>|void>} Releases transports/resources after queued work is drained. */
+  const disposals = [];
   await reminders.load();
   reminders.start();
   cleanups.push(() => reminders.stop());
@@ -273,6 +275,11 @@ export async function createRuntime(input) {
     cleanups.push(cleanup);
   }
 
+  /** @param {() => Promise<void>|void} dispose */
+  function addDispose(dispose) {
+    disposals.push(dispose);
+  }
+
   /** @type {Promise<void>|null} */
   let shutdownPromise = null;
   /** @param {string} reason */
@@ -280,8 +287,9 @@ export async function createRuntime(input) {
     if (shutdownPromise) return shutdownPromise;
     shutdownPromise = (async () => {
       logger.info('shutting down', { reason, icon: '👋' });
+      // 1. Stop accepting new work, then stop the intake loops/servers.
+      agent.stopAccepting?.();
       controller.abort();
-      // Close the message sources first so the queue stops growing while waiting.
       for (const cleanup of cleanups.reverse()) {
         try {
           await cleanup();
@@ -289,18 +297,28 @@ export async function createRuntime(input) {
           logger.warn('cleanup failed', { error });
         }
       }
+      // 2. Drain work admitted before shutdown while transports are still available.
       try {
         const left = await agent.drain(10_000);
         if (left > 0) logger.warn('shutdown: messages still unfinished', { pending: left, icon: '⏳' });
       } catch (error) {
         logger.warn('drain on shutdown failed', { error });
       }
+      // 3. Persist state after the last mutation has finished.
       try {
         transport.stopAllTyping();
         await agent.flushRateLimits?.();
         await store.flush();
       } catch (error) {
         logger.warn('flush on shutdown failed', { error });
+      }
+      // 4. Release transports/resources last.
+      for (const dispose of disposals.reverse()) {
+        try {
+          await dispose();
+        } catch (error) {
+          logger.warn('dispose failed', { error });
+        }
       }
       logger.info('session summary', {
         messages: metrics.get('messages.in'),
@@ -412,6 +430,7 @@ export async function createRuntime(input) {
     contextFiles,
     controller,
     addCleanup,
+    addDispose,
     shutdown,
     waitForShutdown,
   };

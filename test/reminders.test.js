@@ -69,6 +69,78 @@ test('createReminderStore: caps per chat, delivers due items, persists', async (
   assert.equal(reloaded.list('g1').length, 2);
 });
 
+test('createReminderStore: concurrent saves cannot overwrite a newer snapshot', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-rem-'));
+  const file = path.join(dir, 'reminders.json');
+  const store = createReminderStore({ file, now: () => NOW, send: async () => {}, logger: createSilentLogger() });
+  await store.load();
+
+  const originalRename = fsp.rename;
+  let release;
+  let renameEntered;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise((resolve) => {
+    renameEntered = resolve;
+  });
+  let renames = 0;
+  fsp.rename = async (...args) => {
+    renames += 1;
+    if (renames === 1) {
+      renameEntered();
+      await gate;
+    }
+    return originalRename(...args);
+  };
+
+  try {
+    const first = store.add({ chatId: 'g1', text: 'first', at: NOW + 60_000 });
+    await entered;
+    const second = store.add({ chatId: 'g1', text: 'second', at: NOW + 60_000 });
+    release();
+    await Promise.all([first, second]);
+  } finally {
+    fsp.rename = originalRename;
+  }
+
+  const saved = JSON.parse(await fsp.readFile(file, 'utf8'));
+  assert.deepEqual(saved.items.map((item) => item.text), ['first', 'second']);
+  await fsp.rm(dir, { recursive: true, force: true });
+});
+
+test('createReminderStore: stop waits for an in-flight delivery', async () => {
+  let release;
+  let sendStarted;
+  const started = new Promise((resolve) => {
+    sendStarted = resolve;
+  });
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const store = createReminderStore({
+    now: () => NOW,
+    send: async () => {
+      sendStarted();
+      await gate;
+    },
+    logger: createSilentLogger(),
+  });
+  await store.add({ chatId: 'g1', text: 'due', at: NOW });
+
+  const ticking = store.tick();
+  await started;
+  let stopped = false;
+  const stopping = store.stop().then(() => {
+    stopped = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(stopped, false, 'stop must wait for the delivery in flight');
+  release();
+  await Promise.all([ticking, stopping]);
+  assert.equal(stopped, true);
+});
+
 test('createReminderStore: overlapping ticks deliver each reminder once', async () => {
   let nowMs = NOW;
   /** @type {string[]} */

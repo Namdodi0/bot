@@ -13,10 +13,11 @@ function channelOfInteraction(interaction) {
  */
 async function allowedInteraction(config, interaction) {
   if (!interaction.guildId) return true;
+  const discordConfig = config?.discord ?? {};
   const channel = channelOfInteraction(interaction);
-  if (channel) return isChannelAllowed(config, channel);
+  if (channel) return isChannelAllowed(discordConfig, channel);
   // A guild command with no resolvable channel must not bypass an allow-list.
-  return !(config.discord?.allowedChannelIds?.length ?? 0);
+  return !(discordConfig.allowedChannelIds?.length ?? 0);
 }
 
 /**

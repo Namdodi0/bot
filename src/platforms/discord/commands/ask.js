@@ -116,7 +116,15 @@ export function createAskHandlers(shared) {
         },
       });
       await previewer.flush();
-      const token = makeToken({ prompt, chatId: thread.id, chatType: 'GROUP', userId: interaction.user.id, ephemeral: false });
+      const token = makeToken({
+        prompt,
+        answer: result.text,
+        chatId: thread.id,
+        chatType: 'GROUP',
+        userId: interaction.user.id,
+        ephemeral: false,
+        origin: 'channel',
+      });
       await sendChannelAnswer(thread, result, token, placeholder);
       await interaction.editReply({ content: `Answered in ${thread}.`, allowedMentions: { parse: [] } });
       return;
@@ -134,10 +142,12 @@ export function createAskHandlers(shared) {
     await previewer.flush();
     const token = makeToken({
       prompt,
+      answer: result.text,
       chatId: String(interaction.channelId),
       chatType: interaction.guildId ? 'GROUP' : 'PRIVATE',
       userId: interaction.user.id,
       ephemeral: priv,
+      origin: 'interaction',
     });
     await sendInteractionAnswer(interaction, result, token, priv);
     if (wantsThread) {
@@ -170,10 +180,12 @@ export function createAskHandlers(shared) {
     await previewer.flush();
     const token = makeToken({
       prompt,
+      answer: result.text,
       chatId: String(interaction.channelId),
       chatType: interaction.guildId ? 'GROUP' : 'PRIVATE',
       userId: interaction.user.id,
       ephemeral: true,
+      origin: 'interaction',
     });
     await sendInteractionAnswer(interaction, result, token, true);
   }
@@ -231,23 +243,35 @@ export function createAskHandlers(shared) {
       });
       return;
     }
+    // Thread answers are channel messages; every other answer is an interaction response.
+    const viaChannel = payload.origin === 'channel';
     if (action === 'delete') {
       await interaction.deferUpdate();
-      await interaction.message.delete().catch((error) => {
+      const removed = viaChannel ? interaction.message.delete() : interaction.deleteReply();
+      await removed.catch((error) => {
         logger?.debug('discord answer delete failed', {
           error: String(/** @type {any} */ (error)?.message ?? error),
         });
       });
       return;
     }
-    const prompt = action === 'continue' ? 'Continue from where you left off.' : payload.prompt;
+    // The shared record has public answers already; a private answer was removed after its turn.
+    const priorAnswer = payload.ephemeral ? String(payload.answer ?? '').slice(-4000) : '';
+    const prompt =
+      action === 'continue'
+        ? priorAnswer
+          ? `Continue from where you left off. Previous answer:\n\n${priorAnswer}`
+          : 'Continue from where you left off.'
+        : payload.prompt;
     const regenerating = action === 'regen';
     if (regenerating) await interaction.deferUpdate();
     else await interaction.deferReply(privateReply(payload.ephemeral));
 
     let streamed = '';
     const edit = regenerating
-      ? (text) => interaction.message.edit(v2Message(text))
+      ? viaChannel
+        ? (text) => interaction.message.edit(v2Message(text))
+        : (text) => interaction.editReply(v2Message(text))
       : (text) => interaction.editReply(v2Message(text));
     const previewer = createPreviewer(edit);
     const event = askEvent(interaction, prompt, {
@@ -269,7 +293,9 @@ export function createAskHandlers(shared) {
     const photos = result.photos ?? [];
     const followFlags = privateReply(payload.ephemeral);
     const editFinal = regenerating
-      ? (value) => interaction.message.edit(value)
+      ? viaChannel
+        ? (value) => interaction.message.edit(value)
+        : (value) => interaction.editReply(value)
       : (value) => interaction.editReply(value);
     try {
       await editFinal(v2Answer(chunks[0], answerButtons(newToken), photos));

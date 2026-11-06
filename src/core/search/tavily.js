@@ -119,5 +119,10 @@ export function createTavilyClient(options) {
     return normalized;
   }
 
-  return { search, cacheSize: () => cache.size };
+  return {
+    id: 'tavily',
+    capabilities: { searchDepth: true, country: true },
+    search,
+    cacheSize: () => cache.size,
+  };
 }

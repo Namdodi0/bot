@@ -22,7 +22,7 @@ export function createShared(deps) {
   });
   const reminderService = runtime.reminderService ?? createReminderService({ reminders: runtime.reminders });
 
-  /** @type {Map<string, {prompt: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, at: number}>} */
+  /** @type {Map<string, {prompt: string, answer?: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, origin: 'channel'|'interaction', at: number}>} */
   const tokens = new Map();
   /** @type {Map<string, {pages: string[], title: string, userId: string, at: number}>} */
   const pagers = new Map();
@@ -67,7 +67,7 @@ export function createShared(deps) {
     return true;
   }
 
-  /** @param {{prompt: string, chatId: string, chatType: string, userId: string, ephemeral: boolean}} payload */
+  /** @param {{prompt: string, answer?: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, origin: 'channel'|'interaction'}} payload */
   function makeToken(payload) {
     pruneTokens();
     const id = crypto.randomUUID().slice(0, 12);
@@ -107,6 +107,32 @@ export function createShared(deps) {
 
   function deadline() {
     return config.responseTimeoutMs > 0 ? Date.now() + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
+  }
+
+  async function busyReply(interaction) {
+    const payload = { content: 'I am handling too many messages right now, please try again in a few seconds.' };
+    if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
+    else await replyEphemeral(interaction, payload);
+  }
+
+  /**
+   * Run record-mutating or provider work inside the chat's shared queue. Native commands
+   * must not read/write context or call providers outside the same serialization as turns.
+   * @param {any} interaction
+   * @param {() => Promise<any>} task
+   * @returns {Promise<{ok: true, value: any}|{ok: false, busy: true}>}
+   */
+  async function runExclusive(interaction, task) {
+    const chatId = String(interaction.channelId ?? '');
+    try {
+      return { ok: true, value: await runtime.agent.exclusive(chatId, task) };
+    } catch (error) {
+      if (/** @type {any} */ (error)?.name === 'QueueFullError') {
+        await busyReply(interaction);
+        return { ok: false, busy: true };
+      }
+      throw error;
+    }
   }
 
   /**
@@ -212,6 +238,8 @@ export function createShared(deps) {
     makeToken,
     pagers,
     makePager,
+    runExclusive,
+    busyReply,
     handlePager,
     splitPages,
     ephemeral,

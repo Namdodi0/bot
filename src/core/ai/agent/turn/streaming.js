@@ -21,6 +21,9 @@ export function createProgressiveFlusher({
   let emitted = 0;
   let flushed = false;
   let locked = false;
+  let generation = 0;
+  /** @type {Promise<void>} */
+  let pendingSend = Promise.resolve();
 
   /** @param {string} delta */
   function onDelta(delta) {
@@ -38,23 +41,41 @@ export function createProgressiveFlusher({
     const rawHead = buffer.slice(0, cut);
     const head = rawHead.trimEnd();
     buffer = buffer.slice(cut);
-    flushed = true;
-    emitted = rawHead.length;
-    sendText(sink, head).catch((error) => {
-      logger.warn('progressive send failed', { error: String(error?.message ?? error), icon: '✂️' });
-    });
+    // Attempt at most one progressive send. The cursor advances only when the transport
+    // confirms delivery; otherwise the final send must still include this head.
+    locked = true;
+    const sentFor = generation;
+    pendingSend = sendText(sink, head)
+      .then((confirmed) => {
+        // A tool round may have reset the turn while this send was in flight; its cursor
+        // belongs to the previous answer and must not clip the new one.
+        if (sentFor !== generation) return;
+        if (confirmed > 0) {
+          flushed = true;
+          emitted = rawHead.length;
+        } else {
+          logger.warn('progressive send was not confirmed, final answer will include it', { icon: '✂️' });
+        }
+      })
+      .catch((error) => {
+        logger.warn('progressive send failed', { error: String(error?.message ?? error), icon: '✂️' });
+      });
   }
 
   /** After a tool round the next answer is fresh: stop splitting it early. */
   function lockAfterToolRound() {
+    generation += 1;
     buffer = '';
     emitted = 0;
+    flushed = false;
     locked = true;
   }
 
   return {
     onDelta,
     lockAfterToolRound,
+    /** Wait for a progressive send to settle before deciding whether its head was delivered. */
+    settled: () => pendingSend,
     get emitted() {
       return emitted;
     },

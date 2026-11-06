@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createInteractionRouter } from '../src/platforms/discord/interaction-router.js';
 import {
   isBotAddressed,
   isChannelAllowed,
@@ -59,6 +60,40 @@ test('isBotAddressed covers mention, role, reply, DM and respond-to-all channels
   assert.equal(isBotAddressed({ repliedToBot: true }), true);
   assert.equal(isBotAddressed({ isDm: true }), true);
   assert.equal(isBotAddressed({ listensHere: true }), true);
+});
+
+test('native interactions use the Discord allow-list, not the root config', async () => {
+  const config = { discord: { allowedChannelIds: ['allowed'] } };
+  let handled = 0;
+  const route = createInteractionRouter({ config, commands: { handleCommand: async () => { handled += 1; } } });
+  /** @param {string} channelId */
+  function interaction(channelId) {
+    return {
+      guildId: 'guild-1',
+      channelId,
+      channel: { id: channelId },
+      isAutocomplete: () => false,
+      isButton: () => false,
+      isStringSelectMenu: () => false,
+      isModalSubmit: () => false,
+      isChatInputCommand: () => true,
+      isMessageContextMenuCommand: () => false,
+      isRepliable: () => true,
+      replies: [],
+      async reply(payload) {
+        this.replies.push(payload);
+      },
+    };
+  }
+
+  const blocked = interaction('blocked');
+  await route(blocked);
+  assert.equal(handled, 0);
+  assert.match(String(blocked.replies[0]?.content), /not allowed/);
+
+  const allowed = interaction('allowed');
+  await route(allowed);
+  assert.equal(handled, 1);
 });
 
 test('allowed channels cover DMs and threads, respond-to-all covers threads', () => {

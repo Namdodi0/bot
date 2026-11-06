@@ -107,6 +107,108 @@ test('the remind modal creates a reminder', async () => {
   assert.match(modal.payload.content, /Reminder #3/);
 });
 
+test('ephemeral answer Delete uses the interaction response, not channel message APIs', async () => {
+  const { commands } = makeCommands();
+  const ask = interaction('ask', { prompt: 'hi', private: true });
+  await commands.handleCommand(ask);
+  const token = String(payloadButtons(ask.edits.at(-1)).components[0].custom_id).split(':')[2];
+  let deletedReply = false;
+  let deletedChannelMessage = false;
+  const click = interaction('', {}, {
+    customId: `ask:delete:${token}`,
+    user: { id: 'u1' },
+    deferUpdate: async () => {},
+    deleteReply: async () => {
+      deletedReply = true;
+    },
+    message: {
+      delete: async () => {
+        deletedChannelMessage = true;
+      },
+      edit: async () => {},
+    },
+  });
+  await commands.handleButton(click);
+  assert.equal(deletedReply, true);
+  assert.equal(deletedChannelMessage, false);
+});
+
+test('ephemeral Regenerate edits the interaction answer and keeps the private prompt', async () => {
+  const { commands, runtime } = makeCommands();
+  const ask = interaction('ask', { prompt: 'secret question', private: true });
+  await commands.handleCommand(ask);
+  const token = String(payloadButtons(ask.edits.at(-1)).components[0].custom_id).split(':')[2];
+  /** @type {any} */
+  let seen = null;
+  runtime.agent.stream = async (event) => {
+    seen = event;
+    return { text: 'regenerated', photos: [] };
+  };
+  let channelEdits = 0;
+  let replyEdits = 0;
+  const click = interaction('', {}, {
+    customId: `ask:regen:${token}`,
+    user: { id: 'u1' },
+    deferUpdate: async () => {},
+    editReply: async () => {
+      replyEdits += 1;
+    },
+    message: {
+      edit: async () => {
+        channelEdits += 1;
+      },
+      delete: async () => {},
+    },
+  });
+  await commands.handleButton(click);
+  assert.equal(seen.private, true);
+  assert.equal(seen.text, 'secret question');
+  assert.equal(channelEdits, 0);
+  assert.ok(replyEdits >= 1);
+});
+
+test('private Continue carries the previous private answer into the new private turn', async () => {
+  const { commands, runtime } = makeCommands();
+  const ask = interaction('ask', { prompt: 'secret question', private: true });
+  await commands.handleCommand(ask);
+  const token = String(payloadButtons(ask.edits.at(-1)).components[0].custom_id).split(':')[2];
+  /** @type {any} */
+  let seen = null;
+  runtime.agent.stream = async (event) => {
+    seen = event;
+    return { text: 'continued', photos: [] };
+  };
+  const click = interaction('', {}, {
+    customId: `ask:continue:${token}`,
+    user: { id: 'u1' },
+    message: { edit: async () => {}, delete: async () => {} },
+  });
+  await commands.handleButton(click);
+  assert.equal(seen.private, true);
+  assert.match(seen.text, /Previous answer/);
+  assert.match(seen.text, /Answer text/);
+});
+
+test('a native command reports busy when the shared chat queue rejects it', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.agent.exclusive = async () => {
+    const error = new Error('queue is full');
+    error.name = 'QueueFullError';
+    throw error;
+  };
+  const i = interaction('summary', { count: 5 });
+  await commands.handleCommand(i);
+  assert.match(String(i.edits.at(-1)?.content), /too many messages/);
+});
+
+test('/catchup requires the requester to have Read Message History', async () => {
+  const { commands } = makeCommands();
+  const i = interaction('catchup', { hours: 1 }, { memberPermissions: { has: () => false } });
+  await commands.handleCommand(i);
+  assert.equal(Boolean(i.deferred), false);
+  assert.match(String(i.replies[0]?.content), /Read Message History/);
+});
+
 test('private /ask wins over thread and never creates a public thread', async () => {
   const { commands, runtime } = makeCommands();
   const threads = [];

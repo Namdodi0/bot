@@ -31,6 +31,53 @@ test('firecrawl search asks for images and normalizes both result types', async 
   assert.deepEqual(result.images, ['https://cdn.example/cat.jpg']);
 });
 
+test('search failover uses only the remaining deadline, never a fresh timeout', async () => {
+  let fallbackCalls = 0;
+  const router = createSearchRouter({
+    primary: {
+      search: async (_query, opts) => {
+        assert.ok(Number(opts.timeoutMs) <= 60, 'the primary attempt is bounded by the remaining budget');
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        const error = new Error('primary down');
+        /** @type {any} */ (error).status = 503;
+        throw error;
+      },
+    },
+    fallback: {
+      search: async () => {
+        fallbackCalls += 1;
+        return { results: [], images: [] };
+      },
+    },
+    logger: { warn() {} },
+    metrics: { inc() {} },
+  });
+
+  await assert.rejects(
+    () => router.search('cat', { deadline: Date.now() + 50, timeoutMs: 9000 }),
+    /deadline expired/,
+  );
+  assert.equal(fallbackCalls, 0, 'no failover request may start after the operation deadline');
+});
+
+test('the router reports options a provider cannot apply instead of ignoring them silently', async () => {
+  const logs = [];
+  const router = createSearchRouter({
+    primary: {
+      id: 'firecrawl',
+      capabilities: { searchDepth: false, country: false },
+      search: async () => ({ results: [], images: [] }),
+    },
+    fallback: null,
+    logger: { debug: (message, fields) => logs.push({ message, fields }), warn() {} },
+    metrics: { inc() {} },
+  });
+
+  await router.search('cat', { searchDepth: 'advanced', country: 'japan', deadline: Date.now() + 1000 });
+  assert.equal(logs.length, 1);
+  assert.deepEqual(logs[0].fields.options, ['searchDepth', 'country']);
+});
+
 test('the search router falls back when the primary provider is over quota', async () => {
   let fallbackCalls = 0;
   const router = createSearchRouter({

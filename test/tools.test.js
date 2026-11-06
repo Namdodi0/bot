@@ -60,7 +60,11 @@ test('send_image tries the next candidate when Zalo rejects the first URL', asyn
   const transport = {
     sendPhoto: async (_chatId, url) => {
       attempted.push(url);
-      if (url.endsWith('a.png')) throw new Error('rejected by Zalo');
+      if (url.endsWith('a.png')) {
+        const error = new Error('rejected by Zalo');
+        /** @type {any} */ (error).status = 400;
+        throw error;
+      }
       return { ok: true };
     },
     sendSticker: async () => ({ ok: true }),
@@ -77,6 +81,37 @@ test('send_image tries the next candidate when Zalo rejects the first URL', asyn
   const result = await tools.run('send_image', { query: 'cat' }, { chatId: 'c1' });
   assert.equal(result.ok, true);
   assert.deepEqual(attempted, ['https://x/a.png', 'https://x/b.png']);
+});
+
+test('send_image does not duplicate an image after an unconfirmed delivery', async () => {
+  /** @type {string[]} */
+  const attempted = [];
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: { search: async () => ({ results: [], images: ['https://x/a.png', 'https://x/b.png'] }) },
+    platform: makeZaloPlatform({
+      config: baseConfig(),
+      stickers: fakeStickers,
+      transport: {
+        sendPhoto: async (_chatId, url) => {
+          attempted.push(url);
+          throw new Error('socket timeout after upload');
+        },
+        sendSticker: async () => ({ ok: true }),
+      },
+    }),
+    validator: { validate: async () => ({ ok: true }) },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+  });
+
+  const budget = { remaining: 5 };
+  const result = await tools.run('send_image', { query: 'cat', count: 2 }, { chatId: 'c1', imageBudget: budget });
+  assert.equal(result.ok, true);
+  assert.deepEqual(attempted, ['https://x/a.png']);
+  assert.match(result.text, /did not confirm delivery/);
+  assert.equal(budget.remaining, 4);
 });
 
 test('read_url fetches a page and converts it to text', async () => {
@@ -154,6 +189,33 @@ test('set_reminder tool: definition, add and validation', async () => {
   assert.equal(result.ok, false);
   result = await tools.run('set_reminder', { when: '+10m' }, { chatId: 'c1' });
   assert.equal(result.ok, false);
+});
+
+test('set_reminder refuses to mutate state after the turn deadline', async () => {
+  let added = 0;
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
+    validator: { validate: async () => ({ ok: true }) },
+    reminders: {
+      add: async () => {
+        added += 1;
+        return { ok: true, item: { id: 1, at: Date.now(), text: 'x' } };
+      },
+    },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+
+  const result = await tools.run(
+    'set_reminder',
+    { when: '+10m', text: 'too late' },
+    { chatId: 'c1', deadline: Date.now() - 1 },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.text, /Ran out of time/);
+  assert.equal(added, 0);
 });
 
 test('send_image caps the requested count at 5', async () => {

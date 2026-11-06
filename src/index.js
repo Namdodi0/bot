@@ -25,8 +25,8 @@ async function main() {
   const { logger } = boot;
   const platform = await createZaloPlatform({ config, boot });
   const runtime = await createRuntime({ config, platform, boot });
-  const { agent, primary, fallback, contextFiles, controller, shutdown, addCleanup } = runtime;
-  addCleanup(() => platform.stop());
+  const { agent, primary, fallback, contextFiles, controller, shutdown, addDispose } = runtime;
+  addDispose(() => platform.stop());
 
   try {
     const { ready, done } = await platform.start({

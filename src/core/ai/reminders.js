@@ -6,6 +6,9 @@
  * real timers or a platform transport.
  */
 
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_DELAY_MS = 5_000;
@@ -155,7 +158,6 @@ export function createReminderStore(options = {}) {
   async function load() {
     if (!file) return items;
     try {
-      const fsp = await import('node:fs/promises');
       const raw = await fsp.readFile(file, 'utf8');
       const parsed = JSON.parse(raw);
       const list = Array.isArray(parsed?.items) ? parsed.items : [];
@@ -190,15 +192,21 @@ export function createReminderStore(options = {}) {
     return items;
   }
 
+  /** Serialize writes so a slower, older snapshot can never rename over a newer one. */
+  let saveChain = Promise.resolve();
+
   async function save() {
     if (!file) return;
-    const fsp = await import('node:fs/promises');
-    const path = await import('node:path');
-    await fsp.mkdir(path.dirname(file), { recursive: true });
-    const payload = JSON.stringify({ updatedAt: new Date().toISOString(), items }, null, 2);
-    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-    await fsp.writeFile(tmp, payload, 'utf8');
-    await fsp.rename(tmp, file);
+    const task = saveChain.then(async () => {
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      // Snapshot inside the queued task: the last write must contain the latest items.
+      const payload = JSON.stringify({ updatedAt: new Date().toISOString(), items }, null, 2);
+      const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+      await fsp.writeFile(tmp, payload, 'utf8');
+      await fsp.rename(tmp, file);
+    });
+    saveChain = task.catch(() => {});
+    return task;
   }
 
   /** @param {string} [chatId] */
@@ -301,9 +309,18 @@ export function createReminderStore(options = {}) {
     timer.unref?.();
   }
 
-  function stop() {
+  async function stop() {
     if (timer) clearInterval(timer);
     timer = null;
+    // A delivery already in flight must finish before shutdown reports the reminder service closed.
+    if (tickInFlight) {
+      try {
+        await tickInFlight;
+      } catch {
+        // runTick already logs delivery failures; shutdown must still complete.
+      }
+    }
+    await saveChain;
   }
 
   return { load, add, remove, list, tick, start, stop, all: () => items.slice(), size: () => items.length };

@@ -117,6 +117,71 @@ test('store reset by default (no keepMeta) deletes the whole file', async () => 
   await assert.rejects(() => fsp.stat(store.fileFor('chat-3')));
 });
 
+test('flush waits for an already-started debounced write', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 1 });
+  await store.init();
+  const record = await store.get('flush-barrier', { chatType: 'GROUP' });
+  record.messages.push({ role: 'user', text: 'must survive', ts: Date.now() });
+  store.touch('flush-barrier');
+
+  const originalRename = fsp.rename;
+  let release;
+  let renameEntered;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise((resolve) => {
+    renameEntered = resolve;
+  });
+  fsp.rename = async (...args) => {
+    renameEntered();
+    await gate;
+    return originalRename(...args);
+  };
+
+  try {
+    await entered;
+    let flushed = false;
+    const flushing = store.flush().then(() => {
+      flushed = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(flushed, false, 'flush must not resolve before the rename completes');
+    release();
+    await flushing;
+  } finally {
+    fsp.rename = originalRename;
+  }
+
+  const raw = JSON.parse(await fsp.readFile(store.fileFor('flush-barrier'), 'utf8'));
+  assert.equal(raw.messages[0].text, 'must survive');
+  await fsp.rm(dir, { recursive: true, force: true });
+});
+
+test('prune never evicts a pinned chat or deletes its file', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const store = createContextStore({ dir, logger: silentLogger, ttlHours: 1, debounceMs: 2 });
+  await store.init();
+  const record = await store.get('pinned-chat', { chatType: 'GROUP' });
+  record.messages.push({ role: 'user', text: 'active turn', ts: Date.now() });
+  store.touch('pinned-chat');
+  await store.flush();
+
+  const file = store.fileFor('pinned-chat');
+  const old = new Date(Date.now() - 2 * 24 * 3_600_000);
+  await fsp.utimes(file, old, old);
+  store.pin('pinned-chat');
+  try {
+    await store.prune();
+    assert.equal(store.has('pinned-chat'), true);
+    await fsp.stat(file);
+  } finally {
+    store.unpin('pinned-chat');
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('CONTEXT_TTL_HOURS=0: prune deletes no context', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 0, debounceMs: 2 });

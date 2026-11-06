@@ -34,6 +34,7 @@ export function createBasicHandlers(shared) {
     sendPhotos,
     makePager,
     splitPages,
+    runExclusive,
   } = shared;
 
   /** Split the command list into pages that fit a mobile embed. */
@@ -151,7 +152,8 @@ export function createBasicHandlers(shared) {
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
       const full = interaction.options.getBoolean('all') === true;
-      await runtime.agent.exclusive(chatId, () => chat.reset(chatId, { all: full }));
+      const outcome = await runExclusive(interaction, () => chat.reset(chatId, { all: full }));
+      if (!outcome.ok) return;
       await interaction.editReply({
         content: full ? 'Cleared the context and settings for this channel.' : 'Cleared this channel context (settings kept).',
       });
@@ -165,7 +167,9 @@ export function createBasicHandlers(shared) {
       if (await commandRateLimited(interaction)) return;
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
-      const result = await runtime.agent.exclusive(chatId, () => chat.compact(chatId, 'GROUP'));
+      const outcome = await runExclusive(interaction, () => chat.compact(chatId, 'GROUP'));
+      if (!outcome.ok) return;
+      const result = outcome.value;
       if (!result?.changed) {
         await interaction.editReply({ content: 'The context does not need compaction yet.' });
         return;
@@ -182,18 +186,16 @@ export function createBasicHandlers(shared) {
       const previewer = createPreviewer((text) =>
         interaction.editReply({ content: text, allowedMentions: { parse: [] } }),
       );
-      const result = await chat.summarize(
-        chatId,
-        interaction.guildId ? 'GROUP' : 'PRIVATE',
-        count,
-        null,
-        {
+      const outcome = await runExclusive(interaction, () =>
+        chat.summarize(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE', count, null, {
           onDelta: (delta) => {
             streamed += delta;
             previewer.push(streamed);
           },
-        },
+        }),
       );
+      if (!outcome.ok) return;
+      const result = outcome.value;
       await previewer.flush();
       if (!result.ok) {
         await interaction.editReply({
@@ -222,11 +224,15 @@ export function createBasicHandlers(shared) {
       const query = String(interaction.options.getString('query', true)).trim();
       const priv = interaction.options.getBoolean('private') === true;
       await interaction.deferReply(privateReply(priv));
-      const result = await runtime.tools.run(
-        'web_search',
-        { query },
-        { chatId: String(interaction.channelId), senderId: interaction.user.id, platform: 'discord', deadline: deadline() },
+      const outcome = await runExclusive(interaction, () =>
+        runtime.tools.run(
+          'web_search',
+          { query },
+          { chatId: String(interaction.channelId), senderId: interaction.user.id, platform: 'discord', deadline: deadline() },
+        ),
       );
+      if (!outcome.ok) return;
+      const result = outcome.value;
       if (!result.ok) {
         await interaction.editReply({ embeds: [errorEmbed(result.text)] });
         return;
@@ -240,10 +246,14 @@ export function createBasicHandlers(shared) {
       const count = interaction.options.getInteger('count') ?? 1;
       const priv = interaction.options.getBoolean('private') === true;
       await interaction.deferReply(privateReply(priv));
-      const { result, photos } = await runImage(
-        { query, count, caption: query },
-        { chatId: String(interaction.channelId), platform: 'discord', deadline: deadline() },
+      const outcome = await runExclusive(interaction, () =>
+        runImage(
+          { query, count, caption: query },
+          { chatId: String(interaction.channelId), platform: 'discord', deadline: deadline() },
+        ),
       );
+      if (!outcome.ok) return;
+      const { result, photos } = outcome.value;
       if (!photos.length) {
         await interaction.editReply({ embeds: [errorEmbed(result.text || 'No images found.')] });
         return;

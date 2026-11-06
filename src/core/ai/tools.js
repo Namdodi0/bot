@@ -124,6 +124,9 @@ export function createToolRuntime(options) {
     if (ctx?.suppressDirectSend) {
       return { ok: false, text: 'Reminders cannot be set from a private answer.' };
     }
+    if (Number.isFinite(ctx?.deadline) && Date.now() >= /** @type {number} */ (ctx.deadline)) {
+      return { ok: false, text: 'Ran out of time before the reminder could be set.' };
+    }
     const when = String(args?.when ?? '').trim();
     const text = String(args?.text ?? args?.content ?? '').trim();
     if (!when) return { ok: false, text: 'Missing the reminder time (when).' };
@@ -260,6 +263,8 @@ export function createToolRuntime(options) {
         searchDepth: config.search.depth,
         maxResults: config.search.maxResults,
         country: config.search.country,
+        // The router clamps each provider attempt to what is left of this absolute deadline.
+        ...(Number.isFinite(ctx.deadline) ? { deadline: Number(ctx.deadline) } : {}),
         timeoutMs: Number.isFinite(ctx.deadline)
           ? Math.max(1500, Math.min(9000, /** @type {number} */ (ctx.deadline) - Date.now()))
           : 0,
@@ -389,6 +394,7 @@ export function createToolRuntime(options) {
     }
 
     let sent = 0;
+    let uncertain = false;
     /** @type {string[]} */
     const sentUrls = [];
     for (const { url, upload } of selected) {
@@ -406,6 +412,25 @@ export function createToolRuntime(options) {
         metrics?.inc('tool.sendImage.ok');
         logger.info('image sent', { query, url, sent, requested, icon: '🖼️' });
       } catch (error) {
+        // Only a definite client rejection proves the image did not arrive. A timeout or
+        // 5xx may mean the platform accepted it, so another candidate would duplicate it.
+        const rawStatus = Number(/** @type {any} */ (error)?.status);
+        const rawCode = Number(/** @type {any} */ (error)?.code);
+        const status = Number.isFinite(rawStatus) ? rawStatus : rawCode;
+        const definiteRejection =
+          Number.isFinite(status) && status >= 400 && status < 500 && status !== 408 && status !== 429;
+        if (!definiteRejection) {
+          uncertain = true;
+          sent += 1;
+          if (budget) budget.remaining = Math.max(0, budget.remaining - 1);
+          sentUrls.push(url);
+          logger.warn('image delivery is unconfirmed, not retrying', {
+            query,
+            url,
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+          break;
+        }
         // A URL can validate but still be rejected by the platform (or hit a rate limit):
         // move on to the next candidate instead of retrying the same one.
         logger.debug('send_image failed, trying next candidate', {
@@ -428,8 +453,9 @@ export function createToolRuntime(options) {
           : `Could not find a valid image to send for "${query}".`,
       };
     }
-    const text =
-      sent >= requested
+    const text = uncertain
+      ? `Sent an image for "${query}", but the platform did not confirm delivery. Do not retry within this reply.`
+      : sent >= requested
         ? `Sent ${sent} image${sent === 1 ? '' : 's'} for "${query}"${
             capped ? ` (limit is ${MAX_IMAGES_PER_SEND} images per reply)` : ''
           }.`

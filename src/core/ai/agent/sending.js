@@ -78,12 +78,15 @@ export function createSenderFactory({ config, logger, metrics, platform }) {  co
     }
     const { chunks, truncated } = result;
     if (!chunks.length) return 0;
+    const before = sender.sent();
     for (let index = 0; index < chunks.length; index += 1) {
       const isLast = index === chunks.length - 1;
       const suffix = truncated && isLast ? '\n\n…' : '';
       await sender.enqueue(`${chunks[index]}${suffix}`);
     }
-    return chunks.length;
+    // Deliveries that failed are not counted by the sender. Callers use this to decide
+    // whether progressive output really reached the user.
+    return sender.sent() - before;
   }
 
   return { makeSender, sendText };

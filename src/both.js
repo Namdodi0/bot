@@ -48,14 +48,14 @@ async function main() {
     manageSignals: false,
   });
 
-  zaloRuntime.addCleanup(() => zaloPlatform.stop());
+  zaloRuntime.addDispose(() => zaloPlatform.stop());
   const discordBot = createDiscordBot({
     config: discordConfig,
     boot: discordBoot,
     platform: discordPlatform,
     runtime: discordRuntime,
   });
-  discordRuntime.addCleanup(() => discordBot.stop());
+  discordRuntime.addDispose(() => discordBot.stop());
 
   /** @type {Promise<void>|null} */
   let shutdownPromise = null;

@@ -354,6 +354,8 @@ export function createTurnRunner(deps) {
         answeredBy = { model: target.model, alias: target.alias, provider: target.provider };
       }
 
+      // The progressive head may still be in flight: only a confirmed delivery suppresses fallback.
+      await progressive.settled();
       // Last-resort fallback with a DIFFERENT model: drop tools so we still get an answer.
       // `flushed` = the head was already sent to the user; calling fallback now would duplicate content.
       if (!response && !progressive.flushed) {
@@ -422,6 +424,7 @@ export function createTurnRunner(deps) {
     // forced final call produced no text.
     if (!finalText.trim()) answeredBy = null;
 
+    await progressive.settled();
     await responseSink.wait();
 
     const remainder = finalText.slice(progressive.emitted);

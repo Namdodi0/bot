@@ -61,14 +61,25 @@ export async function runToolRound({
     /** @type {{ok?: boolean, text: string}} */
     let result;
     try {
-      result = await tools.run(call.name, call.arguments, {
-        chatId,
-        senderId,
-        deadline,
-        sendPhoto,
-        ...(imageBudget ? { imageBudget } : {}),
-        ...(privateTurn ? { suppressDirectSend: true } : {}),
-      });
+      if (call.parseError === true) {
+        // Never execute arguments the provider did not finish emitting.
+        result = {
+          ok: false,
+          text: `Tool ${call.name} was not executed: its arguments were not valid JSON.`,
+        };
+      } else if (Number.isFinite(deadline) && Date.now() >= deadline) {
+        // The operation deadline already passed: no more side effects for this turn.
+        result = { ok: false, text: `Tool ${call.name} was not executed: the turn deadline expired.` };
+      } else {
+        result = await tools.run(call.name, call.arguments, {
+          chatId,
+          senderId,
+          deadline,
+          sendPhoto,
+          ...(imageBudget ? { imageBudget } : {}),
+          ...(privateTurn ? { suppressDirectSend: true } : {}),
+        });
+      }
     } catch (error) {
       const reason = String(/** @type {any} */ (error)?.message ?? error);
       logger.warn('tool call failed', {

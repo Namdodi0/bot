@@ -99,5 +99,11 @@ export function createFirecrawlClient(options) {
     return normalized;
   }
 
-  return { search, cacheSize: () => cache.size };
+  return {
+    id: 'firecrawl',
+    // Firecrawl has no depth/country knobs; the router surfaces that instead of pretending.
+    capabilities: { searchDepth: false, country: false },
+    search,
+    cacheSize: () => cache.size,
+  };
 }

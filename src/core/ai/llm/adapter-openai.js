@@ -7,31 +7,34 @@ import { LLM_ERROR, LlmError } from './errors.js';
  * @property {string} name
  * @property {any} arguments
  * @property {string} rawArguments
+ * @property {boolean} [parseError] arguments were not valid JSON and must not be executed
  */
 
 /**
  * Some providers send `function.arguments` already parsed instead of as a JSON string.
  * Both shapes are accepted; the raw form handed to callers is always a JSON string.
+ * Invalid JSON is preserved as a parse error instead of silently becoming `{}` (which
+ * would execute a tool with default arguments).
  * @param {any} raw
- * @returns {{arguments: any, rawArguments: string}}
+ * @returns {{arguments: any, rawArguments: string, parseError?: boolean}}
  */
 function parseToolArguments(raw) {
   if (typeof raw === 'string') {
-    if (!raw) return { arguments: {}, rawArguments: raw };
+    if (!raw) return { arguments: {}, rawArguments: '{}' };
     try {
       return { arguments: JSON.parse(raw), rawArguments: raw };
     } catch {
-      return { arguments: {}, rawArguments: raw };
+      return { arguments: {}, rawArguments: '{}', parseError: true };
     }
   }
   if (raw && typeof raw === 'object') {
     try {
       return { arguments: raw, rawArguments: JSON.stringify(raw) };
     } catch {
-      return { arguments: raw, rawArguments: '{}' };
+      return { arguments: {}, rawArguments: '{}', parseError: true };
     }
   }
-  return { arguments: {}, rawArguments: '{}' };
+  return { arguments: {}, rawArguments: '{}', parseError: true };
 }
 
 /**
@@ -43,12 +46,13 @@ function parseChoice(choice) {
   const rawCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
   /** @type {NimToolCall[]} */
   const toolCalls = rawCalls.map((call, index) => {
-    const { arguments: parsed, rawArguments } = parseToolArguments(call?.function?.arguments ?? '{}');
+    const { arguments: parsed, rawArguments, parseError } = parseToolArguments(call?.function?.arguments ?? '{}');
     return {
       id: String(call?.id ?? `call_${index}`),
       name: String(call?.function?.name ?? ''),
       arguments: parsed,
       rawArguments,
+      ...(parseError ? { parseError: true } : {}),
     };
   });
   return {
@@ -222,6 +226,8 @@ export function createOpenAiCompatAdapter(options) {
       const choice = data?.choices?.[0];
       const parsed = parseChoice(choice);
       if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
+        // The transport saw a 200 and marked the route healthy; the protocol did not.
+        http.recordStreamFailure?.(routeKey(payload.model));
         throw emptyCompletionError(routeKey(payload.model), payload.model);
       }
       const usage = data?.usage ?? null;
@@ -304,6 +310,7 @@ export function createOpenAiCompatAdapter(options) {
       // Our own first-token guard fired (the caller's budget is still intact): the request
       // may succeed on a retry, so this must stay retryable — unlike a caller abort.
       if (ttftController?.signal.aborted && !input.signal?.aborted) {
+        http.recordStreamFailure?.(routeKey(payload.model));
         throw new HttpError(`${routeKey(payload.model)} first token timeout`, {
           service: routeKey(payload.model),
           retryable: true,
@@ -316,6 +323,7 @@ export function createOpenAiCompatAdapter(options) {
     let content = '';
     let reasoning = '';
     let finishReason = '';
+    let sawDone = false;
     /** @type {number} when the first content token arrived (to compute the real TTFT) */
     let firstDeltaAt = 0;
     /** @type {any} */
@@ -340,6 +348,7 @@ export function createOpenAiCompatAdapter(options) {
             buffer = buffer.slice(newline + 1);
             if (line.startsWith('data:')) {
               const raw = line.slice(5).trim();
+              if (raw === '[DONE]') sawDone = true;
               if (raw && raw !== '[DONE]') {
                 let chunk;
                 try {
@@ -394,9 +403,18 @@ export function createOpenAiCompatAdapter(options) {
       }
     }
 
+    const hasToolCalls = [...callMap.values()].some((value) => Boolean(value.name));
+    // A clean EOF without a finish reason or [DONE] is not a completed response: tool calls
+    // assembled from such a stream may be truncated and must not become executable. Plain
+    // text from a provider that omits the marker is still usable.
+    if (!streamError && !finishReason && !sawDone && hasToolCalls) {
+      streamError = new Error('stream ended before a completion marker');
+    }
+
     const service = routeKey(payload.model);
-    // The circuit breaker only learns the outcome of a stream once its body is finished.
-    if (streamError) {
+    const emptyCompletion = !streamError && !content.trim() && !hasToolCalls;
+    // The circuit breaker learns the protocol outcome of a stream, not just its headers.
+    if (streamError || emptyCompletion) {
       if (!input.signal?.aborted) http.recordStreamFailure?.(service);
     } else {
       http.recordStreamSuccess?.(service);
@@ -430,12 +448,13 @@ export function createOpenAiCompatAdapter(options) {
       : [...callMap.entries()]
           .sort((a, b) => a[0] - b[0])
           .map(([index, value]) => {
-            const { arguments: parsed, rawArguments } = parseToolArguments(value.args);
+            const { arguments: parsed, rawArguments, parseError } = parseToolArguments(value.args);
             return {
               id: value.id || `call_${index}`,
               name: value.name,
               arguments: parsed,
               rawArguments,
+              ...(parseError ? { parseError: true } : {}),
             };
           })
           .filter((call) => call.name);

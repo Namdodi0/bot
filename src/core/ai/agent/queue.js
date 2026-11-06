@@ -149,6 +149,13 @@ export function createRateLimiter(config, options = {}) {
 export const QUEUE_BUSY_TEXT =
   'I am handling too many messages right now, please try again in a few seconds.';
 
+export class QueueFullError extends Error {
+  constructor() {
+    super('queue is full');
+    this.name = 'QueueFullError';
+  }
+}
+
 /**
  * Queue per chat (preserving order) + a global concurrency limit.
  * All work that mutates a chat record (messages, slash turns, reset/compact) must go
@@ -199,6 +206,8 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
    * @param {() => Promise<any>} task
    */
   function schedule(chatId, task) {
+    // Admission is part of the queue's contract: callers cannot bypass maxQueueDepth.
+    if (isFull()) return Promise.reject(new QueueFullError());
     queueDepth += 1;
     let acquired = false;
     return chain(chatId, async () => {

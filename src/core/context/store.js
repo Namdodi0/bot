@@ -77,6 +77,10 @@ export function createContextStore(options) {
   const loads = new Map();
   /** @type {Map<string, Promise<void>>} */
   const writeChains = new Map();
+  /** Writes that have started but not settled yet; flush must await them. */
+  const pendingWrites = new Set();
+  /** @type {Map<string, number>} */
+  const versions = new Map();
 
   let writeSeq = 0;
 
@@ -115,9 +119,12 @@ export function createContextStore(options) {
       .then(() => writePayload(chatId, payload, epoch));
     const guarded = task.catch(() => {});
     writeChains.set(chatId, guarded);
-    guarded.then(() => {
+    pendingWrites.add(task);
+    const settle = () => {
+      pendingWrites.delete(task);
       if (writeChains.get(chatId) === guarded) writeChains.delete(chatId);
-    });
+    };
+    task.then(settle, settle);
     return task;
   }
 
@@ -209,6 +216,7 @@ export function createContextStore(options) {
       if (victim === undefined) return;
       const record = memory.get(victim);
       memory.delete(victim);
+      versions.delete(victim);
       if (record && dirty.has(victim)) {
         dirty.delete(victim);
         persist(record).catch((error) => logger?.warn('evict save context failed', { error }));
@@ -233,6 +241,7 @@ export function createContextStore(options) {
     const record = memory.get(chatId);
     if (!record) return;
     record.updatedAt = now();
+    versions.set(chatId, (versions.get(chatId) ?? 0) + 1);
     scheduleSave(chatId);
   }
 
@@ -260,6 +269,7 @@ export function createContextStore(options) {
       timers.delete(chatId);
     }
     dirty.delete(chatId);
+    versions.delete(chatId);
     const removed = memory.get(chatId) ?? loaded;
 
     if (options.keepMeta && removed) {
@@ -283,26 +293,40 @@ export function createContextStore(options) {
   }
 
   async function flush() {
-    const pending = [...dirty];
-    for (const chatId of pending) {
-      const timer = timers.get(chatId);
-      if (timer) {
-        clearTimeout(timer);
-        timers.delete(chatId);
+    /** @type {Set<string>} */
+    const failed = new Set();
+    // Two passes are enough to catch a touch that landed while the first save was running.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const pending = [...dirty].filter((chatId) => !failed.has(chatId));
+      if (!pending.length) break;
+      for (const chatId of pending) {
+        const timer = timers.get(chatId);
+        if (timer) {
+          clearTimeout(timer);
+          timers.delete(chatId);
+        }
+        const record = memory.get(chatId);
+        if (!record) {
+          dirty.delete(chatId);
+          continue;
+        }
+        const version = versions.get(chatId) ?? 0;
+        try {
+          await persist(record);
+          // A touch during the write keeps the record dirty so the newer state is saved too.
+          if ((versions.get(chatId) ?? 0) === version) dirty.delete(chatId);
+        } catch (error) {
+          // keep it dirty and retry later so no data is lost
+          failed.add(chatId);
+          logger?.warn('flush context failed', { chatId, error });
+          scheduleSave(chatId);
+        }
       }
-      const record = memory.get(chatId);
-      if (!record) {
-        dirty.delete(chatId);
-        continue;
-      }
-      try {
-        await persist(record);
-        dirty.delete(chatId);
-      } catch (error) {
-        // keep it dirty and retry later so no data is lost
-        logger?.warn('flush context failed', { chatId, error });
-        scheduleSave(chatId);
-      }
+    }
+    // Writes started by debounced timers/eviction may still be running even when no chat is
+    // dirty anymore. A flush barrier must wait for those files to be renamed into place.
+    while (pendingWrites.size) {
+      await Promise.allSettled([...pendingWrites]);
     }
   }
 
@@ -328,8 +352,10 @@ export function createContextStore(options) {
     }
     let removed = 0;
     const cutoff = now() - ttlMs;
+    // A turn in flight is pinned: neither its file nor its in-memory record may be evicted.
+    const pinnedFiles = new Set([...pinned.keys()].map((chatId) => fileFor(chatId)));
     for (const file of files) {
-      if (file.mtimeMs < cutoff) {
+      if (file.mtimeMs < cutoff && !pinnedFiles.has(file.full)) {
         try {
           await fsp.unlink(file.full);
           removed += 1;
@@ -342,13 +368,14 @@ export function createContextStore(options) {
     // ineffective for open chats: drop the old record too (the chat reloads from disk fresh next time).
     for (const [chatId, record] of [...memory]) {
       // Keep records with a weird/missing updatedAt (corrupt old file); do not assume they expired.
-      if (dirty.has(chatId) || !Number.isFinite(record.updatedAt) || record.updatedAt >= cutoff) continue;
+      if (dirty.has(chatId) || pinned.has(chatId) || !Number.isFinite(record.updatedAt) || record.updatedAt >= cutoff) continue;
       const timer = timers.get(chatId);
       if (timer) {
         clearTimeout(timer);
         timers.delete(chatId);
       }
       memory.delete(chatId);
+      versions.delete(chatId);
     }
     return removed;
   }

@@ -6,7 +6,7 @@ import { COLORS, errorEmbed, modelSelect, REASONING_MODES, settingsEmbed, settin
  * @param {ReturnType<typeof import('./shared.js').createShared>} shared
  */
 export function createSettingsHandlers(shared) {
-  const { config, logger, runtime, chat, isAdmin, replyEphemeral } = shared;
+  const { config, logger, runtime, chat, isAdmin, replyEphemeral, runExclusive } = shared;
 
   /** @param {any} record */
   function settingsPayload(record) {
@@ -95,7 +95,10 @@ export function createSettingsHandlers(shared) {
         return;
       }
       const chatId = String(interaction.channelId);
-      await chat.setModel(chatId, picked.alias, interaction.guildId ? 'GROUP' : 'PRIVATE');
+      const outcome = await runExclusive(interaction, () =>
+        chat.setModel(chatId, picked.alias, interaction.guildId ? 'GROUP' : 'PRIVATE'),
+      );
+      if (!outcome.ok) return;
       await interaction.update({ embeds: [textEmbed('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`)], components: [] });
       return;
     }
@@ -110,32 +113,35 @@ export function createSettingsHandlers(shared) {
     const value = String(interaction.values?.[0] ?? '');
     const chatId = String(interaction.channelId);
     const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
-    const record = await chat.getRecord(chatId, chatType);
-    if (!record.meta) record.meta = {};
-
-    if (field === 'model') {
-      const picked = chat.findModel(value);
-      if (!picked) {
-        await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
-        return;
-      }
-      await chat.setModel(chatId, picked.alias, chatType, record);
-    } else if (field === 'tone') {
-      record.meta.tone = value !== '__default' && TONES.some((item) => item.value === value) ? value : null;
-    } else if (field === 'reasoning') {
-      record.meta.thinking =
-        value !== '__default' && REASONING_MODES.some((item) => item.value === value) ? value : null;
-    } else if (field === 'privacy') {
-      record.meta.privateDefault = value === 'private';
-    } else if (field === 'thread') {
-      record.meta.autoThread = value === 'on';
-    } else {
+    if (!['model', 'tone', 'reasoning', 'privacy', 'thread'].includes(field)) {
       await interaction.deferUpdate();
       return;
     }
+    if (field === 'model' && !chat.findModel(value)) {
+      await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
+      return;
+    }
 
-    runtime.store.touch?.(chatId);
-    await interaction.update(settingsPayload(record));
+    const outcome = await runExclusive(interaction, async () => {
+      const record = await chat.getRecord(chatId, chatType);
+      if (!record.meta) record.meta = {};
+      if (field === 'model') {
+        await chat.setModel(chatId, value, chatType, record);
+      } else if (field === 'tone') {
+        record.meta.tone = value !== '__default' && TONES.some((item) => item.value === value) ? value : null;
+      } else if (field === 'reasoning') {
+        record.meta.thinking =
+          value !== '__default' && REASONING_MODES.some((item) => item.value === value) ? value : null;
+      } else if (field === 'privacy') {
+        record.meta.privateDefault = value === 'private';
+      } else if (field === 'thread') {
+        record.meta.autoThread = value === 'on';
+      }
+      runtime.store.touch?.(chatId);
+      return settingsPayload(record);
+    });
+    if (!outcome.ok) return;
+    await interaction.update(outcome.value);
   }
 
   return { handlers, handleAutocomplete, handleSelect };

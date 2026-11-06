@@ -1,3 +1,4 @@
+import { PermissionFlagsBits } from 'discord.js';
 import { catchupEmbed, createPreviewer, paginationRow, textEmbed } from '../ui.js';
 
 const CATCHUP_MAX_MESSAGES = 500;
@@ -26,7 +27,7 @@ function tailTranscript(lines, maxChars) {
  * @param {ReturnType<typeof import('./shared.js').createShared>} shared
  */
 export function createCatchupHandlers(shared) {
-  const { chat, logger, ephemeral, runtime, replyEphemeral, makePager, splitPages } = shared;
+  const { chat, logger, ephemeral, runtime, replyEphemeral, makePager, splitPages, runExclusive } = shared;
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
   const handlers = {
@@ -35,6 +36,14 @@ export function createCatchupHandlers(shared) {
       if (runtime.agent.rateLimited?.(chatId, interaction.user.id)) {
         await replyEphemeral(interaction, {
           content: 'You are using commands too quickly — please wait a minute and try again.',
+        });
+        return;
+      }
+      // History access is the requester's permission, not the bot's. Summarizing through the
+      // bot must not reveal messages the member cannot read themselves.
+      if (interaction.guildId && interaction.memberPermissions?.has?.(PermissionFlagsBits.ReadMessageHistory) !== true) {
+        await replyEphemeral(interaction, {
+          content: 'You need the Read Message History permission in this channel to use /catchup.',
         });
         return;
       }
@@ -106,13 +115,17 @@ export function createCatchupHandlers(shared) {
       const previewer = createPreviewer((text) =>
         interaction.editReply({ content: text, allowedMentions: { parse: [] } }),
       );
-      const summary = await chat.summarizeText(transcript.text, {
-        record: await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE'),
-        onDelta: (delta) => {
-          streamed += delta;
-          previewer.push(streamed);
-        },
-      });
+      const outcome = await runExclusive(interaction, async () =>
+        chat.summarizeText(transcript.text, {
+          record: await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE'),
+          onDelta: (delta) => {
+            streamed += delta;
+            previewer.push(streamed);
+          },
+        }),
+      );
+      if (!outcome.ok) return;
+      const summary = outcome.value;
       await previewer.flush();
       if (!summary.ok) {
         await interaction.editReply({ content: 'I could not summarize those messages right now.' });
