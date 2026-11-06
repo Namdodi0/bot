@@ -1,7 +1,9 @@
 # Discord AI Bot
 
-A Discord-native AI assistant powered by **DeepSeek Flash** (primary) with **NVIDIA NIM**
-fallback and **Tavily** web search. It is slash-command-first: native embeds, buttons,
+A Discord-native AI assistant. The default model is **Nemotron 3 Ultra 550B** on
+**NVIDIA NIM**; DeepSeek V4.1 Flash, Nemotron 3.5 Lightning and an abliterated DeepSeek
+variant are selectable aliases and fallbacks. Web search and image lookup use **Firecrawl**
+first, with **Tavily** as the failover. It is slash-command-first: native embeds, buttons,
 select menus, message context menus, ephemeral replies, optional answer threads and inline
 image uploads — no Zalo-style text commands or multi-message behavior.
 
@@ -25,7 +27,8 @@ Nothing in the Discord code imports the Zalo integration.
 - **Prompt form** — run `/ask` with no prompt (or `form:true`) to get a multi-line modal.
 - **Server stickers** — `/sticker [name]` and the model's `send_sticker` tool send guild
   stickers; optional configured ids when the bot cannot list them.
-- **Presence** — configurable activity/status (`WATCHING /ask` by default).
+- **Presence** — configurable activity/status in `config.discord.json` (the example uses
+  `WATCHING /ask`).
 - **Vision** — attach an image to `/ask`, or @mention the bot with an image; the turn switches
   to the configured vision model and sends the image as an OpenAI `image_url` block.
 - **Channel settings** — `/settings` (admin) controls model, tone, think effort, default
@@ -37,10 +40,17 @@ Nothing in the Discord code imports the Zalo integration.
 - **Persistent context** per channel/thread (JSON, atomic writes), `/reset` to wipe it,
   `/compact` to compact now.
 - **Reminders** with Discord timestamps: `/remind add|list|cancel`.
-- **Web search and images** through Tavily; image bytes are validated (SSRF-safe, pinned DNS,
-  size/type checks) and uploaded as proper image attachments.
+- **Web search and images** through Firecrawl with Tavily as the failover; image bytes are
+  validated (SSRF-safe, pinned DNS, size/type checks) and uploaded as proper image attachments.
+  Pictures found by the model share the answer message (a MediaGallery) instead of arriving as
+  a separate follow-up.
 - **Read pages** — share a link and the model calls `read_url`, which fetches public
   HTML/text/JSON/XML through the same SSRF-safe path and answers from the page text.
+- **Persona and tone** — a built-in football persona (Ronaldo is the GOAT pick, facts stay
+  accurate) plus a configurable tone: `friendly`, `shy`, `grok`, `unhinged`, `roast`,
+  `roast-hard`, `roast-extreme`.
+- **Context sync** — edits and deletions in the channel update the stored history, so the
+  model answers from what the messages say now.
 - **No artificial caps by default** — no `max_tokens` cap, no answer deadline, unlimited
   context and tool rounds. Set limits in config if you want them.
 - **Reliability** — retry + per-provider circuit breaker, different-model fallback without
@@ -63,13 +73,15 @@ copy .env.example .env
 
    ```env
    DISCORD_BOT_TOKEN=...
-   DEEPSEEK_API_KEY=sk-...
    NIM_API_KEY=nvapi-...
+   DEEPSEEK_API_KEY=sk-...
    REFUSELESS_API_KEY=abl_...
+   FIRECRAWL_API_KEY=fc-...
    TAVILY_API_KEY=tvly-...
    ```
 
-   At least the primary provider key and Tavily (if search is enabled) are required.
+   At least the key for the default model's provider and one search key (Firecrawl or
+   Tavily) are required; other provider and search keys are optional.
 
 2. Enable **Message Content** under **Bot → Privileged Gateway Intents**. Slash commands work
    without it, but @mention/reply chat needs it.
@@ -172,7 +184,8 @@ parser. Those were Zalo-shaped and do not fit Discord.
    send the result when it is ready.
 3. Ordinary @mention/reply chat goes through the same shared agent; its first delta creates a
    reply placeholder, later deltas edit it, and the final text is chunked only if needed.
-4. Context is stored per **channel or thread id** under `data/discord/`.
+4. Context is stored per **channel or thread id** under `data/discord/`; later edits and
+   deletions in the channel are mirrored into that stored history.
 5. Long answers are split at 2000 characters. A fence-aware split leaves room for code-fence
    balancing so a message never exceeds Discord's limit.
 6. If the primary model fails, the engine retries and then falls back to a different model
@@ -186,7 +199,7 @@ Only two files matter:
 
 | File | Contents |
 |---|---|
-| `.env` (gitignored) | API keys/tokens only: `DISCORD_BOT_TOKEN`, `DEEPSEEK_API_KEY`, `NIM_API_KEY`, `REFUSELESS_API_KEY`, `TAVILY_API_KEY` (and `ZALO_BOT_TOKEN` for the legacy process). |
+| `.env` (gitignored) | API keys/tokens only: `DISCORD_BOT_TOKEN`, `NIM_API_KEY`, `DEEPSEEK_API_KEY`, `REFUSELESS_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY` (and `ZALO_BOT_TOKEN` for the legacy process). |
 | `config.discord.json` (tracked) | Non-secret Discord settings. Never put API keys or a real `webhook.secret` here. |
 
 Variables already set in the host panel/CI win over `.env`; an empty (or whitespace-only)
@@ -203,15 +216,15 @@ Important settings:
 | `discord.respondToAllChannelIds` | Answer every message in these channels. |
 | `discord.stickers` | `enabled` + optional `ids` (`"123456789012345678:wave,..."`) when the bot cannot list guild stickers. |
 | `discord.presence` | `status` (`online/idle/dnd/invisible`), `type` (`PLAYING/STREAMING/LISTENING/WATCHING/COMPETING`), `text`, optional `url`. |
-| `model.defaultAlias` / `fallbackAlias` | `deepseek`, `pro`, `nim`, `ultra`, `nim-light`, `ds-abl-free`. |
+| `model.defaultAlias` / `fallbackAlias` | Aliases: `ultra` (shipped Discord default), `deepseek`, `pro`, `nim`, `nim-light`, `ds-abl-free`. |
 | `model.visionAlias` | Vision-capable alias used when an image is attached (default `nim`, the Super VL model). |
 | `ai.reasoning` | `none`, `low`, `medium`, `high`, `auto`. |
 | `ai.maxTokens` / `ai.maxToolRounds` | `null`/`0` = unlimited. |
 | `responseTimeoutMs` | `0` = no deadline. |
 | `context.maxTokens` / `maxMessages` | `0` = unlimited; compaction then runs on provider overflow. |
 | `context.ttlHours` | `0` = keep context forever. |
-| `search.enabled` / `search.auto` | Tavily on/off; `auto:false` disables model-initiated search. |
-| `tone` | `friendly`, `shy`, `grok`, `roast`, `roast-hard`, `roast-extreme`. |
+| `search.enabled` / `search.auto` | Web/image search on/off; `auto:false` disables model-initiated search. Firecrawl is primary and Tavily is the failover. |
+| `tone` | `friendly`, `shy`, `grok`, `unhinged`, `roast`, `roast-hard`, `roast-extreme`. |
 | `typing` | Typing indicator for message chat. |
 | `userRateLimitPerMinute` / `userRateLimits` | Global messages-per-minute per sender, plus `{ "userId": limit }` overrides (0 = exempt). Windows persist in `data/rate-limits.json`. |
 | `logLevel` / `logFormat` / `logColor` | Pretty or JSON logs, with secret redaction. |
@@ -251,8 +264,8 @@ Use a persistent data directory; never point `dataDir` at a temp folder.
 Pretty logs by default; JSON with `--json` or `logFormat: "json"`.
 
 ```
-18:33:43 🤖 discord bot ready          version=1.2.0 id=... name=... guilds=1
-18:33:44 🛠️ discord commands registered version=1.2.0 scope="guild ..." count=16
+18:33:43 🤖 discord bot ready          version=1.6.0 id=... name=... guilds=1
+18:33:44 🛠️ discord commands registered version=1.6.0 scope="guild ..." count=16
 18:33:45 💬 Nam: how do I center a div? chatId=... kind=text len=24
 18:33:46 🔍 web search                 query="center a div" results=4
 18:33:47 🤖 bot: ...                   chatId=... part=1
@@ -279,15 +292,15 @@ Both rotate once at 5 MB (`*.log.1`). The console output is unchanged.
 | Slash commands are missing | Invite with `applications.commands`; global commands can take up to an hour — set `discord.guildId`. |
 | Typed `/ask` does nothing | The Discord bot is slash-only; use Discord's command picker. |
 | `/ask thread:true` fails | Grant **Create Public Threads** and **Send Messages in Threads**, and use a channel that supports threads. |
-| `/catchup` cannot read messages | The bot needs **Read Message History** in that channel. |
+| `/catchup` cannot read messages | Both the requester and the bot need **Read Message History** in that channel. |
 | The bot ignores an image | Check `model.visionAlias` points at the vision model (`nim` by default) and that the attachment is an image under 8 MB. Images are only used for the current turn. |
-| Images arrive as files | Fixed in 1.2.0 by giving uploads an image extension. If it still happens, the source format (e.g. AVIF) may not preview on Discord. |
+| Images arrive as files | Uploads carry an image extension. If Discord still shows a file, the source format (e.g. AVIF) may not preview. |
 | Image upload rejected | The validator rejects non-images, private/internal URLs and files over 8 MB. |
 | Admin commands missing | They are hidden from non-admins (Manage Server) by default. |
 | Wrong settings are used | The Discord process loads `config.discord.json`, not `config.json`. Check `platform: "discord"`. |
-| Context disappeared after upgrade | 1.2.0 uses raw channel/thread ids; contexts saved under the old `discord:` prefix are not reused. |
+| Context disappeared after upgrade | Contexts are keyed by raw channel/thread ids; records saved under the old `discord:` prefix are not reused. |
 | Model errors / slow provider | With `responseTimeoutMs: 0` the bot waits; set a positive deadline to enable retry + different-model fallback. Run `/status` to inspect. |
-| `429` | Provider or Tavily quota. The circuit breaker backs off automatically. |
+| `429` | Provider or search quota. The circuit breaker backs off automatically, and search fails over to the other provider. |
 | Warmup skipped at boot | Normal: warmup is an optimization only and does not affect real replies. |
 
 ---
@@ -298,6 +311,8 @@ Both rotate once at 5 MB (`*.log.1`). The console output is unchanged.
 - `config.discord.json` is tracked and must never contain tokens or real secrets.
 - **Rotate any token/key that was pasted into chat.**
 - Set `discord.allowedChannelIds` in real deployments; DMs are always allowed by design.
+  The allow-list applies to slash commands and context menus too, not just chat.
+- `/catchup` requires **Read Message History** from the requester as well as the bot.
 - Admin commands require **Manage Server**; they are hidden from other members.
 - Image URLs are SSRF-checked with pinned DNS, redirect re-validation and a size limit.
 - Mutating sends are never retried blindly; message dedupe prevents double answers.
@@ -326,8 +341,10 @@ Discord gateway ──► bot.js ──► native commands (commands.js, ui.js)
 | `src/platforms/discord/ui.js` | Embeds, buttons, select menu, attachments, chunking. |
 | `src/platforms/discord/bot.js` | Gateway events, admission, command registration. |
 | `src/platforms/discord/transport.js` | Send/edit/react/typing/attachments. |
+| `src/platforms/discord/message-sync.js` | Mirrors message edits/deletions into the stored context. |
 | `src/platforms/discord/events.js` | Message/interaction normalization and allow-list helpers. |
 | `src/platforms/discord/prompt.js` | Discord prompt sections. |
+| `src/core/search/` | Firecrawl client (primary), Tavily client (fallback) and the failover router. |
 | `src/core/` | Platform-neutral engine: agent/queue, LLM service, context, tools, HTTP, logs. |
 | `src/platforms/zalo/` | Legacy Zalo process; not imported by Discord. |
 
@@ -340,7 +357,7 @@ npm test          # node --test, no network
 npm run typecheck # tsc checkJs over src/ and scripts/
 ```
 
-- 324 unit tests; engine tests inject platform doubles and fake LLM/Tavily clients.
+- 165 unit tests; engine tests inject platform doubles and fake LLM/search clients.
 - `scripts/smoke.js` and `scripts/simulate.js` belong to the Zalo process and use real APIs.
 - Keep platform behavior in `src/platforms/*`; `src/core` must not branch on platform names.
 - No new runtime dependencies without approval.
