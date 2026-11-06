@@ -35,6 +35,15 @@ test('the owner-priority rule names Nhật Nam and Namdodi', () => {
   assert.match(text, /newest instruction always wins/);
 });
 
+test('the shy tone is sến, cringe and emoji-heavy', () => {
+  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /EXTREME CUTE \+ SẾN/);
+  assert.match(text, /at least 6/);
+  assert.match(text, /trái tim em tan chảy/);
+  assert.match(text, /never sexual or explicit/);
+});
+
 test('the bot is a Ronaldo fan', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'roast-extreme' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
