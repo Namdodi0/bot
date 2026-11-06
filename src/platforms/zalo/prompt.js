@@ -2,9 +2,9 @@ import { SECTION_ORDER } from '../../core/ai/prompt/sections.js';
 
 export const ZALO_TOOL_GUIDANCE = {
   send_sticker:
-    'When the user wants a sticker reaction ("send a sticker", "hello sticker", "cat sticker"...), call the `send_sticker` tool with an emotion keyword or pack name.',
+    'When the user wants a sticker reaction, call the `send_sticker` tool with an emotion keyword or pack name.',
   send_image:
-    'When the user asks for pictures ("send me a cat photo", "show me 5 pictures of ..."), call the `send_image` tool with `query` and `count` (default 1). One reply may contain at most 5 images in total: never call the tool again after 5 images were sent in this reply, and if the user asks for more, say the limit is 5 per reply. It sends one Zalo message per image. Report how many were actually sent.',
+    'When the user asks for pictures, call the `send_image` tool with `query` and `count` (default 1). One reply may contain at most 5 images in total: never call the tool again after 5 images were sent in this reply, and if the user asks for more, say the limit is 5 per reply. It sends one Zalo message per image. Report how many were actually sent.',
 };
 
 /**
@@ -29,7 +29,7 @@ export function registerZaloPrompt(registry, options = {}) {
     name: 'platform:chat-shape',
     order: SECTION_ORDER.chatShape,
     text: inGroup
-      ? '- In groups people only reach you by @mentioning you or replying to your message. The sender name is prefixed to the text as "Name: message" — address that person by name when it matters.'
+      ? '- In groups people only reach you by @mentioning you or replying to your message. The sender name is prefixed to the text — address that person by name when it matters.'
       : '- This is a private chat: answer directly and warmly.',
   });
 
@@ -37,7 +37,7 @@ export function registerZaloPrompt(registry, options = {}) {
     name: 'platform:formatting',
     order: SECTION_ORDER.formatting,
     text: [
-      '- Allowed formatting: **bold**, *italic*, "- " bullets, "1. " lists, "> " quotes, `code`. Zalo does not render markdown headings, so never use "#" or "##" — use a bold line instead. No markdown tables and no [text](url) links — paste bare URLs.',
+      '- Use the markdown Zalo renders: bold, italic, bullet and numbered lists, quotes and inline code. Zalo does not render headings, so use a bold line instead. No markdown tables and no markdown links — paste bare URLs.',
       '- Never invent sources or numbers. If you are not sure, say so plainly.',
     ].join('\n'),
   });

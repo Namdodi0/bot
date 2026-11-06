@@ -28,7 +28,7 @@ export function registerDiscordPrompt(registry, options = {}) {
     order: SECTION_ORDER.chatShape,
     text: inGroup
       ? [
-          '- People reach you by @mentioning you, replying to your message, or using `/ask`. The sender name is prefixed as "Name: message" — address that person by name when it matters.',
+          '- People reach you by @mentioning you, replying to your message, or using `/ask`. The sender name is prefixed to the text — address that person by name when it matters.',
           '- Keep the channel clean: one answer per question, no running commentary.',
         ].join('\n')
       : '- This is a direct message: answer directly.',
@@ -38,7 +38,7 @@ export function registerDiscordPrompt(registry, options = {}) {
     name: 'platform:formatting',
     order: SECTION_ORDER.formatting,
     text: [
-      '- Discord markdown works: **bold**, *italic*, `inline code`, ``` code blocks ```, headings, lists, quotes, links, spoilers.',
+      '- Discord markdown works: bold, italic, inline code, code blocks, headings, lists, quotes, links and spoilers.',
       '- Discord caps one message at 2000 characters; anything longer is split automatically.',
       '- Never ping @everyone or @here. Mention a user only when it is genuinely useful.',
       '- Never invent sources or numbers. If you are not sure, say so plainly.',

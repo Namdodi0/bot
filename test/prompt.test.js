@@ -40,7 +40,7 @@ test('the shy tone is sến, cringe and emoji-heavy', () => {
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /EXTREME CUTE \+ SẾN/);
   assert.match(text, /at least 6/);
-  assert.match(text, /trái tim em tan chảy/);
+  assert.match(text, /SẾN ROMANCE/);
   assert.match(text, /never sexual or explicit/);
 });
 
