@@ -5,7 +5,7 @@ this file is for agents and maintainers.
 
 ## Project snapshot
 
-- Zalo group chatbot (optional Discord transport): Node.js >= 20.6, ESM. The only runtime
+- Discord AI bot with a legacy Zalo transport. Node.js >= 20.6, ESM. The only runtime
   dependency is `discord.js` (Discord); everything else uses Node built-ins.
 - TypeScript is used only for typechecking (`checkJs`); there is no build step.
 - Runtime: two thin entry points (`src/index.js` Zalo, `src/discord.js` Discord) compose
@@ -13,8 +13,9 @@ this file is for agents and maintainers.
   `src/platforms/contract.js`; the engine in `src/core/` must not branch on platform name.
   Each entry has its own config and data directory. Root `index.js` is only a shim that
   starts the Zalo entry point.
-- The bot calls OpenAI-compatible providers (DeepSeek primary, NVIDIA NIM fallback),
-  Tavily for search, and the Zalo Bot API for messaging.
+- The bot calls OpenAI-compatible providers (default: Nemotron 3 Ultra 550B on NVIDIA NIM;
+  DeepSeek and other NIM aliases are selectable), searches through Firecrawl with Tavily as
+  the failover, and uses the Zalo Bot API for the legacy transport.
 
 ## Language policy (English default)
 
@@ -38,9 +39,12 @@ this file is for agents and maintainers.
 |---|---|
 | `npm test` | Unit tests (`node --test`), no network |
 | `npm run typecheck` | `tsc -p tsconfig.json` (checkJs, no emit) |
-| `npm start` | Run the bot (polling by default) |
-| `npm run dev` | Polling + watch |
-| `npm run simulate -- "question"` | Real agent + real LLM/Tavily, but sends nothing to Zalo |
+| `npm run start:discord` | Run the Discord bot |
+| `npm run dev:discord` | Discord + watch |
+| `npm run start:both` | Run Discord and the legacy Zalo bot in one process |
+| `npm start` | Run the legacy Zalo bot (polling by default) |
+| `npm run dev` | Zalo polling + watch |
+| `npm run simulate -- "question"` | Real agent + real LLM/search, but sends nothing to Zalo |
 | `npm run smoke` | Checks Zalo/DeepSeek/NIM/Tavily; **uses real APIs and credits** |
 | `npm run pack` | Builds a deployment zip (excludes `.env` and `data/`; blanks secret fields in the staged `config.json`) |
 
@@ -69,8 +73,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   second agent or Zalo import. Private asks/context menus mark `event.private`.
 - `src/core/services/` — shared chat/context/summary and reminder operations used by both
   command layers; summaries keep the newest transcript lines and skip private turns.
-- `src/core/ai/agent/turn/` — `fallback.js`, `tools.js`, `final.js`, `report.js` extracted
-  from the turn loop.
+- `src/core/ai/agent/turn/` — `attempt.js`, `fallback.js`, `tools.js`, `final.js`,
+  `report.js` and `streaming.js` extracted from the turn loop.
 - `src/core/ai/agent.js` — agent composition: event routing (commands, dedupe, rate limit),
   queue wiring, and removal of private turns from the shared record after a turn.
 - `src/core/ai/agent/` — `helpers.js` (budget/prompt helpers), `sending.js` (sender +
@@ -83,7 +87,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   retry executor, stable error codes.
 - `src/core/ai/router.js`, `src/core/ai/models.js` — per-chat model choice and aliases.
 - `src/core/ai/tools.js` — `web_search`, `read_url`, `send_image`, `set_reminder` + platform
-  tool hook.
+  tool hook. It receives the search router through the legacy `tavily` option name.
+- `src/core/search/` — Firecrawl client (primary), Tavily client (fallback) and the
+  `createSearchRouter` failover; both expose the same normalized `search()` shape.
 - `src/core/ai/reminders.js` — persisted reminders, single-flight tick, VN-time parsing.
 - `src/core/context/` — record schema v2, assembler, atomic JSON store (memoized in-flight
   loads, ordered per-chat writes, private entries filtered from disk), token meter,
@@ -145,6 +151,11 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   the shared record after the turn, filters them out of disk snapshots/loads, and excludes
   them from summaries/compaction; direct sends (`send_sticker`, `set_reminder`, and
   `send_image` without a collector sink) are suppressed. Private wins over `thread:true`.
+- **Discord access checks cover native interactions.** `discord.allowedChannelIds` gates
+  slash commands and context menus as well as chat, and `/catchup` requires the requester
+  (not just the bot) to have Read Message History.
+- **Search fails over inside one deadline.** Firecrawl is primary and Tavily is the fallback;
+  the router hands the remaining budget to the fallback instead of a fresh timeout.
 - **Platform-specific ids are opaque in core.** Discord uses raw channel/thread ids; its
   transport tolerates a legacy `discord:` prefix in old reminders but new ids are never
   prefixed. Zalo `allowedChatIds`/`adminIds` are enforced by `src/platforms/zalo`; Discord
@@ -176,14 +187,14 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - Use `test-utils/helpers.js` (`makeConfig`, `textEvent`, `silentLogger`) and temp dirs
   from `fs.mkdtemp`.
 - Engine tests inject a platform double (`makeZaloPlatform`/`makeDiscordPlatform` in
-  `test-utils/helpers.js`), plus `llm`, `tavily`, `validator`, and `fetch`; unit tests must
-  not hit the network or send messages.
+  `test-utils/helpers.js`), plus `llm`, `tavily` (the search router double), `validator`,
+  and `fetch`; unit tests must not hit the network or send messages.
 - Test platform policy (admission, limits, prompt, tools, commands) in `test/` against the
   platform modules, not by re-adding platform branches to `src/core`.
 - Add a regression test for every bug fix, especially around retries, context compaction,
   reminders, message dedupe, per-chat queue serialization, private turns and streamed
   payload safety.
-- Keep the suite lean (~120 tests): security, data-integrity and regression tests only.
+- Keep the suite lean (~165 tests): security, data-integrity and regression tests only.
   Do not re-add happy-path, UI-polish, config-detail or formatting tests without an explicit
   request, and do not weaken assertions of surviving tests to hit a count.
 
@@ -198,12 +209,15 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 ## Configuration and security notes
 
 - **`.env` contains API keys/tokens only**: `ZALO_BOT_TOKEN`, `NIM_API_KEY`, `DEEPSEEK_API_KEY`,
-  `TAVILY_API_KEY`, and `DISCORD_BOT_TOKEN` when the Discord transport is enabled. It is loaded in code (`src/core/env.js`); variables already in `process.env`
-  win unless empty or whitespace-only.
-- **`config.json` contains non-secret settings and is tracked** (see `config.example.json`).
-  It must never contain API keys; leave `webhook.secret` empty so the secret stays in
-  `data/webhook-secret`. `--config <path>` selects another file for either entry point
-  (it wins over the per-entry default path). Do not read non-secret
+  `REFUSELESS_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY`, and `DISCORD_BOT_TOKEN` when the
+  Discord transport is enabled. Search needs at least one of Firecrawl/Tavily while
+  `search.enabled` is true. It is loaded in code (`src/core/env.js`); variables already in
+  `process.env` win unless empty or whitespace-only.
+- **`config.json` (Zalo) and `config.discord.json` (Discord) contain non-secret settings and
+  are tracked** (see `config.example.json` / `config.discord.example.json`).
+  Neither file may contain API keys. Leave `webhook.secret` in `config.json` empty so the
+  secret stays in `data/webhook-secret`. `--config <path>` selects another file for either
+  entry point (it wins over the per-entry default path). Do not read non-secret
   settings from environment variables. `config.webhook.path` must start with `/` and have no
   trailing slash or whitespace; `config.model.visionAlias` must name a vision-capable alias.
   `npm run pack` stages a sanitized `config.json` (secret fields blanked) instead of copying
@@ -228,7 +242,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 
 These are known from the last review and intentionally left for the owner:
 
-- Persona/policy lines in `src/core/ai/prompt/sections.js` (P0).
+- Persona/tone and policy content in `src/core/ai/prompt/sections.js` (owner-maintained; P0).
 - Prompt-injection boundary for web search / page / tool output (P1-2 of the latest review;
   the model prompt still has no untrusted-data rule).
 - Open admin default when `adminIds` is empty (P1-1).
