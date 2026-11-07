@@ -20,6 +20,7 @@ import { truncate } from '../../../text/format.js';
  *   record: any,
  *   privateTurn?: boolean,
  *   imageBudget?: {remaining: number},
+ *   onProgress?: (event: any) => void,
  * }} input
  */
 export async function runToolRound({
@@ -36,6 +37,7 @@ export async function runToolRound({
   record,
   privateTurn = false,
   imageBudget,
+  onProgress,
 }) {
   metrics.inc('llm.toolRounds');
   messages.push({
@@ -58,6 +60,7 @@ export async function runToolRound({
 
   for (const call of response.toolCalls) {
     const started = Date.now();
+    onProgress?.({ type: 'tool', name: call.name, query: call.arguments?.query });
     /** @type {{ok?: boolean, text: string}} */
     let result;
     try {
@@ -91,6 +94,7 @@ export async function runToolRound({
       result = { ok: false, text: `Tool ${call.name} failed: ${reason}` };
     }
     metrics.observe(`tool.${call.name}`, Date.now() - started);
+    onProgress?.({ type: 'tool-result', name: call.name, ok: result.ok !== false });
     const text = truncate(result.text, 4000);
     messages.push({
       role: 'tool',

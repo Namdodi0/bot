@@ -30,7 +30,7 @@ export function createTurnRunner(deps) {
    * @param {any} record
    * @param {{forceSearch?: string}} [options]
    * @param {() => Promise<void>|void} [stopTyping]
-   * @param {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number, sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>, live?: boolean, onDelta?: (delta: string) => void}} [sink]
+   * @param {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number, sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>, live?: boolean, onDelta?: (delta: string) => void, onProgress?: (event: any) => void}} [sink]
    */
   async function run(event, record, options = {}, stopTyping = async () => {}, sink = null) {
     const startedAt = Date.now();
@@ -272,6 +272,8 @@ export function createTurnRunner(deps) {
       flushAllowed,
       startedAt,
     });
+    /** @param {any} payload */
+    const progress = (payload) => responseSink.onProgress?.(payload);
 
     let finalText = '';
     let aborted = false;
@@ -304,6 +306,7 @@ export function createTurnRunner(deps) {
       reasoning,
       streaming,
       onDelta: progressive.onDelta,
+      onReasoning: (text) => progress({ type: 'reasoning', text }),
       deadline,
       retryExecutor,
       vision: useImage,
@@ -330,6 +333,7 @@ export function createTurnRunner(deps) {
       /** @type {unknown} */
       let lastError = null;
 
+      progress({ type: 'thinking', round });
       try {
         response = await attempts.execute();
       } catch (error) {
@@ -421,7 +425,7 @@ export function createTurnRunner(deps) {
         await runToolRound({
           logger, metrics, tools, store, chatId: event.chatId, senderId: event.senderId,
           deadline, sendPhoto: responseSink.sendPhoto, response, messages, record,
-          privateTurn: event.private === true, imageBudget,
+          privateTurn: event.private === true, imageBudget, onProgress: progress,
         });
         // The head of this round was already sent: send the whole final-round content instead of
         // cutting by the previous round's emitted text (which may be longer than the final answer).
@@ -436,6 +440,7 @@ export function createTurnRunner(deps) {
     }
 
     // All tool rounds used: force one final answer without tools so fetched data is not lost.
+    progress({ type: 'finalizing' });
     ({ finalText, llmMs, completionMs, completionTokens, answeredBy } = await forceFinalAnswer({
       config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
       finalText, aborted, llmMs: attempts.llmMs() + fallbackLlmMs, completionMs, completionTokens, answeredBy,

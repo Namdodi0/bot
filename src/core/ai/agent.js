@@ -289,14 +289,14 @@ export function createAgent(deps) {
   /**
    * Same as `collect`, but streams content deltas to `onDelta` for live message edits.
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean, onDelta?: (delta: string) => void, scheduled?: boolean}} [options]
+   * @param {{skipCommands?: boolean, onDelta?: (delta: string) => void, onProgress?: (event: any) => void, scheduled?: boolean}} [options]
    * @returns {Promise<{text: string, photos: any[]}>}
    */
   function stream(event, options = {}) {
     return runCollected(
       event,
       options,
-      createCollectorSink({ live: true, onDelta: options.onDelta }),
+      createCollectorSink({ live: true, onDelta: options.onDelta, onProgress: options.onProgress }),
     );
   }
 

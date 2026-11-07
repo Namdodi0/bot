@@ -195,7 +195,7 @@ export function createOpenAiCompatAdapter(options) {
   }
 
   /**
-   * @param {{messages: any[], tools?: any[], toolChoice?: any, model?: string, reasoning?: 'none'|'low'|'medium'|'high'|'auto', temperature?: number, maxTokens?: number|null, sampling?: Record<string, number>, signal?: AbortSignal|null, timeoutMs?: number, ttftMs?: number, stream?: boolean, onDelta?: (text: string) => void|Promise<void>}} input
+   * @param {{messages: any[], tools?: any[], toolChoice?: any, model?: string, reasoning?: 'none'|'low'|'medium'|'high'|'auto', temperature?: number, maxTokens?: number|null, sampling?: Record<string, number>, signal?: AbortSignal|null, timeoutMs?: number, ttftMs?: number, stream?: boolean, onDelta?: (text: string) => void|Promise<void>, onReasoning?: (text: string) => void|Promise<void>}} input
    */
   async function chat(input) {
     /** @type {any} */
@@ -372,6 +372,7 @@ export function createOpenAiCompatAdapter(options) {
                     if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
                       clearTimeout(ttftTimer);
                       reasoning += delta.reasoning_content;
+                      if (input.onReasoning) await input.onReasoning(delta.reasoning_content);
                     }
                     if (Array.isArray(delta.tool_calls)) {
                       clearTimeout(ttftTimer);

@@ -1,5 +1,6 @@
 import { QUEUE_BUSY_TEXT } from '../../core/ai/agent/queue.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
+import { createProgressFeed } from './progress.js';
 import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from './ui.js';
 
 /**
@@ -72,6 +73,8 @@ export function createMessageHandler(deps) {
         /** @type {any} */
         let placeholder = null;
         let streamed = '';
+        const feed = createProgressFeed();
+        const renderPreview = () => [feed.text(), streamed].filter(Boolean).join('\n\n');
         const previewer = createPreviewer(async (text) => {
           if (!placeholder) {
             placeholder = await message.reply(v2Message(text));
@@ -87,7 +90,11 @@ export function createMessageHandler(deps) {
             skipCommands: true,
             onDelta: (delta) => {
               streamed += delta;
-              previewer.push(streamed);
+              previewer.push(renderPreview());
+            },
+            onProgress: (progressEvent) => {
+              feed.update(progressEvent);
+              previewer.push(renderPreview());
             },
           });
           await previewer.flush();

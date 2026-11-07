@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { MessageFlags } from 'discord.js';
 import { eventFromInteraction, messageText } from '../events.js';
+import { createProgressFeed } from '../progress.js';
 import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
@@ -61,14 +62,42 @@ export function createAskHandlers(shared) {
     return { ok: true, imageData: { data: downloaded.data, contentType: downloaded.contentType ?? contentType } };
   }
 
-  /** @param {any} interaction @param {string} prompt @param {{chatId?: string, chatType?: string, imageData?: any, private?: boolean, onDelta?: (delta: string) => void}} [extra] */
+  /** @param {any} interaction @param {string} prompt @param {{chatId?: string, chatType?: string, imageData?: any, private?: boolean, onDelta?: (delta: string) => void, onProgress?: (event: any) => void}} [extra] */
   function streamAsk(interaction, prompt, extra = {}) {
     const event = askEvent(interaction, prompt, {
       ...(extra.chatId ? { chatId: extra.chatId, chatType: extra.chatType ?? 'GROUP' } : {}),
       ...(extra.private === true ? { private: true } : {}),
     });
     if (extra.imageData) event.imageData = extra.imageData;
-    return runtime.agent.stream(event, { skipCommands: true, onDelta: extra.onDelta });
+    return runtime.agent.stream(event, {
+      skipCommands: true,
+      onDelta: extra.onDelta,
+      onProgress: extra.onProgress,
+    });
+  }
+
+  /**
+   * One throttled preview renderer for status + streamed answer.
+   * @param {(text: string) => Promise<any>} edit
+   */
+  function createStreamPreview(edit) {
+    const feed = createProgressFeed();
+    let streamed = '';
+    const render = () => [feed.text(), streamed].filter(Boolean).join('\n\n');
+    const previewer = createPreviewer((text) => edit(text));
+    return {
+      onDelta(delta) {
+        streamed += delta;
+        previewer.push(render());
+      },
+      onProgress(event) {
+        feed.update(event);
+        previewer.push(render());
+      },
+      flush() {
+        return previewer.flush();
+      },
+    };
   }
 
   /**
@@ -92,11 +121,6 @@ export function createAskHandlers(shared) {
       imageData = image.imageData;
     }
 
-    let streamed = '';
-    const accumulate = (delta) => {
-      streamed += delta;
-    };
-
     if (useThread) {
       const channel = /** @type {any} */ (interaction.channel);
       if (!channel?.threads?.create) {
@@ -106,16 +130,14 @@ export function createAskHandlers(shared) {
       const name = prompt.replace(/\s+/g, ' ').slice(0, 90) || 'AI answer';
       const thread = await channel.threads.create({ name, autoArchiveDuration: 1440, reason: `AI answer for ${interaction.user.username}` });
       const placeholder = await thread.send(v2Message('…'));
-      const previewer = createPreviewer((text) => placeholder.edit(v2Message(text)));
+      const preview = createStreamPreview((text) => placeholder.edit(v2Message(text)));
       const result = await streamAsk(interaction, prompt, {
         chatId: thread.id,
         imageData,
-        onDelta: (delta) => {
-          accumulate(delta);
-          previewer.push(streamed);
-        },
+        onDelta: preview.onDelta,
+        onProgress: preview.onProgress,
       });
-      await previewer.flush();
+      await preview.flush();
       const token = makeToken({
         prompt,
         answer: result.text,
@@ -130,16 +152,14 @@ export function createAskHandlers(shared) {
       return;
     }
 
-    const previewer = createPreviewer((text) => interaction.editReply(v2Message(text)));
+    const preview = createStreamPreview((text) => interaction.editReply(v2Message(text)));
     const result = await streamAsk(interaction, prompt, {
       imageData,
       private: priv,
-      onDelta: (delta) => {
-        accumulate(delta);
-        previewer.push(streamed);
-      },
+      onDelta: preview.onDelta,
+      onProgress: preview.onProgress,
     });
-    await previewer.flush();
+    await preview.flush();
     const token = makeToken({
       prompt,
       answer: result.text,
@@ -168,16 +188,13 @@ export function createAskHandlers(shared) {
     }
     await interaction.deferReply(ephemeral);
     const prompt = `${prefix}\n\n${content}`;
-    let streamed = '';
-    const previewer = createPreviewer((text) => interaction.editReply(v2Message(text)));
+    const preview = createStreamPreview((text) => interaction.editReply(v2Message(text)));
     const result = await runtime.agent.stream(askEvent(interaction, prompt, { private: true }), {
       skipCommands: true,
-      onDelta: (delta) => {
-        streamed += delta;
-        previewer.push(streamed);
-      },
+      onDelta: preview.onDelta,
+      onProgress: preview.onProgress,
     });
-    await previewer.flush();
+    await preview.flush();
     const token = makeToken({
       prompt,
       answer: result.text,
@@ -267,13 +284,12 @@ export function createAskHandlers(shared) {
     if (regenerating) await interaction.deferUpdate();
     else await interaction.deferReply(privateReply(payload.ephemeral));
 
-    let streamed = '';
     const edit = regenerating
       ? viaChannel
         ? (text) => interaction.message.edit(v2Message(text))
         : (text) => interaction.editReply(v2Message(text))
       : (text) => interaction.editReply(v2Message(text));
-    const previewer = createPreviewer(edit);
+    const preview = createStreamPreview(edit);
     const event = askEvent(interaction, prompt, {
       chatId: payload.chatId,
       chatType: payload.chatType,
@@ -282,12 +298,10 @@ export function createAskHandlers(shared) {
     });
     const result = await runtime.agent.stream(event, {
       skipCommands: true,
-      onDelta: (delta) => {
-        streamed += delta;
-        previewer.push(streamed);
-      },
+      onDelta: preview.onDelta,
+      onProgress: preview.onProgress,
     });
-    await previewer.flush();
+    await preview.flush();
     const newToken = makeToken({ ...payload });
     const chunks = chunkContent(result.text || 'No answer.');
     const photos = result.photos ?? [];

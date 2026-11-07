@@ -99,11 +99,12 @@ export function createSenderFactory({ config, logger, metrics, platform }) {  co
  *
  * `live: true` streams deltas through `onDelta` and stores the final text (instead of
  * accumulating progressive chunks), for UIs that edit one message as tokens arrive.
- * @param {{live?: boolean, onDelta?: (delta: string) => void}} [options]
+ * @param {{live?: boolean, onDelta?: (delta: string) => void, onProgress?: (event: any) => void}} [options]
  */
 export function createCollectorSink(options = {}) {
   const live = options.live === true;
   const onDelta = options.onDelta;
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : undefined;
   /** @type {string[]} */
   const texts = [];
   /** @type {Array<{url: string, caption: string, data?: Buffer, contentType?: string}>} */
@@ -112,6 +113,7 @@ export function createCollectorSink(options = {}) {
   let finalText = '';
   return {
     live,
+    onProgress,
     onDelta: live
       ? (/** @type {string} */ delta) => {
           streamed += delta;
