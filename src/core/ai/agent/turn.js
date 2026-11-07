@@ -63,9 +63,11 @@ export function createTurnRunner(deps) {
       deadline = Math.min(deadline, Date.now() + config.nim.visionTimeoutMs);
     }
     const selectedTarget = llm.resolve(record);
-    // Image turns use a vision-capable alias (config.model.visionAlias) when the selected
-    // model cannot see images. If none is configured, the turn stays text-only.
-    const visionTarget = images.length && !selectedTarget.vision ? llm.find(config.model?.visionAlias ?? 'nim') : null;
+    // Image turns use a vision-capable model when the selected one cannot see images:
+    // the per-chat `/settings vision` override, else config.model.visionAlias.
+    const chatVision = record?.meta?.visionModel;
+    const visionAlias = chatVision && llm.find(chatVision)?.vision ? chatVision : config.model?.visionAlias ?? 'nim';
+    const visionTarget = images.length && !selectedTarget.vision ? llm.find(visionAlias) : null;
     const target =
       images.length && selectedTarget.vision ? selectedTarget : visionTarget?.vision ? visionTarget : selectedTarget;
     const useImage = Boolean(images.length && target?.vision);
@@ -134,6 +136,13 @@ export function createTurnRunner(deps) {
     const noToolsRegistry = createPrompt({ ...promptOptions, imageEnabled: false, visionInput: false, tools: [] });
     const noToolsSystemPrompt = noToolsRegistry.render(
       noToolsRegistry.assemble({ text: effectiveText, now: new Date() }),
+    );
+    // Vision fallback keeps the image blocks, so its no-tools prompt must still claim vision.
+    const noToolsVisionRegistry = useImage
+      ? createPrompt({ ...promptOptions, imageEnabled: false, tools: [] })
+      : null;
+    const noToolsVisionSystemPrompt = noToolsVisionRegistry?.render(
+      noToolsVisionRegistry.assemble({ text: effectiveText, now: new Date() }),
     );
 
     const reasoning = useImage
@@ -246,6 +255,12 @@ export function createTurnRunner(deps) {
             }
           : message,
       );
+    };
+    // Same transcript for a vision-capable fallback: no tools, but the image stays visible.
+    const noToolsVisionMessages = () => {
+      const list = fallbackMessages(messages);
+      if (list[0]?.role === 'system') list[0] = { role: 'system', content: noToolsVisionSystemPrompt };
+      return list;
     };
 
     // Proof that context reaches the API: with config.logLevel=debug you see the message count
@@ -399,7 +414,9 @@ export function createTurnRunner(deps) {
       if (!response && !progressive.flushed && !signal?.aborted) {
         const fallback = await attemptFallback({
           config, logger, metrics, llm, record, target,
-          chatId: event.chatId, noToolsMessages, deadline, signal,
+          chatId: event.chatId, noToolsMessages,
+          ...(useImage ? { vision: true, visionMessages: noToolsVisionMessages } : {}),
+          deadline, signal,
         });
         fallbackLlmMs += fallback.llmMs;
         if (fallback.response) ({ response, answeredBy } = fallback);

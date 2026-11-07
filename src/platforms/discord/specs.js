@@ -53,9 +53,17 @@ export const COMMANDS = [
   {
     type: ApplicationCommandType.ChatInput,
     name: 'settings',
-    description: 'Channel settings: model, style, think effort, privacy, threads (admin)',
-    help: '`/settings` — model, style, think effort, privacy and thread defaults (admin)',
+    description: 'Channel settings: model, vision model, style, think effort, privacy, threads (admin)',
+    help: '`/settings` — model, vision model, style, think effort, privacy and thread defaults (admin)',
     default_member_permissions: String(PermissionFlagsBits.ManageGuild),
+    options: [
+      {
+        name: 'vision',
+        description: 'Vision model for images (omit to open settings; "default" clears it)',
+        type: 3,
+        autocomplete: true,
+      },
+    ],
   },
   {
     type: ApplicationCommandType.ChatInput,

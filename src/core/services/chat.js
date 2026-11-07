@@ -40,8 +40,24 @@ export function createChatServices({ config, store, models, compaction }) {
     return models.resolve(record);
   }
 
+  /**
+   * The vision model this chat uses for image turns: the per-chat override when it still
+   * resolves to a vision-capable alias, else the configured default.
+   * @param {any} record
+   */
+  function currentVisionModel(record) {
+    const wanted = record?.meta?.visionModel;
+    const picked = wanted ? models.find(wanted) : null;
+    if (picked?.vision) return picked;
+    return models.find(config.model?.visionAlias ?? 'nim');
+  }
+
   function listModels() {
     return models.list();
+  }
+
+  function listVisionModels() {
+    return models.list().filter((item) => item.vision === true);
   }
 
   /** @param {string} value */
@@ -56,6 +72,27 @@ export function createChatServices({ config, store, models, compaction }) {
     const target = record ?? (await getRecord(chatId, chatType));
     if (!target.meta) target.meta = { thinking: null };
     target.meta.model = picked.alias;
+    store.touch?.(chatId);
+    return { ok: true, model: picked };
+  }
+
+  /**
+   * Set or clear (`default`) the per-chat vision model. Text-only aliases are rejected:
+   * image turns would otherwise fall back to a model that cannot see the image.
+   * @param {string} chatId @param {string} value @param {string} [chatType] @param {any} [record]
+   */
+  async function setVisionModel(chatId, value, chatType = 'GROUP', record = null) {
+    const target = record ?? (await getRecord(chatId, chatType));
+    if (!target.meta) target.meta = { thinking: null };
+    const needle = String(value ?? '').trim();
+    if (!needle || needle === 'default' || needle === '__default') {
+      delete target.meta.visionModel;
+      store.touch?.(chatId);
+      return { ok: true, model: currentVisionModel(target) };
+    }
+    const picked = models.find(needle);
+    if (!picked?.vision) return { ok: false, reason: 'not-vision' };
+    target.meta.visionModel = picked.alias;
     store.touch?.(chatId);
     return { ok: true, model: picked };
   }
@@ -207,9 +244,12 @@ export function createChatServices({ config, store, models, compaction }) {
   return {
     getRecord,
     currentModel,
+    currentVisionModel,
     listModels,
+    listVisionModels,
     findModel,
     setModel,
+    setVisionModel,
     reset,
     compact,
     summarize,

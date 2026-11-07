@@ -12,7 +12,7 @@ export function createSettingsHandlers(shared) {
   function settingsPayload(record) {
     const current = chat.currentModel(record);
     return {
-      embeds: [settingsEmbed(record, config, current)],
+      embeds: [settingsEmbed(record, config, current, chat.currentVisionModel(record))],
       components: settingsRows(chat.listModels(), record, current),
     };
   }
@@ -24,7 +24,26 @@ export function createSettingsHandlers(shared) {
         await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can change channel settings.')] });
         return;
       }
-      const record = await chat.getRecord(String(interaction.channelId), interaction.guildId ? 'GROUP' : 'PRIVATE');
+      const chatId = String(interaction.channelId);
+      const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
+      const requested = interaction.options?.getString?.('vision');
+      if (requested !== null && requested !== undefined && String(requested).trim()) {
+        const saved = await chat.setVisionModel(chatId, requested, chatType);
+        if (!saved.ok) {
+          await replyEphemeral(interaction, {
+            embeds: [errorEmbed(`"${requested}" is not a vision-capable model.`)],
+          });
+          return;
+        }
+        const clearing = ['default', '__default'].includes(String(requested).trim().toLowerCase());
+        await replyEphemeral(interaction, {
+          content: clearing
+            ? `Vision model reset to the default${saved.model ? ` (\`${saved.model.alias}\` — ${saved.model.label})` : ''}.`
+            : `Vision model is now **${saved.model.label}** (\`${saved.model.alias}\`).`,
+        });
+        return;
+      }
+      const record = await chat.getRecord(chatId, chatType);
       await replyEphemeral(interaction, settingsPayload(record));
     },
 
@@ -60,20 +79,30 @@ export function createSettingsHandlers(shared) {
 
   /** @param {any} interaction */
   async function handleAutocomplete(interaction) {
-    if (interaction.commandName !== 'model') {
+    if (interaction.commandName !== 'model' && interaction.commandName !== 'settings') {
       return interaction.respond([]).catch((error) => {
         logger?.debug('discord autocomplete reply failed', {
           error: String(/** @type {any} */ (error)?.message ?? error),
         });
       });
     }
-    const focused = String(interaction.options.getFocused() ?? '').toLowerCase();
-    const matches = chat
-      .listModels()
+    const raw = interaction.options.getFocused(true);
+    const structured = raw && typeof raw === 'object';
+    const optionName = structured
+      ? String(raw.name ?? '')
+      : interaction.commandName === 'settings'
+        ? 'vision'
+        : 'name';
+    const focused = String(structured ? raw.value ?? '' : raw ?? '').toLowerCase();
+    const vision = optionName === 'vision';
+    const options = (vision ? chat.listVisionModels() : chat.listModels())
       .filter((item) => `${item.alias} ${item.label} ${item.model}`.toLowerCase().includes(focused))
-      .slice(0, 25)
+      .slice(0, vision ? 24 : 25)
       .map((item) => ({ name: `${item.alias} — ${item.label}`.slice(0, 100), value: item.alias }));
-    return interaction.respond(matches).catch((error) => {
+    if (vision && 'default'.includes(focused)) {
+      options.unshift({ name: 'default — use the configured vision model', value: 'default' });
+    }
+    return interaction.respond(options).catch((error) => {
       logger?.debug('discord autocomplete reply failed', {
         error: String(/** @type {any} */ (error)?.message ?? error),
       });

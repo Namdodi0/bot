@@ -43,9 +43,20 @@ export function makeDiscordCommandRuntime() {
       resolve: () => ({ alias: 'deepseek', label: 'DeepSeek', provider: 'deepseek', model: 'deepseek-flash' }),
       list: () => [
         { alias: 'deepseek', label: 'DeepSeek', provider: 'deepseek', model: 'deepseek-flash' },
-        { alias: 'nim', label: 'NIM', provider: 'nim', model: 'nvidia/model' },
+        { alias: 'nim', label: 'NIM', provider: 'nim', model: 'nvidia/model', vision: true },
+        { alias: 'mistral-large', label: 'Mistral Large', provider: 'nim', model: 'mistralai/model', vision: true },
       ],
-      find: (value) => (String(value) === 'nim' ? { alias: 'nim', label: 'NIM', provider: 'nim', model: 'nvidia/model' } : null),
+      find: (value) =>
+        ({
+          nim: { alias: 'nim', label: 'NIM', provider: 'nim', model: 'nvidia/model', vision: true },
+          'mistral-large': {
+            alias: 'mistral-large',
+            label: 'Mistral Large',
+            provider: 'nim',
+            model: 'mistralai/model',
+            vision: true,
+          },
+        })[String(value)] ?? null,
       chat: async () => ({ content: 'summary text' }),
     },
     metrics: {

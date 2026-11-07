@@ -361,19 +361,24 @@ export const REASONING_MODES = [
  * @param {any} record
  * @param {any} config
  * @param {{alias: string, label: string}} currentModel
+ * @param {{alias: string, label: string}|null} [visionModel]
  */
-export function settingsEmbed(record, config, currentModel) {
+export function settingsEmbed(record, config, currentModel, visionModel = null) {
   const meta = record?.meta ?? {};
   const tone = typeof meta.tone === 'string' && meta.tone ? meta.tone : `default (${config?.tone ?? 'friendly'})`;
   const reasoning =
     typeof meta.thinking === 'string' && meta.thinking
       ? meta.thinking
       : `default (${config?.ai?.reasoning ?? 'none'})`;
+  const vision = visionModel
+    ? `${meta.visionModel ? '' : 'default '}(\`${visionModel.alias}\` — ${visionModel.label})`
+    : 'not configured';
   return new EmbedBuilder()
     .setColor(COLORS.info)
     .setTitle('Channel settings')
     .addFields(
       { name: 'Model', value: `\`${currentModel.alias}\` — ${currentModel.label}`, inline: true },
+      { name: 'Vision model', value: vision, inline: true },
       { name: 'Tone', value: tone, inline: true },
       { name: 'Think effort', value: reasoning, inline: true },
       { name: 'Default privacy', value: meta.privateDefault ? 'private' : 'public', inline: true },

@@ -452,10 +452,11 @@ export function loadConfig(input = {}) {
   // NVIDIA recommends 0.6 for image/video input and 1.0 for text.
   const nimVisionTemperature =
     asOptionalNumber(nimSection.visionTemperature, 'config.nim.visionTemperature', { min: 0, max: 2 }) ?? 0.6;
-  // Vision turns get their own wall-clock cap: a stalled 120B VL request must not hold
-  // the chat for minutes. 0 disables the cap and falls back to the turn deadline.
+  // Vision turns get their own wall-clock cap: a stalled VL request must not hold the
+  // chat forever, but a 1T-class vision model may need minutes for the first token.
+  // 0 disables the cap and falls back to the turn deadline.
   const nimVisionTimeoutMs = /** @type {number} */ (
-    asInt(nimSection.visionTimeoutMs, 'config.nim.visionTimeoutMs', 60_000, { min: 0 })
+    asInt(nimSection.visionTimeoutMs, 'config.nim.visionTimeoutMs', 180_000, { min: 0 })
   );
   // Cut the long tail of low-probability tokens (a common source of language drift).
   const nimTopK = asOptionalInt(nimSection.topK, 'config.nim.topK', { min: -1 }) ?? 40;

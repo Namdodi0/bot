@@ -13,6 +13,8 @@ import { FALLBACK_MIN_MS, providerTimeout, samplingFor, sleep } from '../helpers
  *   target: {model: string, alias: string, provider: string},
  *   chatId: string,
  *   noToolsMessages: () => any[],
+ *   vision?: boolean,
+ *   visionMessages?: (() => any[]) | null,
  *   deadline: number,
  *   signal?: AbortSignal|null,
  * }} input
@@ -33,11 +35,16 @@ export async function attemptFallback({
   target,
   chatId,
   noToolsMessages,
+  vision = false,
+  visionMessages = null,
   deadline,
   signal = null,
 }) {
-  const fallbackAlias = llm.fallbackFor(record, target);
+  // An image turn must fall back to a model that can still see the image; a text-only
+  // fallback receives no image blocks and then tells the user it cannot see anything.
+  const fallbackAlias = llm.fallbackFor(record, target, { requireVision: vision });
   const fallbackEntry = fallbackAlias ? llm.find(fallbackAlias) : null;
+  const keepVision = Boolean(vision && visionMessages && fallbackEntry?.vision);
   let left = deadline - Date.now();
   if (left > 6000) {
     await sleep(800);
@@ -52,7 +59,7 @@ export async function attemptFallback({
       providerLimit > 0 ? (timeLeft > 0 ? Math.min(providerLimit, timeLeft) : providerLimit) : timeLeft;
     try {
       const response = await llm.chatWith(fallbackAlias, {
-        messages: noToolsMessages(),
+        messages: keepVision ? visionMessages() : noToolsMessages(),
         reasoning: 'none',
         maxTokens: config.ai.maxTokens,
         sampling: samplingFor(config, fallbackEntry?.provider ?? target.provider),

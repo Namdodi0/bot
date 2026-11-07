@@ -55,3 +55,18 @@ test('router: fallbackFor skips the model that actually failed', () => {
   assert.notEqual(alias, 'nim');
   assert.notEqual(router.find(alias).model, attempted.model);
 });
+
+test('router: a vision turn only falls back to a vision model', () => {
+  const config = makeConfig({ nim: { mistralModel: 'mistralai/mistral-large-4-1t-a52b' } });
+  const router = createModelRouter({ config, service: makeService(), logger: silentLogger });
+
+  const fromNim = router.fallbackFor({ meta: { model: 'deepseek' } }, router.find('nim'), { requireVision: true });
+  assert.equal(fromNim, 'mistral-large');
+  assert.equal(router.find(fromNim).vision, true);
+
+  const fromMistral = router.fallbackFor({ meta: { model: 'deepseek' } }, router.find('mistral-large'), {
+    requireVision: true,
+  });
+  assert.equal(fromMistral, 'nim');
+  assert.equal(router.find(fromMistral).vision, true);
+});

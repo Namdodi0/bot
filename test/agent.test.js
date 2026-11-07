@@ -76,6 +76,13 @@ async function setup(options = {}) {
     label: 'Nemotron VL',
     vision: true,
   };
+  const visionFallbackTarget = {
+    alias: 'mistral-large',
+    provider: 'nim',
+    model: 'mistral-large',
+    label: 'Mistral Large',
+    vision: true,
+  };
   async function reply(input, viaFallback = false) {
     nimCalls.push(input);
     if (!viaFallback) primaryCalls += 1;
@@ -118,12 +125,12 @@ async function setup(options = {}) {
   }
   const llm = {
     resolve: () => target,
-    find: (alias) => (alias === 'nim' ? visionTarget : target),
+    find: (alias) => (alias === 'nim' ? visionTarget : alias === 'mistral-large' ? visionFallbackTarget : target),
     list: () => [target],
     fallbackAlias: 'nim-light',
-    fallbackFor: () => 'nim-light',
+    fallbackFor: (_record, _attempted, opts) => (opts?.requireVision ? 'mistral-large' : 'nim-light'),
     chat: (input) => reply(input),
-    chatWith: (_alias, input) => reply(input, true),
+    chatWith: (alias, input) => reply({ ...input, alias }, true),
     async warmup() {
       return 1;
     },
@@ -216,6 +223,44 @@ test('vision turns send up to five image_url blocks from one message', async () 
   assert.equal(blocks.length, 5, 'the per-turn limit is five images');
   assert.match(blocks[4].image_url.url, /^data:image\/png;base64,/);
   assert.match(String(lastUser.content[0].text), /attached 5 images/);
+});
+
+test('vision fallback keeps the image and uses a vision model', async () => {
+  const { agent, nimCalls } = await setup({
+    primaryError: new HttpError('upstream down', { status: 503 }),
+    replies: [{ content: 'I see the cat' }],
+  });
+  await agent.handle(
+    textEvent('what is this', {
+      imageData: { data: Buffer.from('png-bytes'), contentType: 'image/png' },
+      messageId: 'vision-fallback',
+    }),
+  );
+
+  assert.equal(nimCalls.length, 3); // 2 failed vision attempts + 1 fallback
+  const fallbackCall = nimCalls.at(-1);
+  assert.equal(fallbackCall.alias, 'mistral-large', 'the fallback must be a vision model');
+  assert.equal(fallbackCall.tools, undefined);
+  const lastUser = [...fallbackCall.messages].reverse().find((message) => message.role === 'user');
+  const image = lastUser.content.find((part) => part.type === 'image_url');
+  assert.match(image.image_url.url, /^data:image\/png;base64,/);
+  assert.match(String(fallbackCall.messages[0].content), /VISION:/);
+});
+
+test('a per-chat vision model overrides the configured vision alias', async () => {
+  const { agent, nimCalls, store } = await setup({ replies: [{ content: 'I see it' }] });
+  const record = await store.get('chat-1', { chatType: 'GROUP' });
+  record.meta.visionModel = 'mistral-large';
+  store.touch('chat-1');
+
+  await agent.handle(
+    textEvent('what is this', {
+      imageData: { data: Buffer.from('png-bytes'), contentType: 'image/png' },
+      messageId: 'vision-override',
+    }),
+  );
+
+  assert.equal(nimCalls[0].alias, 'mistral-large');
 });
 
 

@@ -263,3 +263,26 @@ test('every model-text payload from /ask disables mention parsing', async () => 
   }
 });
 
+test('/settings vision stores a per-channel vision model and can reset it', async () => {
+  const { commands, runtime } = makeCommands();
+  const pick = interaction('settings', { vision: 'mistral-large' });
+  await commands.handleCommand(pick);
+
+  assert.equal(runtime.record.meta.visionModel, 'mistral-large');
+  assert.match(String(pick.replies.at(-1)?.content ?? ''), /Vision model is now/);
+
+  const reset = interaction('settings', { vision: 'default' });
+  await commands.handleCommand(reset);
+  assert.equal(runtime.record.meta.visionModel, undefined);
+  assert.match(String(reset.replies.at(-1)?.content ?? ''), /reset to the default/);
+});
+
+test('/settings vision rejects text-only models', async () => {
+  const { commands, runtime } = makeCommands();
+  const i = interaction('settings', { vision: 'deepseek' });
+  await commands.handleCommand(i);
+
+  assert.equal(runtime.record.meta.visionModel, undefined);
+  assert.match(JSON.stringify(i.replies.at(-1)), /not a vision-capable model/);
+});
+

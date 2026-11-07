@@ -39,7 +39,7 @@ test('sampling defaults keep the tail tight to limit language drift', () => {
   assert.equal(config.nim.topP, 0.9);
   assert.equal(config.nim.topK, 40);
   assert.equal(config.nim.visionTemperature, 0.6);
-  assert.equal(config.nim.visionTimeoutMs, 60000);
+  assert.equal(config.nim.visionTimeoutMs, 180000);
   assert.equal(config.nim.mistralModel, 'mistralai/mistral-large-4-1t-a52b');
   assert.equal(config.nim.glmModel, 'z-ai/glm-5.3-flash');
   assert.equal(config.nim.frequencyPenalty, 0);
