@@ -653,6 +653,10 @@ export function loadConfig(input = {}) {
     maxConcurrentChats: /** @type {number} */ (
       asInt(root.maxConcurrentChats, 'config.maxConcurrentChats', 8, { min: 1, max: 64 })
     ),
+    // How many turns may run at once inside one chat; the chat record is snapshot-merged.
+    maxConcurrentPerChat: /** @type {number} */ (
+      asInt(root.maxConcurrentPerChat, 'config.maxConcurrentPerChat', 3, { min: 1, max: 16 })
+    ),
     // 0 = off; enabled by default to block spam that burns API credits
     userRateLimitPerMinute: /** @type {number} */ (
       asInt(root.userRateLimitPerMinute, 'config.userRateLimitPerMinute', 12, { min: 0 })

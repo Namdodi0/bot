@@ -50,7 +50,7 @@ export function normalizeRecord(record) {
 }
 
 /**
- * @param {{role?: string, text: string, name?: string, ts?: number, messageId?: string, private?: boolean}} input
+ * @param {{role?: string, text: string, name?: string, ts?: number, messageId?: string, private?: boolean, turnId?: string}} input
  */
 export function turnEntry(input) {
   return {
@@ -61,6 +61,7 @@ export function turnEntry(input) {
     ts: input.ts ?? Date.now(),
     ...(input.messageId ? { messageId: input.messageId } : {}),
     ...(input.private ? { private: true } : {}),
+    ...(input.turnId ? { turnId: input.turnId } : {}),
   };
 }
 
@@ -96,7 +97,7 @@ export function searchEntry(text, ts = Date.now()) {
 }
 
 /**
- * @param {{content?: string, toolCalls: Array<{id: string, name: string, arguments: any, rawArguments?: string}>, ts?: number, private?: boolean}} input
+ * @param {{content?: string, toolCalls: Array<{id: string, name: string, arguments: any, rawArguments?: string}>, ts?: number, private?: boolean, turnId?: string}} input
  */
 export function toolCallEntry(input) {
   return {
@@ -106,11 +107,12 @@ export function toolCallEntry(input) {
     toolCalls: input.toolCalls,
     ts: input.ts ?? Date.now(),
     ...(input.private ? { private: true } : {}),
+    ...(input.turnId ? { turnId: input.turnId } : {}),
   };
 }
 
 /**
- * @param {{toolCallId: string, text: string, ts?: number, private?: boolean}} input
+ * @param {{toolCallId: string, text: string, ts?: number, private?: boolean, turnId?: string}} input
  */
 export function toolResultEntry(input) {
   return {
@@ -120,6 +122,7 @@ export function toolResultEntry(input) {
     text: input.text,
     ts: input.ts ?? Date.now(),
     ...(input.private ? { private: true } : {}),
+    ...(input.turnId ? { turnId: input.turnId } : {}),
   };
 }
 

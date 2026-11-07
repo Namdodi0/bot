@@ -24,7 +24,8 @@ export function createMessageHandler(deps) {
 
     const chatId = String(message.channel?.id ?? message.channelId ?? '');
     try {
-      await runtime.agent.exclusive(chatId, async () => {
+      const schedule = runtime.agent.parallel ?? runtime.agent.exclusive;
+      await schedule(chatId, async () => {
         let repliedToBot = false;
         let referenced = null;
         if (message.reference?.messageId) {

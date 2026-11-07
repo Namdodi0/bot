@@ -364,6 +364,27 @@ test('budget abort is not retried: the remaining time goes to the fallback', asy
   assert.match(sent.at(-1).text, /Hello/);
 });
 
+test('two messages in one chat run in parallel', async () => {
+  const { agent, sent, store } = await setup({
+    delayMs: 150,
+    configOverrides: { userRateLimitPerMinute: 0, maxMessagesPerReply: 1 },
+  });
+  const started = Date.now();
+  await Promise.all([
+    agent.enqueue(textEvent('first question', { messageId: 'parallel-1' })),
+    agent.enqueue(textEvent('second question', { messageId: 'parallel-2' })),
+  ]);
+  const elapsed = Date.now() - started;
+
+  assert.ok(sent.length >= 2, 'both turns should send an answer');
+  assert.ok(elapsed < 260, `parallel turns took ${elapsed}ms`);
+  const record = await store.get('chat-1');
+  assert.ok(
+    record.messages.filter((message) => message.role === 'user').length >= 2,
+    'both user turns must be merged',
+  );
+});
+
 test('context overflow: compacts the context then retries, no error shown to the user', async () => {
   const { agent, sent, store } = await setup({
     overflowFirst: true,

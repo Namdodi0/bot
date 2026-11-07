@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { createTokenMeter } from '../context/token-meter.js';
 import { CircuitOpenError, HttpError } from '../http.js';
 import { stripMention } from '../text/format.js';
@@ -22,8 +23,29 @@ export function createAgent(deps) {
   });
   const seen = createSeenTracker();
   const rateLimited = createRateLimiter(config, { file: deps.rateLimitFile });
-  /** @type {Map<string, AbortController>} */
+  /** @type {Map<string, Set<AbortController>>} */
   const activeTurns = new Map();
+
+  /**
+   * Merge the entries a forked turn created back into the live record. Entries are tagged
+   * with `turnId`, so parallel turns cannot interleave tool blocks or private entries.
+   * @param {any} live
+   * @param {any} fork
+   * @param {string} turnId
+   * @param {string} chatId
+   */
+  function mergeTurn(live, fork, turnId, chatId) {
+    if (!live || !fork) return;
+    const tagged = (fork.messages ?? []).filter((message) => message.turnId === turnId);
+    if (!tagged.length) return;
+    for (const entry of tagged) {
+      if (entry.private) continue;
+      const { turnId: _turnId, ...rest } = entry;
+      live.messages.push(rest);
+    }
+    live.turns = (live.turns ?? 0) + 1;
+    store.touch(chatId);
+  }
   const { makeSender, sendText } = createSenderFactory({ config, logger, metrics, platform });
 
   const conversation = createTurnRunner({
@@ -79,7 +101,9 @@ export function createAgent(deps) {
     }
 
     const controller = new AbortController();
-    activeTurns.set(event.chatId, controller);
+    const controllers = activeTurns.get(event.chatId) ?? new Set();
+    controllers.add(controller);
+    activeTurns.set(event.chatId, controllers);
     if (collector) /** @type {any} */ (collector).signal = controller.signal;
 
     try {
@@ -134,6 +158,25 @@ export function createAgent(deps) {
       );
       const command = commands.parseCommand(cleanedText);
       const normalizedEvent = cleanedText === (event.text ?? '') ? event : { ...event, text: cleanedText };
+
+      /** @param {Record<string, any>} turnOptions */
+      async function runAsTurn(turnOptions) {
+        const turnId = crypto.randomUUID();
+        // A lone turn keeps the live record (so compaction persists); only when another
+        // turn is already active in this chat does it work on an isolated snapshot.
+        const fork = controllers.size > 1 ? structuredClone(record) : record;
+        try {
+          await conversation(
+            normalizedEvent,
+            fork,
+            { ...turnOptions, signal: controller.signal, turnId },
+            stopTyping,
+            collector,
+          );
+        } finally {
+          if (fork !== record) mergeTurn(record, fork, turnId, event.chatId);
+        }
+      }
       if (command && !options.skipCommands) {
         const ctx = {
           chatId: event.chatId,
@@ -148,13 +191,7 @@ export function createAgent(deps) {
         metrics.inc(`commands.${command.name}`);
 
         if (result.kind === 'search') {
-          await conversation(
-            normalizedEvent,
-            record,
-            { forceSearch: result.query, signal: controller.signal },
-            stopTyping,
-            collector,
-          );
+          await runAsTurn({ forceSearch: result.query });
           return;
         }
         if (result.kind === 'image') {
@@ -200,7 +237,7 @@ export function createAgent(deps) {
         return;
       }
 
-      await conversation(normalizedEvent, record, { signal: controller.signal }, stopTyping, collector);
+      await runAsTurn({});
     } catch (error) {
       if (controller.signal.aborted) {
         logger.info('turn stopped by user', { chatId: event.chatId, icon: '⏹️' });
@@ -234,7 +271,9 @@ export function createAgent(deps) {
         logger.error('failed to send error message', { error: sendError });
       }
     } finally {
-      if (activeTurns.get(event.chatId) === controller) activeTurns.delete(event.chatId);
+      const activeForChat = activeTurns.get(event.chatId);
+      activeForChat?.delete(controller);
+      if (!activeForChat?.size) activeTurns.delete(event.chatId);
       if (event.private && activeRecord?.messages) {
         const before = activeRecord.messages.length;
         activeRecord.messages = activeRecord.messages.filter((message) => !message.private);
@@ -249,7 +288,14 @@ export function createAgent(deps) {
     }
   }
 
-  const { enqueue: enqueueQueued, exclusive: exclusiveQueued, isFull, pending, drain } = createQueue({
+  const {
+    enqueue: enqueueQueued,
+    exclusive: exclusiveQueued,
+    parallel: parallelQueued,
+    isFull,
+    pending,
+    drain,
+  } = createQueue({
     config,
     logger,
     metrics,
@@ -270,6 +316,10 @@ export function createAgent(deps) {
     if (!accepting) return Promise.reject(new QueueFullError());
     return exclusiveQueued(chatId, task);
   }
+  function parallel(chatId, task) {
+    if (!accepting) return Promise.reject(new QueueFullError());
+    return parallelQueued(chatId, task);
+  }
 
   /**
    * @param {import('../../platforms/contract.js').BotEvent} event
@@ -289,7 +339,7 @@ export function createAgent(deps) {
       logger.warn('queue is full, skipping slash turn', { chatId, icon: '🧯' });
       return Promise.resolve({ text: QUEUE_BUSY_TEXT, photos: [] });
     }
-    return exclusive(chatId, run);
+    return parallel(chatId, run);
   }
 
   /**
@@ -319,9 +369,9 @@ export function createAgent(deps) {
 
   /** @param {string} chatId */
   function stop(chatId) {
-    const controller = activeTurns.get(String(chatId));
-    if (!controller) return false;
-    controller.abort();
+    const controllers = activeTurns.get(String(chatId));
+    if (!controllers?.size) return false;
+    for (const controller of controllers) controller.abort();
     return true;
   }
 
@@ -332,6 +382,7 @@ export function createAgent(deps) {
     stream,
     enqueue,
     exclusive,
+    parallel,
     isFull,
     rateLimited,
     flushRateLimits: () => rateLimited.flush?.(),

@@ -80,7 +80,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   queue wiring, and removal of private turns from the shared record after a turn.
 - `src/core/ai/agent/` — `helpers.js` (budget/prompt helpers), `sending.js` (sender +
   platform chunk limit/format), `turn.js` (LLM round loop, tools, streaming, fallback),
-  `queue.js` (per-chat FIFO for messages and collected turns, concurrency, dedupe, rate
+  `queue.js` (parallel per-chat turn slots + exclusive FIFO context maintenance, dedupe, rate
   limit, queue depth, shared exclusive runner, drain).
 - `src/core/ai/prompt/` — prompt registry (`section`, `context`, `variable`, `tools`),
   shared static sections/tone rules (`sections.js`), runtime context (`entries.js`).
@@ -171,9 +171,11 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - **Context store writes** are atomic (temp + rename), ordered per chat, and concurrent
   loads of one chat share the same in-memory record. `keepMeta` resets must preserve the
   settings of a cold record too.
-- **Per-chat serialization** covers messages, collected/streamed turns and context
-  maintenance. Queue depth, the concurrency cap and shutdown drain apply to all of them;
-  do not mutate a chat record outside the shared queue.
+- **Per-chat parallelism is snapshot-isolated.** Up to `maxConcurrentPerChat` turns may run
+  at once in one chat; a turn that overlaps another works on a cloned record and merges only
+  its own `turnId` entries. Exclusive context maintenance (`reset`/`compact`, edit/delete
+  sync) stays on the per-chat FIFO chain. Queue depth, concurrency caps and shutdown drain
+  apply to all turns; never mutate the shared record outside the queue.
 - **HTTP retries** honor and cap `Retry-After`; attempt timeouts stay retryable and are not
   reported as caller aborts. The circuit breaker learns stream outcomes after the body
   finishes.
@@ -200,7 +202,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - Test platform policy (admission, limits, prompt, tools, commands) in `test/` against the
   platform modules, not by re-adding platform branches to `src/core`.
 - Add a regression test for every bug fix, especially around retries, context compaction,
-  reminders, message dedupe, per-chat queue serialization, private turns and streamed
+  reminders, message dedupe, per-chat parallel turn isolation, private turns and streamed
   payload safety.
 - Keep the suite lean (~173 tests): security, data-integrity and regression tests only.
   Do not re-add happy-path, UI-polish, config-detail or formatting tests without an explicit

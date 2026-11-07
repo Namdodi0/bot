@@ -21,6 +21,7 @@ import { truncate } from '../../../text/format.js';
  *   privateTurn?: boolean,
  *   imageBudget?: {remaining: number},
  *   onProgress?: (event: any) => void,
+ *   turnId?: string,
  * }} input
  */
 export async function runToolRound({
@@ -38,6 +39,7 @@ export async function runToolRound({
   privateTurn = false,
   imageBudget,
   onProgress,
+  turnId,
 }) {
   metrics.inc('llm.toolRounds');
   messages.push({
@@ -55,6 +57,7 @@ export async function runToolRound({
       toolCalls: response.toolCalls,
       ts: Date.now(),
       private: privateTurn,
+      ...(turnId ? { turnId } : {}),
     }),
   );
 
@@ -102,7 +105,13 @@ export async function runToolRound({
       content: text,
     });
     record.messages.push(
-      toolResultEntry({ toolCallId: call.id, text, ts: Date.now(), private: privateTurn }),
+      toolResultEntry({
+        toolCallId: call.id,
+        text,
+        ts: Date.now(),
+        private: privateTurn,
+        ...(turnId ? { turnId } : {}),
+      }),
     );
   }
   store.touch(chatId);

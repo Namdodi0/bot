@@ -97,6 +97,7 @@
   "maxMessagesPerReply": 0,
   "maxQueueDepth": 50,
   "maxConcurrentChats": 8,
+  "maxConcurrentPerChat": 3,
   "userRateLimitPerMinute": 12,
   "userRateLimits": {},
   "logLevel": "info",

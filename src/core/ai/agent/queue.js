@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 const DEFAULT_MAX_CONCURRENT_CHATS = 8;
+const DEFAULT_MAX_CONCURRENT_PER_CHAT = 3;
 const RATE_WINDOW_MS = 60_000;
 
 /**
@@ -157,15 +158,22 @@ export class QueueFullError extends Error {
 }
 
 /**
- * Queue per chat (preserving order) + a global concurrency limit.
- * All work that mutates a chat record (messages, slash turns, reset/compact) must go
- * through `schedule` so it cannot interleave with another turn in the same chat.
+ * Message turns run in parallel per chat up to maxConcurrentPerChat; exclusive record
+ * maintenance stays on the per-chat FIFO chain. All work is capped by the global limit.
  * @param {{config: any, logger: import('../../logger.js').Logger, metrics: any, transport: any, handle: (event: any) => Promise<void>}} deps
  */
 export function createQueue({ config, logger, metrics, transport, handle }) {
   const maxConcurrentChats = Math.max(1, Number(config.maxConcurrentChats) || DEFAULT_MAX_CONCURRENT_CHATS);
+  const maxConcurrentPerChat = Math.max(
+    1,
+    Number(config.maxConcurrentPerChat) || DEFAULT_MAX_CONCURRENT_PER_CHAT,
+  );
   /** @type {Map<string, Promise<void>>} */
   const chatQueues = new Map();
+  /** @type {Map<string, number>} */
+  const chatActive = new Map();
+  /** @type {Map<string, Array<() => void>>} */
+  const chatWaiters = new Map();
   /** @type {Array<{resolve: () => void, timer: NodeJS.Timeout}>} */
   const drainWaiters = [];
 
@@ -187,6 +195,62 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     active = Math.max(0, active - 1);
     const next = waiters.shift();
     if (next) next();
+  }
+
+  /** @param {string} chatId */
+  function waitForChatSlot(chatId) {
+    return new Promise((resolve) => {
+      const list = chatWaiters.get(chatId) ?? [];
+      list.push(/** @type {any} */ (resolve));
+      chatWaiters.set(chatId, list);
+    });
+  }
+
+  /** @param {string} chatId */
+  async function acquireChatSlot(chatId) {
+    while ((chatActive.get(chatId) ?? 0) >= maxConcurrentPerChat) {
+      await waitForChatSlot(chatId);
+    }
+    chatActive.set(chatId, (chatActive.get(chatId) ?? 0) + 1);
+  }
+
+  /** @param {string} chatId */
+  function releaseChatSlot(chatId) {
+    const left = Math.max(0, (chatActive.get(chatId) ?? 1) - 1);
+    if (left) chatActive.set(chatId, left);
+    else chatActive.delete(chatId);
+    const waitersForChat = chatWaiters.get(chatId);
+    const wake = waitersForChat?.shift();
+    if (wake) {
+      if (!waitersForChat?.length) chatWaiters.delete(chatId);
+      wake();
+    }
+  }
+
+  /**
+   * Run a turn without the per-chat FIFO chain, but under a per-chat concurrency slot.
+   * Record isolation is handled by the turn snapshot/merge in the agent.
+   * @param {string} chatId
+   * @param {() => Promise<any>} task
+   */
+  function parallel(chatId, task) {
+    if (isFull()) return Promise.reject(new QueueFullError());
+    queueDepth += 1;
+    return (async () => {
+      await acquireChatSlot(chatId);
+      try {
+        await acquire();
+        try {
+          return await task();
+        } finally {
+          release();
+        }
+      } finally {
+        releaseChatSlot(chatId);
+        queueDepth = Math.max(0, queueDepth - 1);
+        notifyDrainWaiters();
+      }
+    })();
   }
 
   /** @param {string} chatId @param {() => Promise<any>} task */
@@ -249,7 +313,7 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
       return Promise.resolve();
     }
 
-    return schedule(chatId, () => handle(event)).catch((error) =>
+    return parallel(chatId, () => handle(event)).catch((error) =>
       logger.error('queued handler crashed', { error }),
     );
   }
@@ -302,5 +366,5 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     return queueDepth;
   }
 
-  return { enqueue, exclusive, isFull, pending, drain };
+  return { enqueue, exclusive, parallel, isFull, pending, drain };
 }
