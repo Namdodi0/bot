@@ -533,6 +533,11 @@ export function loadConfig(input = {}) {
       model: asString(nimSection.model, 'config.nim.model', 'nvidia/nemotron-3.5-super-vl-120b-a12b'),
       ultraModel: asString(nimSection.ultraModel, 'config.nim.ultraModel', 'nvidia/nemotron-3-ultra-550b-a55b'),
       fallbackModel: asString(nimSection.fallbackModel, 'config.nim.fallbackModel', 'nvidia/nemotron-3.5-lightning-30b-a3b'),
+      mistralModel: asString(
+        nimSection.mistralModel,
+        'config.nim.mistralModel',
+        'mistralai/mistral-large-4-1t-a52b',
+      ),
       temperature: asNumber(nimSection.temperature, 'config.nim.temperature', 0.7, { min: 0, max: 2 }),
       visionTemperature: nimVisionTemperature,
       visionTimeoutMs: nimVisionTimeoutMs,

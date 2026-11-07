@@ -29,6 +29,12 @@ export const MODEL_ALIASES = {
     modelKey: 'fallbackModel',
     label: 'Nemotron 3.5 Lightning',
   },
+  'mistral-large': {
+    provider: 'nim',
+    modelKey: 'mistralModel',
+    label: 'Mistral Large 4',
+    vision: true,
+  },
   'ds-abl-free': {
     provider: 'refuseless',
     modelKey: 'model',

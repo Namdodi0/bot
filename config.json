@@ -21,6 +21,7 @@
     "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
     "ultraModel": "nvidia/nemotron-3-ultra-550b-a55b",
     "fallbackModel": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "mistralModel": "mistralai/mistral-large-4-1t-a52b",
     "temperature": 0.7,
     "visionTemperature": 0.6,
     "visionTimeoutMs": 60000,
