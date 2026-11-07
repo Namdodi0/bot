@@ -12,6 +12,7 @@
     "dev": "node --watch src/index.js",
     "webhook": "node src/index.js --mode webhook",
     "smoke": "node scripts/smoke.js",
+    "bench:models": "node scripts/bench-models.js",
     "simulate": "node scripts/simulate.js",
     "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack.ps1",
     "test": "node --test",
