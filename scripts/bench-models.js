@@ -9,6 +9,7 @@ import { MODEL_ALIASES } from '../src/core/ai/models.js';
  */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TIMEOUT_MS = Math.max(1000, Number(process.env.MODEL_TEST_TIMEOUT_MS) || 20_000);
+const MAX_TOKENS = Math.max(256, Number(process.env.MODEL_TEST_MAX_TOKENS) || 8192);
 const BASE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const IMAGE_URL = 'https://httpbin.org/image/png';
 
@@ -38,7 +39,7 @@ async function testModel(key, entry, vision) {
   const body = {
     model: entry.model,
     messages: [{ role: 'user', content }],
-    max_tokens: 256,
+    max_tokens: MAX_TOKENS,
     temperature: 0.7,
     top_p: 0.9,
     top_k: 40,
