@@ -52,6 +52,19 @@ test('the shy tone is sến, cringe and emoji-heavy', () => {
   assert.match(text, /never sexual or explicit/);
 });
 
+test('homework mode overlays tutor rules on the current tone', () => {
+  const registry = createPrompt({
+    platform: makeZaloPlatform(),
+    chatType: 'GROUP',
+    tone: 'roast-extreme',
+    homework: true,
+  });
+  const text = registry.render(registry.assemble({ text: 'Giải bài tập toán này' }));
+  assert.match(text, /HOMEWORK MODE/);
+  assert.match(text, /TONE OF THIS CHAT/);
+  assert.match(text, /Never use LaTeX/);
+});
+
 test('the bot is a Ronaldo fan', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'roast-extreme' });
   const text = registry.render(registry.assemble({ text: 'hi' }));

@@ -88,6 +88,7 @@ export const SECTION_ORDER = {
   long: 60,
   toolGuidance: 100,
   tone: 10000,
+  homework: 10100,
   commands: 10200,
 };
 
@@ -118,7 +119,7 @@ const RULES = [
  * Register the platform-neutral prompt sections. Identity, chat shape, formatting and
  * command guidance belong to each platform package (options.platform.prompt.register).
  * @param {ReturnType<typeof import('./registry.js').createPromptRegistry>} registry
- * @param {{imageEnabled?: boolean, visionInput?: boolean, tone?: string, toolGuidance?: Record<string, string>}} [options]
+ * @param {{imageEnabled?: boolean, visionInput?: boolean, tone?: string, homework?: boolean, toolGuidance?: Record<string, string>}} [options]
  */
 export function registerCoreSections(registry, options = {}) {
   const imageEnabled = Boolean(options.imageEnabled);
@@ -170,4 +171,26 @@ export function registerCoreSections(registry, options = {}) {
     order: SECTION_ORDER.tone,
     text: toneRules.length ? ['', 'TONE OF THIS CHAT:', ...toneRules.map((rule) => `- ${rule}`)].join('\n') : '',
   });
+
+  if (options.homework) {
+    registry.section({
+      name: 'core:homework',
+      order: SECTION_ORDER.homework,
+      text: [
+        '',
+        'HOMEWORK MODE (overlay on the current tone): the user is asking for help with a problem or assignment.',
+        '- Keep the current tone in the delivery, but never let it replace or distort the explanation.',
+        '- Restate the problem briefly, list the givens and unknowns with units, choose the method and say why, then show every step.',
+        '- Verify the result (substitute back, check units, sign and magnitude) and mark the final answer clearly.',
+        '- Multiple choice: give the correct option and explain why the other options fail.',
+        '- Coding: provide runnable code, explain the approach, state the complexity and include a quick test.',
+        '- Essay or literature: give an outline, thesis and evidence unless a full draft is requested.',
+        '- If data is missing or ambiguous, state the assumption or ask one precise question; never invent values, sources or numbers.',
+        '- Use `web_search`, `read_url`, vision and `send_image` when they help, and answer from their results.',
+        '- Never use LaTeX: write plain-text Unicode math, with fenced text blocks for multi-line work.',
+        '- This structure overrides the concise default: use as many steps as the solution needs, with no padding, and stop when it is complete.',
+        '- If the user wants only the final answer or a specific format or length, obey that.',
+      ].join('\n'),
+    });
+  }
 }

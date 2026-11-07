@@ -3,6 +3,7 @@ import { searchEntry, syncContexts, turnEntry } from '../../context/record.js';
 import { normalizeWhitespace, truncate } from '../../text/format.js';
 import { LLM_ERROR } from '../llm/errors.js';
 import { createPrompt, buildSearchContext } from '../prompt/index.js';
+import { isHomeworkRequest } from '../prompt/homework.js';
 import { MAX_IMAGES_PER_SEND } from '../tools.js';
 import {
   DEFAULT_MAX_TOOL_ROUNDS,
@@ -118,6 +119,7 @@ export function createTurnRunner(deps) {
       // Tell the model to actually inspect a visible image instead of guessing from the caption.
       visionInput: useImage,
       tone,
+      homework: isHomeworkRequest(effectiveText),
     };
     const promptRegistry = createPrompt({
       ...promptOptions,
