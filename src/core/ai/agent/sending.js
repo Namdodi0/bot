@@ -114,6 +114,7 @@ export function createCollectorSink(options = {}) {
   return {
     live,
     onProgress,
+    signal: null,
     onDelta: live
       ? (/** @type {string} */ delta) => {
           streamed += delta;
@@ -148,7 +149,12 @@ export function createCollectorSink(options = {}) {
       });
     },
     result() {
-      return { text: live ? finalText || streamed.trim() : texts.join('\n').trim(), photos };
+      const stopped = Boolean(/** @type {any} */ (this).signal?.aborted);
+      return {
+        text: live ? finalText || streamed.trim() : texts.join('\n').trim(),
+        photos,
+        ...(stopped ? { stopped: true } : {}),
+      };
     },
   };
 }

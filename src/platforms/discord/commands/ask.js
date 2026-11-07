@@ -97,6 +97,13 @@ export function createAskHandlers(shared) {
       flush() {
         return previewer.flush();
       },
+      async stop() {
+        try {
+          await edit('⏹️ Stopped.');
+        } catch {
+          // The preview may already be gone.
+        }
+      },
     };
   }
 
@@ -138,6 +145,10 @@ export function createAskHandlers(shared) {
         onProgress: preview.onProgress,
       });
       await preview.flush();
+      if (result.stopped) {
+        await preview.stop();
+        return;
+      }
       const token = makeToken({
         prompt,
         answer: result.text,
@@ -160,6 +171,10 @@ export function createAskHandlers(shared) {
       onProgress: preview.onProgress,
     });
     await preview.flush();
+    if (result.stopped) {
+      await preview.stop();
+      return;
+    }
     const token = makeToken({
       prompt,
       answer: result.text,
@@ -195,6 +210,10 @@ export function createAskHandlers(shared) {
       onProgress: preview.onProgress,
     });
     await preview.flush();
+    if (result.stopped) {
+      await preview.stop();
+      return;
+    }
     const token = makeToken({
       prompt,
       answer: result.text,
@@ -302,6 +321,10 @@ export function createAskHandlers(shared) {
       onProgress: preview.onProgress,
     });
     await preview.flush();
+    if (result.stopped) {
+      await preview.stop();
+      return;
+    }
     const newToken = makeToken({ ...payload });
     const chunks = chunkContent(result.text || 'No answer.');
     const photos = result.photos ?? [];

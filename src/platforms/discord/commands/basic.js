@@ -144,6 +144,13 @@ export function createBasicHandlers(shared) {
       await replyEphemeral(interaction, { content: `Pong — gateway ${gateway}ms, roundtrip ${roundtrip}ms.` });
     },
 
+    async stop(interaction) {
+      const stopped = runtime.agent?.stop?.(String(interaction.channelId)) === true;
+      await replyEphemeral(interaction, {
+        content: stopped ? 'Stopped the current answer.' : 'Nothing is running in this channel.',
+      });
+    },
+
     async reset(interaction) {
       if (!isAdmin(interaction)) {
         await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can reset the context.')] });

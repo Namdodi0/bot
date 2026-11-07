@@ -5,7 +5,7 @@ import { SLOW_CALL_WARN_MS, planAttemptBudget, providerTimeout, samplingFor } fr
  * accounting. `execute()` is the normal path; `once()` is the single retry after an
  * overflow rebuild.
  *
- * @param {{config: any, logger: import('../../../logger.js').Logger, metrics: any, llm: any, record: any, target: any, chatId: string, messages: any[], toolDefs: any[], reasoning: string, streaming: boolean, onDelta: (delta: string) => void, onReasoning?: (text: string) => void, deadline: number, retryExecutor: any, vision?: boolean}} input
+ * @param {{config: any, logger: import('../../../logger.js').Logger, metrics: any, llm: any, record: any, target: any, chatId: string, messages: any[], toolDefs: any[], reasoning: string, streaming: boolean, onDelta: (delta: string) => void, onReasoning?: (text: string) => void, deadline: number, retryExecutor: any, vision?: boolean, signal?: AbortSignal|null}} input
  */
 export function createAttemptRunner({
   config,
@@ -24,6 +24,7 @@ export function createAttemptRunner({
   deadline,
   retryExecutor,
   vision = false,
+  signal = null,
 }) {
   let llmMs = 0;
 
@@ -61,6 +62,7 @@ export function createAttemptRunner({
         temperature: vision ? config?.[target.provider]?.visionTemperature : undefined,
         sampling: samplingFor(config, target.provider),
         stream: streaming,
+        signal,
         onDelta,
         onReasoning,
         ttftMs: budget.ttftMs,

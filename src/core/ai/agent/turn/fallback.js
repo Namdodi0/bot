@@ -14,6 +14,7 @@ import { FALLBACK_MIN_MS, providerTimeout, samplingFor, sleep } from '../helpers
  *   chatId: string,
  *   noToolsMessages: () => any[],
  *   deadline: number,
+ *   signal?: AbortSignal|null,
  * }} input
  * @returns {Promise<{
  *   response: any|null,
@@ -33,6 +34,7 @@ export async function attemptFallback({
   chatId,
   noToolsMessages,
   deadline,
+  signal = null,
 }) {
   const fallbackAlias = llm.fallbackFor(record, target);
   const fallbackEntry = fallbackAlias ? llm.find(fallbackAlias) : null;
@@ -55,6 +57,7 @@ export async function attemptFallback({
         maxTokens: config.ai.maxTokens,
         sampling: samplingFor(config, fallbackEntry?.provider ?? target.provider),
         stream: false,
+        signal,
         timeoutMs: fallbackTimeout,
       });
       const llmMs = Date.now() - fallbackStarted;

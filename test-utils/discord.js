@@ -74,6 +74,7 @@ export function makeDiscordCommandRuntime() {
       },
       exclusive: async (_chatId, task) => task(),
       rateLimited: () => false,
+      stop: () => true,
     },
   };
 }

@@ -68,6 +68,19 @@ test('/ask rejects a non-image attachment without calling the agent', async () =
   assert.match(payloadText(i.edits[0]), /must be an image/);
 });
 
+test('/stop stops the current turn in this channel', async () => {
+  const { commands, runtime } = makeCommands();
+  let stopped = null;
+  runtime.agent.stop = (chatId) => {
+    stopped = chatId;
+    return true;
+  };
+  const i = interaction('stop');
+  await commands.handleCommand(i);
+  assert.equal(stopped, 'c1');
+  assert.match(i.replies[0].content, /Stopped/);
+});
+
 test('answer feedback buttons record a rating', async () => {
   const { commands, runtime } = makeCommands();
   const ratings = [];

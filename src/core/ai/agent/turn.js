@@ -29,12 +29,13 @@ export function createTurnRunner(deps) {
   /**
    * @param {import('../../../platforms/contract.js').BotEvent} event
    * @param {any} record
-   * @param {{forceSearch?: string}} [options]
+   * @param {{forceSearch?: string, signal?: AbortSignal|null}} [options]
    * @param {() => Promise<void>|void} [stopTyping]
    * @param {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number, sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>, live?: boolean, onDelta?: (delta: string) => void, onProgress?: (event: any) => void}} [sink]
    */
   async function run(event, record, options = {}, stopTyping = async () => {}, sink = null) {
     const startedAt = Date.now();
+    const signal = options.signal ?? null;
     // config.responseTimeoutMs=0 means no deadline: wait for the model as long as it takes.
     let deadline =
       config.responseTimeoutMs > 0 ? startedAt + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
@@ -312,6 +313,7 @@ export function createTurnRunner(deps) {
       deadline,
       retryExecutor,
       vision: useImage,
+      signal,
     });
 
     // One reply may call send_image several times; share a single image budget across them.
@@ -321,6 +323,11 @@ export function createTurnRunner(deps) {
     const unlimitedRounds = !Number.isFinite(configuredRounds) || configuredRounds <= 0;
 
     for (let round = 0; unlimitedRounds || round < configuredRounds; round += 1) {
+      if (signal?.aborted) {
+        aborted = true;
+        abortReason = 'stopped';
+        break;
+      }
       if (unlimitedRounds && round === TOOL_ROUND_WARN) {
         logger.warn('many tool rounds (maxToolRounds=0)', { chatId: event.chatId, round, icon: '🔁' });
       }
@@ -341,6 +348,11 @@ export function createTurnRunner(deps) {
       } catch (error) {
         lastError = error;
         abortReason = String(/** @type {any} */ (error)?.message ?? error);
+        if (signal?.aborted) {
+          aborted = true;
+          abortReason = 'stopped';
+          break;
+        }
 
         // The provider confirmed a context overflow: compact and retry this same turn.
         if (/** @type {any} */ (error)?.code === LLM_ERROR.CONTEXT_WINDOW_EXCEEDED && !overflowRecovered) {
@@ -384,10 +396,10 @@ export function createTurnRunner(deps) {
       await progressive.settled();
       // Last-resort fallback with a DIFFERENT model: drop tools so we still get an answer.
       // `flushed` = the head was already sent to the user; calling fallback now would duplicate content.
-      if (!response && !progressive.flushed) {
+      if (!response && !progressive.flushed && !signal?.aborted) {
         const fallback = await attemptFallback({
           config, logger, metrics, llm, record, target,
-          chatId: event.chatId, noToolsMessages, deadline,
+          chatId: event.chatId, noToolsMessages, deadline, signal,
         });
         fallbackLlmMs += fallback.llmMs;
         if (fallback.response) ({ response, answeredBy } = fallback);
@@ -395,6 +407,11 @@ export function createTurnRunner(deps) {
       }
 
       if (!response) {
+        if (signal?.aborted) {
+          aborted = true;
+          abortReason = 'stopped';
+          break;
+        }
         // Part of the reply was already sent (progressive), so treat that part as done.
         if (progressive.flushed) {
           aborted = true;
@@ -442,11 +459,14 @@ export function createTurnRunner(deps) {
     }
 
     // All tool rounds used: force one final answer without tools so fetched data is not lost.
-    progress({ type: 'finalizing' });
-    ({ finalText, llmMs, completionMs, completionTokens, answeredBy } = await forceFinalAnswer({
-      config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
-      finalText, aborted, llmMs: attempts.llmMs() + fallbackLlmMs, completionMs, completionTokens, answeredBy,
-    }));
+    if (!signal?.aborted) {
+      progress({ type: 'finalizing' });
+      ({ finalText, llmMs, completionMs, completionTokens, answeredBy } = await forceFinalAnswer({
+        config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
+        finalText, aborted, llmMs: attempts.llmMs() + fallbackLlmMs, completionMs, completionTokens, answeredBy,
+        signal,
+      }));
+    }
     // A tool round can set `answeredBy` before a final answer exists; drop it when the
     // forced final call produced no text.
     if (!finalText.trim()) answeredBy = null;
@@ -454,22 +474,26 @@ export function createTurnRunner(deps) {
     await progressive.settled();
     await responseSink.wait();
 
-    const remainder = finalText.slice(progressive.emitted);
-    if (remainder.trim()) {
-      await sendText(responseSink, remainder);
-    } else if (!progressive.flushed && !finalText.trim()) {
-      await sendText(responseSink, 'I do not have an answer for this one yet — please ask again a bit more clearly.');
+    if (!signal?.aborted) {
+      const remainder = finalText.slice(progressive.emitted);
+      if (remainder.trim()) {
+        await sendText(responseSink, remainder);
+      } else if (!progressive.flushed && !finalText.trim()) {
+        await sendText(responseSink, 'I do not have an answer for this one yet — please ask again a bit more clearly.');
+      }
     }
 
-    record.messages.push(
-      turnEntry({
-        role: 'assistant',
-        text: truncate(normalizeWhitespace(finalText), 4000),
-        ts: Date.now(),
-        private: event.private === true,
-      }),
-    );
-    store.touch(event.chatId);
+    if (finalText.trim()) {
+      record.messages.push(
+        turnEntry({
+          role: 'assistant',
+          text: truncate(normalizeWhitespace(finalText), 4000),
+          ts: Date.now(),
+          private: event.private === true,
+        }),
+      );
+      store.touch(event.chatId);
+    }
 
     reportTurn({
       config, logger, metrics, chatId: event.chatId, startedAt, finalText, built, responseSink,

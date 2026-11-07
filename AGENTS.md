@@ -140,8 +140,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   bytes.
 - **Zalo mutating POSTs** are not retried (duplicate messages).
 - **Discord is slash-first.** Chat input is `/ask` (plus `/help`, `/status`, `/ping`,
-  `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`,
-  `/sticker`, `/remind`), message context menus are `Explain message`/`Summarize message`,
+  `/stop`, `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`,
+  `/image`, `/sticker`, `/remind`), message context menus are `Explain message`/`Summarize message`,
   and native handlers own the interaction lifecycle (embeds, buttons, selects, modals,
   ephemeral replies). Model answers use Components V2 (`v2Message`: top-level
   `TextDisplay` + optional action row, no container chrome; `v2Answer` adds a

@@ -98,6 +98,17 @@ export function createMessageHandler(deps) {
             },
           });
           await previewer.flush();
+          if (result.stopped) {
+            if (placeholder) {
+              await placeholder.edit(v2Message('⏹️ Stopped.')).catch((error) => {
+                logger?.debug('discord stopped placeholder edit failed', {
+                  chatId: event.chatId,
+                  error: String(/** @type {any} */ (error)?.message ?? error),
+                });
+              });
+            }
+            return;
+          }
           const chunks = result.text ? chunkContent(result.text) : [];
           const first = chunks.shift();
           const photos = result.photos ?? [];

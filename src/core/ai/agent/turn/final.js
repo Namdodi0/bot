@@ -21,6 +21,7 @@ import { planAttemptBudget, providerTimeout, samplingFor } from '../helpers.js';
  *   completionMs: number,
  *   completionTokens: number,
  *   answeredBy: {model: string, alias: string, provider: string}|null,
+ *   signal?: AbortSignal|null,
  * }} input
  * @returns {Promise<{
  *   finalText: string,
@@ -46,6 +47,7 @@ export async function forceFinalAnswer({
   completionMs,
   completionTokens,
   answeredBy,
+  signal = null,
 }) {
   const unchanged = () => ({ finalText, llmMs, completionMs, completionTokens, answeredBy });
   if (finalText.trim() || aborted || !messages.some((message) => message.role === 'tool')) {
@@ -75,6 +77,7 @@ export async function forceFinalAnswer({
       maxTokens: config.ai.maxTokens,
       sampling: samplingFor(config, target.provider),
       stream: false,
+      signal,
       ttftMs: 0,
       timeoutMs: budget.timeoutMs,
     });

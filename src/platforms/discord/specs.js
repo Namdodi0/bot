@@ -38,6 +38,12 @@ export const COMMANDS = [
   },
   {
     type: ApplicationCommandType.ChatInput,
+    name: 'stop',
+    description: 'Stop the current answer in this channel',
+    help: '`/stop` — stop the current answer in this channel',
+  },
+  {
+    type: ApplicationCommandType.ChatInput,
     name: 'model',
     description: 'Show or switch the model for this channel (admin)',
     help: '`/model` — show or switch the model for this channel (admin)',

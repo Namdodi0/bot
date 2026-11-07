@@ -22,6 +22,8 @@ export function createAgent(deps) {
   });
   const seen = createSeenTracker();
   const rateLimited = createRateLimiter(config, { file: deps.rateLimitFile });
+  /** @type {Map<string, AbortController>} */
+  const activeTurns = new Map();
   const { makeSender, sendText } = createSenderFactory({ config, logger, metrics, platform });
 
   const conversation = createTurnRunner({
@@ -75,6 +77,10 @@ export function createAgent(deps) {
       const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
       await sendText(sender, text);
     }
+
+    const controller = new AbortController();
+    activeTurns.set(event.chatId, controller);
+    if (collector) /** @type {any} */ (collector).signal = controller.signal;
 
     try {
       // Keep the record in memory while the turn runs: eviction would silently lose it.
@@ -142,7 +148,13 @@ export function createAgent(deps) {
         metrics.inc(`commands.${command.name}`);
 
         if (result.kind === 'search') {
-          await conversation(normalizedEvent, record, { forceSearch: result.query }, stopTyping, collector);
+          await conversation(
+            normalizedEvent,
+            record,
+            { forceSearch: result.query, signal: controller.signal },
+            stopTyping,
+            collector,
+          );
           return;
         }
         if (result.kind === 'image') {
@@ -188,8 +200,12 @@ export function createAgent(deps) {
         return;
       }
 
-      await conversation(normalizedEvent, record, {}, stopTyping, collector);
+      await conversation(normalizedEvent, record, { signal: controller.signal }, stopTyping, collector);
     } catch (error) {
+      if (controller.signal.aborted) {
+        logger.info('turn stopped by user', { chatId: event.chatId, icon: '⏹️' });
+        return;
+      }
       metrics.inc('messages.error');
       const partial = /** @type {any} */ (error);
       logger.error('handle message failed', {
@@ -218,6 +234,7 @@ export function createAgent(deps) {
         logger.error('failed to send error message', { error: sendError });
       }
     } finally {
+      if (activeTurns.get(event.chatId) === controller) activeTurns.delete(event.chatId);
       if (event.private && activeRecord?.messages) {
         const before = activeRecord.messages.length;
         activeRecord.messages = activeRecord.messages.filter((message) => !message.private);
@@ -300,8 +317,17 @@ export function createAgent(deps) {
     );
   }
 
+  /** @param {string} chatId */
+  function stop(chatId) {
+    const controller = activeTurns.get(String(chatId));
+    if (!controller) return false;
+    controller.abort();
+    return true;
+  }
+
   return {
     handle,
+    stop,
     collect,
     stream,
     enqueue,
