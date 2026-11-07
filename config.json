@@ -58,7 +58,7 @@
   "model": {
     "defaultAlias": "ultra",
     "fallbackAlias": "nim-light",
-    "visionAlias": "nim"
+    "visionAlias": "mistral-large"
   },
   "ai": {
     "reasoning": "low",

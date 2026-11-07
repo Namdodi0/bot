@@ -63,6 +63,7 @@ test('FIRECRAWL_API_KEY enables search without a Tavily key', () => {
 test('visionAlias must point at a vision-capable model', () => {
   assert.throws(() => load({ model: { visionAlias: 'ultra' } }), /vision-capable/);
   assert.equal(load({ model: { visionAlias: 'nim' } }).model.visionAlias, 'nim');
+  assert.equal(load({ model: { visionAlias: 'mistral-large' } }).model.visionAlias, 'mistral-large');
 });
 
 test('vision reasoning defaults to high and rejects unknown modes', () => {
