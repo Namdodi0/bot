@@ -63,6 +63,8 @@ test('homework mode overlays tutor rules on the current tone', () => {
   assert.match(text, /HOMEWORK MODE/);
   assert.match(text, /TONE OF THIS CHAT/);
   assert.match(text, /Never use LaTeX/);
+  assert.match(text, /self-check/);
+  assert.match(text, /second route/);
 });
 
 test('the bot is a Ronaldo fan', () => {
