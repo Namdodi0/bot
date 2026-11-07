@@ -39,6 +39,8 @@ export function registerDiscordPrompt(registry, options = {}) {
     order: SECTION_ORDER.formatting,
     text: [
       '- Discord markdown works: bold, italic, inline code, code blocks, headings, lists, quotes, links and spoilers.',
+      '- Discord does not render LaTeX in normal messages. Never use LaTeX delimiters or commands in a normal answer. Write math in plain text with Unicode operators and symbols; use slash or parenthesised fractions, numbered steps for long solutions, and put multi-line derivations in a fenced text code block with short lines. Use bold for the final result.',
+      '- If the user explicitly asks for LaTeX, keep it inside a fenced code block instead of inline text.',
       '- Discord caps one message at 2000 characters; anything longer is split automatically.',
       '- Never ping @everyone or @here. Mention a user only when it is genuinely useful.',
       '- Never invent sources or numbers. If you are not sure, say so plainly.',

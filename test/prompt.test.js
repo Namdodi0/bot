@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPrompt } from '../src/core/ai/prompt/index.js';
-import { makeZaloPlatform } from '../test-utils/helpers.js';
+import { makeDiscordPlatform, makeZaloPlatform } from '../test-utils/helpers.js';
+
+test('discord answers format math for plain text', () => {
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'friendly' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /does not render LaTeX/);
+  assert.match(text, /Unicode operators and symbols/);
+  assert.match(text, /fenced text code block/);
+});
 
 test('the grok tone uses truth-seeker rules', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'grok' });
