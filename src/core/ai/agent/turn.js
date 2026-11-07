@@ -1,7 +1,6 @@
 import { assembleRequest } from '../../context/assembler.js';
 import { searchEntry, syncContexts, turnEntry } from '../../context/record.js';
 import { normalizeWhitespace, truncate } from '../../text/format.js';
-import { allowsForeignScript, containsForeignScript } from '../../text/language.js';
 import { LLM_ERROR } from '../llm/errors.js';
 import { createPrompt, buildSearchContext } from '../prompt/index.js';
 import { MAX_IMAGES_PER_SEND } from '../tools.js';
@@ -11,7 +10,6 @@ import {
   TOOL_ROUND_WARN,
   effectiveReasoning,
   fallbackMessages,
-  samplingFor,
 } from './helpers.js';
 import { createAttemptRunner } from './turn/attempt.js';
 import { attemptFallback } from './turn/fallback.js';
@@ -19,9 +17,6 @@ import { forceFinalAnswer } from './turn/final.js';
 import { reportTurn } from './turn/report.js';
 import { createProgressiveFlusher } from './turn/streaming.js';
 import { runToolRound } from './turn/tools.js';
-
-const LANGUAGE_RETRY_PROMPT =
-  'Your previous draft contained characters or words from another script. Rewrite the whole answer in the language the user is using. Do not include Chinese, Japanese or Korean characters or words, except proper nouns and code.';
 
 /**
  * @param {{config: any, logger: import('../../logger.js').Logger, metrics: any, platform: import('../../../platforms/contract.js').Platform, llm: ReturnType<typeof import('../router.js').createModelRouter>, tools: ReturnType<typeof import('../tools.js').createToolRuntime>, store: ReturnType<typeof import('../../context/store.js').createContextStore>, compaction: ReturnType<typeof import('../../context/compaction/engine.js').createCompactionEngine>, makeSender: ReturnType<typeof import('./sending.js').createSenderFactory>['makeSender'], sendText: ReturnType<typeof import('./sending.js').createSenderFactory>['sendText'], meter: ReturnType<typeof import('../../context/token-meter.js').createTokenMeter>, retryExecutor: ReturnType<typeof import('../llm/retry.js').createRetryExecutor>}} deps
@@ -445,40 +440,6 @@ export function createTurnRunner(deps) {
       config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
       finalText, aborted, llmMs: attempts.llmMs() + fallbackLlmMs, completionMs, completionTokens, answeredBy,
     }));
-    // One cheap regeneration when the model drifts into another script. This is not a
-    // filter: the retry must produce clean text on its own, otherwise the original stays.
-    if (!aborted && finalText.trim() && !allowsForeignScript(rawText) && containsForeignScript(finalText)) {
-      try {
-        metrics.inc('llm.languageRetry');
-        const retryMessages = noToolsMessages();
-        retryMessages.splice(1, 0, { role: 'system', content: LANGUAGE_RETRY_PROMPT });
-        const timeoutMs = Number.isFinite(deadline)
-          ? Math.max(1000, Math.min(deadline - Date.now(), 30_000))
-          : 30_000;
-        const retry = await llm.chat({
-          record,
-          alias: target.alias,
-          messages: retryMessages,
-          reasoning,
-          maxTokens: config.ai.maxTokens,
-          sampling: samplingFor(config, target.provider),
-          stream: false,
-          timeoutMs,
-        });
-        const retryText = String(retry?.content ?? '').trim();
-        if (retryText && !containsForeignScript(retryText)) {
-          finalText = retryText;
-          logger.info('language drift retried', { chatId: event.chatId, alias: target.alias, icon: '🌐' });
-        } else {
-          logger.warn('language retry still drifted', { chatId: event.chatId, alias: target.alias });
-        }
-      } catch (error) {
-        logger.warn('language retry failed', {
-          chatId: event.chatId,
-          error: String(/** @type {any} */ (error)?.message ?? error),
-        });
-      }
-    }
     // A tool round can set `answeredBy` before a final answer exists; drop it when the
     // forced final call produced no text.
     if (!finalText.trim()) answeredBy = null;
