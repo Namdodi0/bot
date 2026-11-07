@@ -218,6 +218,25 @@ test('vision turns send up to five image_url blocks from one message', async () 
   assert.match(String(lastUser.content[0].text), /attached 5 images/);
 });
 
+test('a CJK-contaminated reply is regenerated once', async () => {
+  const { agent, sent, nimCalls } = await setup({
+    replies: [
+      { content: 'Xin chào 你好 bạn', toolCalls: [] },
+      { content: 'Xin chào bạn', toolCalls: [] },
+    ],
+  });
+  await agent.handle(textEvent('chào bạn', { messageId: 'lang-retry' }));
+
+  const joined = sent.map((item) => item.text).join(' ');
+  assert.equal(joined.includes('你'), false);
+  assert.match(joined, /Xin chào bạn/);
+  assert.equal(nimCalls.length, 2, 'one regeneration call is expected');
+  assert.equal(
+    nimCalls[1].messages.some((message) => /another script/.test(String(message.content ?? ''))),
+    true,
+  );
+});
+
 test('private turns are never kept in the shared record', async () => {
   const { agent, sent, store } = await setup();
   await agent.handle(textEvent('my secret', { private: true, messageId: 'private-1' }));
