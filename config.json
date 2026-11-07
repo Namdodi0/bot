@@ -103,6 +103,7 @@
   "progressiveAfterMs": 3000,
   "maxMessagesPerReply": 0,
   "maxQueueDepth": 50,
+  "maxConcurrentChats": 8,
   "userRateLimitPerMinute": 12,
   "userRateLimits": {
     "Lê Việt": 2

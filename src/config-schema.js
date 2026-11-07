@@ -17,6 +17,7 @@ export const TOP_LEVEL_KEYS = [
   'progressiveAfterMs',
   'maxMessagesPerReply',
   'maxQueueDepth',
+  'maxConcurrentChats',
   'userRateLimitPerMinute',
   'userRateLimits',
   'responseTimeoutMs',

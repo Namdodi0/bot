@@ -649,6 +649,10 @@ export function loadConfig(input = {}) {
     // 0 = unlimited messages per reply
     maxMessagesPerReply: /** @type {number} */ (asInt(root.maxMessagesPerReply, 'config.maxMessagesPerReply', 0, { min: 0 })),
     maxQueueDepth: /** @type {number} */ (asInt(root.maxQueueDepth, 'config.maxQueueDepth', 50, { min: 1, max: 1000 })),
+    // How many different chats may run a turn at the same time; one chat stays serialized.
+    maxConcurrentChats: /** @type {number} */ (
+      asInt(root.maxConcurrentChats, 'config.maxConcurrentChats', 8, { min: 1, max: 64 })
+    ),
     // 0 = off; enabled by default to block spam that burns API credits
     userRateLimitPerMinute: /** @type {number} */ (
       asInt(root.userRateLimitPerMinute, 'config.userRateLimitPerMinute', 12, { min: 0 })

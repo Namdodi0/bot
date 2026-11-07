@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-const MAX_CONCURRENT_CHATS = 4;
+const DEFAULT_MAX_CONCURRENT_CHATS = 8;
 const RATE_WINDOW_MS = 60_000;
 
 /**
@@ -163,6 +163,7 @@ export class QueueFullError extends Error {
  * @param {{config: any, logger: import('../../logger.js').Logger, metrics: any, transport: any, handle: (event: any) => Promise<void>}} deps
  */
 export function createQueue({ config, logger, metrics, transport, handle }) {
+  const maxConcurrentChats = Math.max(1, Number(config.maxConcurrentChats) || DEFAULT_MAX_CONCURRENT_CHATS);
   /** @type {Map<string, Promise<void>>} */
   const chatQueues = new Map();
   /** @type {Array<{resolve: () => void, timer: NodeJS.Timeout}>} */
@@ -174,7 +175,7 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
   const waiters = [];
 
   async function acquire() {
-    if (active < MAX_CONCURRENT_CHATS) {
+    if (active < maxConcurrentChats) {
       active += 1;
       return;
     }
