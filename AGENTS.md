@@ -46,7 +46,7 @@ this file is for agents and maintainers.
 | `npm run dev` | Zalo polling + watch |
 | `npm run simulate -- "question"` | Real agent + real LLM/search, but sends nothing to Zalo |
 | `npm run smoke` | Checks Zalo/DeepSeek/NIM/Tavily; **uses real APIs and credits** |
-| `npm run bench:models` | Fast NIM model test; fails when a model emits no visible content within 20s (reasoning does not count) |
+| `npm run bench:models` | Fast NIM model test; fails when a model emits no visible content within 20s (reasoning does not count); pass `-- --models=id1,id2` for ad-hoc ids |
 | `npm run pack` | Builds a deployment zip (excludes `.env` and `data/`; blanks secret fields in the staged `config.json`) |
 
 Run `npm test` and `npm run typecheck` before reporting work as complete. Do not run

@@ -125,7 +125,15 @@ async function testModel(key, entry, vision) {
 }
 
 const key = readKey();
-const list = models();
+const args = process.argv.find((value) => value.startsWith('--models='));
+const list = args
+  ? args
+      .slice('--models='.length)
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .map((id) => ({ alias: id.split('/').pop() || id, model: id, vision: false }))
+  : models();
 const results = [];
 for (const entry of list) {
   const modes = entry.vision ? ['text', 'vision'] : ['text'];
