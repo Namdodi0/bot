@@ -30,7 +30,7 @@ test('invalid enum values are rejected', () => {
   assert.throws(() => load({ model: { defaultAlias: 'gpt-9' } }), /config\.model\.defaultAlias/);
   assert.throws(() => load({ model: { visionAlias: 'gpt-9' } }), /config\.model\.visionAlias/);
   assert.throws(() => load({ tone: 'shouty' }), /config\.tone/);
-  assert.equal(load({ tone: 'unhinged' }).tone, 'unhinged');
+  assert.equal(load({ tone: 'unhinged' }).tone, 'grok');
 });
 
 test('sampling defaults keep the tail tight to limit language drift', () => {

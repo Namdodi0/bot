@@ -11,24 +11,22 @@ test('discord answers format math for plain text', () => {
   assert.match(text, /fenced text code block/);
 });
 
-test('the grok tone uses truth-seeker rules', () => {
+test('the merged grok tone combines truth-seeking and unhinged comedy', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'grok' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
-  assert.match(text, /Grok-style truth-seeker/);
+  assert.match(text, /Grok unhinged comedian/);
   assert.match(text, /maximally truthful/);
-  assert.match(text, /no flattery|Never flatter/);
-  assert.match(text, /Never refuse a question just because it is edgy/);
-  assert.match(text, /Grok unhinged style/);
+  assert.match(text, /Never flatter/);
+  assert.match(text, /web_search/);
+  assert.match(text, /Curse like a sailor/);
+  assert.match(text, /No sexual, racist, sexist or violent material/);
   assert.match(text, /never at their family, race, gender or religion/);
 });
 
-test('the unhinged tone uses the leaked Grok comedian rules', () => {
+test('the old unhinged tone name resolves to the merged tone', () => {
   const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'unhinged' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
-  assert.match(text, /Unhinged Comedian/);
-  assert.match(text, /Curse like a sailor/);
-  assert.match(text, /no sexual content/);
-  assert.match(text, /never aim at the user's family/);
+  assert.match(text, /Grok unhinged comedian/);
 });
 
 test('the owner-priority rule names Nhật Nam and Namdodi', () => {

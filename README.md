@@ -49,7 +49,7 @@ Nothing in the Discord code imports the Zalo integration.
   HTML/text/JSON/XML through the same SSRF-safe path, extracts the main article with the
   right charset, and answers from the page text.
 - **Persona and tone** — a built-in football persona (Ronaldo is the GOAT pick, facts stay
-  accurate) plus a configurable tone: `friendly`, `shy`, `grok`, `unhinged`, `roast`,
+  accurate) plus a configurable tone: `friendly`, `shy`, `grok`, `roast`,
   `roast-hard`, `roast-extreme`.
 - **Context sync** — edits and deletions in the channel update the stored history, so the
   model answers from what the messages say now.
@@ -227,7 +227,7 @@ Important settings:
 | `context.maxTokens` / `maxMessages` | `0` = unlimited; compaction then runs on provider overflow. |
 | `context.ttlHours` | `0` = keep context forever. |
 | `search.enabled` / `search.auto` | Web/image search on/off; `auto:false` disables model-initiated search. Firecrawl is primary and Tavily is the failover. |
-| `tone` | `friendly`, `shy`, `grok`, `unhinged`, `roast`, `roast-hard`, `roast-extreme`. |
+| `tone` | `friendly`, `shy`, `grok`, `roast`, `roast-hard`, `roast-extreme`. |
 | `typing` | Typing indicator for message chat. |
 | `userRateLimitPerMinute` / `userRateLimits` | Global messages-per-minute per sender, plus `{ "userId": limit }` overrides (0 = exempt). Windows persist in `data/rate-limits.json`. |
 | `logLevel` / `logFormat` / `logColor` | Pretty or JSON logs, with secret redaction. |
