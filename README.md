@@ -160,7 +160,7 @@ still works.
 | `/summary [count]` | Summarize the last 2–200 messages (default 30). |
 | `/catchup [hours]` | Summarize what happened in this channel in the last N hours (default 24, max 168). |
 | `/search <query> [private]` | Web search, answered with an embed. |
-| `/image <query> [count] [private]` | Find and upload images (default 1, max 5). |
+| `/image <query> [count] [private]` | Find and upload images (default 1, max 2). |
 | `/sticker [name]` | Send a server sticker by name/tag/id; omit to list. Uses the model's `send_sticker` tool too. |
 | `/remind add <when> <text>` | Set a reminder (`20:00`, `20:00 tomorrow`, `20:00 25/12`, `+10m`, `+2h`, `+1d`; Vietnam time input). |
 | `/remind list` | List this channel's reminders. |

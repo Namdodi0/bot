@@ -218,7 +218,7 @@ test('set_reminder refuses to mutate state after the turn deadline', async () =>
   assert.equal(added, 0);
 });
 
-test('send_image caps the requested count at 5', async () => {
+test('send_image caps the requested count at 2', async () => {
   /** @type {string[]} */
   const sent = [];
   const images = Array.from({ length: 12 }, (_, index) => `https://img.example/${index}.png`);
@@ -246,9 +246,9 @@ test('send_image caps the requested count at 5', async () => {
 
   const result = await tools.run('send_image', { query: 'create mod', count: 10 }, { chatId: 'c1' });
   assert.equal(result.ok, true);
-  assert.equal(sent.length, 5);
-  assert.match(result.text, /Sent 5 images/);
-  assert.match(result.text, /limit is 5/);
+  assert.equal(sent.length, 2);
+  assert.match(result.text, /Sent 2 images/);
+  assert.match(result.text, /limit is 2/);
 });
 
 test('send_image passes the image URL to an injected sink instead of the chat id', async () => {
@@ -289,7 +289,7 @@ test('send_image passes the image URL to an injected sink instead of the chat id
   assert.equal(sent[0].caption, 'cat');
 });
 
-test('send_image shares one 5-image budget across calls in a reply', async () => {
+test('send_image shares one 2-image budget across calls in a reply', async () => {
   /** @type {string[]} */
   const sent = [];
   const images = Array.from({ length: 10 }, (_, index) => `https://img.example/${index}.png`);
@@ -309,14 +309,15 @@ test('send_image shares one 5-image budget across calls in a reply', async () =>
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
   });
-  const imageBudget = { remaining: 5 };
+  const imageBudget = { remaining: 2 };
 
-  const first = await tools.run('send_image', { query: 'cat', count: 3 }, { chatId: 'c1', imageBudget });
-  const second = await tools.run('send_image', { query: 'cat', count: 5 }, { chatId: 'c1', imageBudget });
+  const first = await tools.run('send_image', { query: 'cat', count: 2 }, { chatId: 'c1', imageBudget });
+  const second = await tools.run('send_image', { query: 'cat', count: 2 }, { chatId: 'c1', imageBudget });
   assert.equal(first.ok, true);
-  assert.equal(second.ok, true);
-  assert.equal(sent.length, 5);
+  assert.equal(second.ok, false);
+  assert.equal(sent.length, 2);
   assert.equal(imageBudget.remaining, 0);
+  assert.match(second.text, /limit reached/);
 
   const third = await tools.run('send_image', { query: 'cat' }, { chatId: 'c1', imageBudget });
   assert.equal(third.ok, false);

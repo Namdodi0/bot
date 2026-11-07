@@ -115,7 +115,7 @@ export const COMMANDS = [
     help: '`/image` — find and send images',
     options: [
       { name: 'query', description: 'Image keywords', type: 3, required: true },
-      { name: 'count', description: 'How many images (default 1, max 5)', type: 4, min_value: 1, max_value: 5 },
+      { name: 'count', description: 'How many images (default 1, max 2)', type: 4, min_value: 1, max_value: 2 },
       { name: 'private', description: 'Only you can see the images', type: 5 },
     ],
   },

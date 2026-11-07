@@ -8,7 +8,7 @@ import { htmlToText, youtubeVideoId } from './read-url.js';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Hard cap for a single send_image request. */
-export const MAX_IMAGES_PER_SEND = 5;
+export const MAX_IMAGES_PER_SEND = 2;
 
 /** Characters of page text handed to the model by `read_url` (the fetch cap is 4 MB). */
 const READ_URL_MAX_CHARS = 12_000;
@@ -74,7 +74,7 @@ export function createToolRuntime(options) {
         function: {
           name: 'send_image',
           description:
-            'Find and send images into the current conversation. Use when the user asks for pictures. Set count to the number of images requested: it sends one message per image. The whole reply is capped at 5 images total, across every send_image call.',
+            'Find and send images into the current conversation. Use when the user asks for pictures. Set count to the number of images requested: it sends one message per image. The whole reply is capped at 2 images total, across every send_image call.',
           parameters: {
             type: 'object',
             properties: {
@@ -82,7 +82,7 @@ export function createToolRuntime(options) {
               count: {
                 type: 'integer',
                 minimum: 1,
-                description: 'How many images to send (default 1, max 5).',
+                description: 'How many images to send (default 1, max 2).',
               },
               caption: { type: 'string', description: 'Short caption for the image (optional)' },
             },
