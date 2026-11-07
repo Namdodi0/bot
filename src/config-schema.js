@@ -37,6 +37,7 @@ export const SECTION_KEYS = {
     'ultraModel',
     'fallbackModel',
     'mistralModel',
+    'glmModel',
     'temperature',
     'visionTemperature',
     'visionTimeoutMs',

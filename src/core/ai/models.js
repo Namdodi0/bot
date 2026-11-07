@@ -35,6 +35,11 @@ export const MODEL_ALIASES = {
     label: 'Mistral Large 4',
     vision: true,
   },
+  glm: {
+    provider: 'nim',
+    modelKey: 'glmModel',
+    label: 'GLM 5.3 Flash',
+  },
   'ds-abl-free': {
     provider: 'refuseless',
     modelKey: 'model',

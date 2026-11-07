@@ -538,6 +538,7 @@ export function loadConfig(input = {}) {
         'config.nim.mistralModel',
         'mistralai/mistral-large-4-1t-a52b',
       ),
+      glmModel: asString(nimSection.glmModel, 'config.nim.glmModel', 'z-ai/glm-5.3-flash'),
       temperature: asNumber(nimSection.temperature, 'config.nim.temperature', 0.7, { min: 0, max: 2 }),
       visionTemperature: nimVisionTemperature,
       visionTimeoutMs: nimVisionTimeoutMs,
