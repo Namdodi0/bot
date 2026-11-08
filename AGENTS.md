@@ -40,7 +40,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   helpers), `ui.js` (embeds/attachments/Components V2/modals), `bot.js` (client +
   registration), `message-handler.js` (admission + streaming chat), `message-sync.js`
   (edit/delete context sync), `interaction-router.js`, `presence.js`, `transport.js`,
-  `events.js` (normalization/admission), `stickers.js`, `prompt.js` and `config.js`.
+  `events.js` (normalization/admission), `attachments.js` (text/markdown attachment
+  reading), `stickers.js`, `prompt.js` and `config.js`.
 - `src/core/services/` — shared chat/context/summary and reminder operations.
 - `src/core/ai/agent/turn/` — `attempt.js`, `fallback.js`, `tools.js`, `final.js`,
   `report.js` and `streaming.js` extracted from the turn loop.

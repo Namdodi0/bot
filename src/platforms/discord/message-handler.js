@@ -1,4 +1,5 @@
 import { QUEUE_BUSY_TEXT } from '../../core/ai/agent/queue.js';
+import { collectTextAttachments } from './attachments.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
 import { createProgressFeed } from './progress.js';
 import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from './ui.js';
@@ -38,6 +39,14 @@ export function createMessageHandler(deps) {
         if (!event) return;
         // Slash-only command surface: a typed "/ask ..." is not a command.
         if (String(event.text ?? '').trimStart().startsWith('/')) return;
+        if (runtime.validator?.readText) {
+          const attached = await collectTextAttachments([message, referenced].filter(Boolean), {
+            readText: (url) => runtime.validator.readText(url),
+            logger,
+          });
+          if (attached) event.text = [event.text, attached].filter(Boolean).join('\n\n');
+        }
+        if (!String(event.text ?? '').trim() && !event.imageUrls?.length) return;
         const urls = Array.isArray(event.imageUrls) && event.imageUrls.length
           ? event.imageUrls
           : event.imageUrl

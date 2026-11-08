@@ -39,6 +39,9 @@ globally by default; set `discord.guildId` to register them in one guild instead
 - **Image tools** — the image tool sends at most 2 images per reply; vision accepts up to 5
   attached images per message (largest first). The vision alias is configured with
   `model.visionAlias`.
+- **File context** — mentioning the bot with a markdown/text/code/CSV/JSON attachment (or
+  replying to one) reads up to 3 files through the SSRF-safe fetcher, clipped to 8k chars
+  each and 16k total; PDFs and other binaries are ignored.
 - **Search** — Firecrawl is primary and Tavily is the failover; both web and image lookups
   use the same router. Results are cached.
 - **Context management** — per-channel store with atomic writes, dedupe by message id,

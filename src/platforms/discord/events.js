@@ -1,4 +1,5 @@
 import { MAX_VISION_IMAGES } from '../../core/ai/agent/helpers.js';
+import { isTextAttachment } from './attachments.js';
 
 /**
  * Pure Discord normalization and admission helpers (no discord.js import, easy to test).
@@ -181,11 +182,12 @@ export function toDiscordEvent(message, client, referenced = null) {
   const author = message.author ?? {};
   const attachments = [...(message.attachments?.values?.() ?? [])];
   const images = sortedImages(attachments);
+  const hasTextFile = attachments.some((item) => isTextAttachment(item));
   let text = stripBotMention(message.content, client?.user?.id, botRoleId(message, client?.user?.id));
   const quote = replyQuote(referenced, client?.user?.id);
   if (quote) text = text ? `${quote}\n${text}` : quote;
-  if (!text && !images.length) return null;
-  const kind = text ? 'text' : 'image';
+  if (!text && !images.length && !hasTextFile) return null;
+  const kind = text || hasTextFile ? 'text' : 'image';
   return {
     kind,
     chatId: String(channel.id),

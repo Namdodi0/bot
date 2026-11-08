@@ -43,6 +43,26 @@ test('discord message: DMs are private and empty messages are ignored', () => {
   assert.equal(toDiscordEvent(message({ content: '<@bot1>' }), client), null);
 });
 
+test('discord message: a text file alone is a text event, binary-only messages are ignored', () => {
+  const withFile = message({
+    content: '<@bot1>',
+    attachments: {
+      values: () => [{ name: 'notes.md', contentType: 'text/markdown', url: 'https://cdn/notes.md' }],
+    },
+  });
+  const event = toDiscordEvent(withFile, client);
+  assert.equal(event.kind, 'text');
+  assert.equal(event.text, '');
+
+  const withPdf = message({
+    content: '<@bot1>',
+    attachments: {
+      values: () => [{ name: 'doc.pdf', contentType: 'application/pdf', url: 'https://cdn/doc.pdf' }],
+    },
+  });
+  assert.equal(toDiscordEvent(withPdf, client), null);
+});
+
 test('reply quotes read text from a Components V2 message', () => {
   const referenced = {
     author: { username: 'Bot' },
