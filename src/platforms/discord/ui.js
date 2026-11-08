@@ -71,6 +71,66 @@ export function v2Answer(content, rows = [], photos = [], options = {}) {
   return payload;
 }
 
+/**
+ * Split an answer so its first chunk fits beside the progress block (thinking + tools).
+ * @param {string} text
+ * @param {number} [progressLength]
+ */
+export function splitForProgress(text, progressLength = 0) {
+  const chunks = chunkText(text, { limit: 3900 }).chunks;
+  if (!chunks.length) return chunks;
+  const budget = Math.max(300, V2_TEXT_LIMIT - progressLength - 80);
+  const head = chunks[0];
+  if (head.length <= budget) return chunks;
+  let cut = head.lastIndexOf('\n', budget);
+  if (cut < Math.floor(budget * 0.5)) cut = head.lastIndexOf(' ', budget);
+  if (cut < Math.floor(budget * 0.5)) cut = budget;
+  const first = head.slice(0, cut).trim();
+  const rest = head.slice(cut).trim();
+  return [first, rest, ...chunks.slice(1)].filter(Boolean);
+}
+
+/**
+ * Answer payload that keeps the thinking/tool block above the answer, with images after it.
+ * @param {string} progress
+ * @param {string} content
+ * @param {any[]} [photos]
+ * @param {{ephemeral?: boolean}} [options]
+ */
+export function v2ProgressAnswer(progress, content, photos = [], options = {}) {
+  const head = String(progress ?? '').trim().slice(0, 1500);
+  if (!head) return v2Answer(content, [], photos, options);
+  const answerBudget = Math.max(200, V2_TEXT_LIMIT - head.length - 80);
+  const raw = String(content ?? '');
+  const answer = raw.length > answerBudget ? `${raw.slice(0, answerBudget - 1)}…` : raw;
+  /** @type {any[]} */
+  const components = [
+    new TextDisplayBuilder().setContent(head),
+    new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    new TextDisplayBuilder().setContent(answer || '…'),
+  ];
+  const payload = {
+    components,
+    flags: MessageFlags.IsComponentsV2 | (options.ephemeral ? MessageFlags.Ephemeral : 0),
+    allowedMentions: { parse: [] },
+  };
+  const list = (photos ?? []).slice(0, 10);
+  if (!list.length) return payload;
+  const gallery = new MediaGalleryBuilder();
+  const files = [];
+  list.forEach((photo, index) => {
+    const extension = photoFilename(photo?.url ?? '', photo?.contentType).split('.').pop() || 'png';
+    const name = `image-${index + 1}.${extension}`;
+    files.push(
+      new AttachmentBuilder(photo?.data ? Buffer.from(photo.data) : String(photo?.url ?? ''), { name }),
+    );
+    gallery.addItems({ media: { url: `attachment://${name}` } });
+  });
+  payload.components.push(gallery);
+  payload.files = files;
+  return payload;
+}
+
 /** Components V2 text counts across the whole message, so keep a shared safety margin. */
 const PANEL_TEXT_LIMIT = 3900;
 
@@ -215,11 +275,6 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
       await chain;
     },
   };
-}
-
-/** @param {string} text @param {number} [limit] */
-export function chunkContent(text, limit = 3900) {
-  return chunkText(text, { limit }).chunks;
 }
 
 /**
@@ -473,7 +528,7 @@ export function settingsPanel(record, config, currentModel, visionModel = null, 
     ephemeral: true,
     headerButton: {
       customId: 'settings:thinking',
-      label: showThinking ? 'Thinking after answer: on' : 'Thinking after answer: off',
+      label: showThinking ? 'Thinking above answer: on' : 'Thinking above answer: off',
       emoji: '🧠',
       style: showThinking ? ButtonStyle.Success : ButtonStyle.Secondary,
     },
@@ -484,7 +539,7 @@ export function settingsPanel(record, config, currentModel, visionModel = null, 
       `**Think effort** · ${reasoning}`,
       `**Default privacy** · ${meta.privateDefault ? 'private' : 'public'}`,
       `**Auto-thread** · ${meta.autoThread ? 'on' : 'off'}`,
-      `**Thinking after answer** · ${showThinking ? 'on' : 'off'}`,
+      `**Thinking above answer** · ${showThinking ? 'on' : 'off'}`,
     ].join('\n'),
   });
 }

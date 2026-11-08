@@ -1,6 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { eventFromInteraction, messageText } from '../events.js';
-import { createProgressFeed, thinkingBlock } from '../progress.js';
+import { createProgressFeed } from '../progress.js';
 import { askModal, createPreviewer, v2Message } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
@@ -96,8 +96,8 @@ export function createAskHandlers(shared) {
       flush() {
         return previewer.flush();
       },
-      thinking() {
-        return feed.thinking();
+      summary() {
+        return feed.summary();
       },
       async stop() {
         try {
@@ -123,23 +123,6 @@ export function createAskHandlers(shared) {
         error: String(/** @type {any} */ (error)?.message ?? error),
       });
       return false;
-    }
-  }
-
-  /**
-   * @param {(payload: any) => Promise<any>} send
-   * @param {string} text
-   * @param {boolean} [ephemeral]
-   */
-  async function postThinking(send, text, ephemeral = false) {
-    const block = thinkingBlock(text);
-    if (!block) return;
-    try {
-      await send(v2Message(block, [], { ephemeral }));
-    } catch (error) {
-      logger?.warn('discord thinking follow-up failed', {
-        error: String(/** @type {any} */ (error)?.message ?? error),
-      });
     }
   }
 
@@ -190,10 +173,7 @@ export function createAskHandlers(shared) {
         await preview.stop();
         return;
       }
-      await sendChannelAnswer(thread, result, placeholder);
-      if (showThinking && result.text) {
-        await postThinking((payload) => thread.send(payload), preview.thinking());
-      }
+      await sendChannelAnswer(thread, result, placeholder, showThinking ? preview.summary() : '');
       await interaction.editReply({ content: `All yours in ${thread}. 🧵`, allowedMentions: { parse: [] } });
       return;
     }
@@ -210,10 +190,7 @@ export function createAskHandlers(shared) {
       await preview.stop();
       return;
     }
-    await sendInteractionAnswer(interaction, result, priv);
-    if (showThinking && result.text) {
-      await postThinking((payload) => interaction.followUp(payload), preview.thinking(), priv);
-    }
+    await sendInteractionAnswer(interaction, result, priv, showThinking ? preview.summary() : '');
     if (wantsThread) {
       await interaction.followUp({
         content: 'Private answers skip threads — your secret stays right here. 🤫',
@@ -246,10 +223,7 @@ export function createAskHandlers(shared) {
       await preview.stop();
       return;
     }
-    await sendInteractionAnswer(interaction, result, true);
-    if (showThinking && result.text) {
-      await postThinking((payload) => interaction.followUp(payload), preview.thinking(), true);
-    }
+    await sendInteractionAnswer(interaction, result, true, showThinking ? preview.summary() : '');
   }
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */

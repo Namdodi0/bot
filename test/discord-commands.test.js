@@ -182,7 +182,7 @@ test('/settings toggles thinking-after-answer for the channel', async () => {
   const click = interaction('', {}, { customId: 'settings:thinking' });
   await commands.handleButton(click);
   assert.equal(runtime.record.meta.showThinking, false);
-  assert.match(JSON.stringify(click.edits.at(-1)), /Thinking after answer/);
+  assert.match(JSON.stringify(click.edits.at(-1)), /Thinking above answer/);
 
   const again = interaction('', {}, { customId: 'settings:thinking' });
   await commands.handleButton(again);

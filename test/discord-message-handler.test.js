@@ -62,15 +62,19 @@ test('image preparation runs inside the per-chat queue, before the turn', async 
   assert.deepEqual(order, ['queue', 'download', 'stream']);
 });
 
-test('chat answers post the thinking block when the channel enables it', async () => {
+test('chat answers keep thinking and tool calls above the answer', async () => {
   /** @type {any[]} */
-  const sent = [];
+  const replies = [];
+  /** @type {any[]} */
+  const edits = [];
   const runtime = {
     agent: {
       exclusive: async (_chatId, task) => task(),
       stream: async (_event, options) => {
         options.onProgress({ type: 'reasoning', text: 'secret plan' });
-        return { text: 'done', photos: [] };
+        options.onProgress({ type: 'tool', name: 'web_search', query: 'cats' });
+        options.onProgress({ type: 'tool-result', name: 'web_search', ok: true });
+        return { text: 'the answer', photos: [] };
       },
     },
     chatServices: { getRecord: async () => ({ meta: { showThinking: true } }) },
@@ -92,24 +96,23 @@ test('chat answers post the thinking block when the channel enables it', async (
     createdTimestamp: Date.now(),
     author: { id: 'u1', username: 'alice', bot: false },
     member: { displayName: 'Alice' },
-    channel: {
-      id: 'c1',
-      isDMBased: () => false,
-      send: async (payload) => {
-        sent.push(payload);
-      },
-    },
+    channel: { id: 'c1', isDMBased: () => false, send: async () => ({}) },
     mentions: { users: new Map([['bot-1', {}]]) },
     attachments: [],
-    async reply() {
-      return { edit: async () => {}, delete: async () => {} };
+    async reply(payload) {
+      replies.push(payload);
+      return { edit: async (next) => edits.push(next), delete: async () => {} };
     },
   };
 
   await handler(message);
-  const rendered = sent
-    .map((payload) => JSON.stringify((payload.components ?? []).map((component) => component.toJSON?.())))
-    .join('\n');
-  assert.match(rendered, /Thinking/);
-  assert.match(rendered, /secret plan/);
+  const components = (edits.at(-1)?.components ?? []).map((component) => component.toJSON());
+  const progress = components[0]?.content ?? '';
+  const answer = components.at(-1)?.content ?? '';
+  assert.equal(components[0]?.type, 10);
+  assert.equal(components[1]?.type, 14);
+  assert.match(progress, /secret plan/);
+  assert.match(progress, /Searching the web: cats/);
+  assert.match(progress, /Web search done/);
+  assert.equal(answer, 'the answer');
 });

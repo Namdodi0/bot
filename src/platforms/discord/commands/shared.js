@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { chunkContent, errorPanel, paginationRow, photoBatches, photoPayload, textPanel, v2Answer, v2Message } from '../ui.js';
+import { errorPanel, paginationRow, photoBatches, photoPayload, splitForProgress, textPanel, v2Message, v2ProgressAnswer } from '../ui.js';
 
 const PAGER_TTL_MS = 15 * 60_000;
 
@@ -138,9 +138,10 @@ export function createShared(deps) {
   /**
    * Split an agent result into chunks and a first message, including the empty-answer text.
    * @param {{text: string, photos: any[]}} result
+   * @param {number} [progressLength]
    */
-  function splitAnswer(result) {
-    const chunks = result.text ? chunkContent(result.text) : [];
+  function splitAnswer(result, progressLength = 0) {
+    const chunks = result.text ? splitForProgress(result.text, progressLength) : [];
     const first =
       chunks.shift() ??
       (result.photos.length ? 'Fresh pixels, as requested. 🖼️' : 'I got nothing. Ask again? 🫥');
@@ -151,17 +152,18 @@ export function createShared(deps) {
    * @param {any} interaction
    * @param {{text: string, photos: any[]}} result
    * @param {boolean} priv
+   * @param {string} [progress] thinking/tool block kept above the answer
    */
-  async function sendInteractionAnswer(interaction, result, priv) {
-    const { chunks, first } = splitAnswer(result);
+  async function sendInteractionAnswer(interaction, result, priv, progress = '') {
+    const { chunks, first } = splitAnswer(result, progress.length);
     const photos = result.photos ?? [];
     try {
-      await interaction.editReply(v2Answer(first, [], photos));
+      await interaction.editReply(v2ProgressAnswer(progress, first, photos));
     } catch (error) {
       logger?.warn('combined photo answer failed, sending photos separately', {
         error: String(/** @type {any} */ (error)?.message ?? error),
       });
-      await interaction.editReply(v2Message(first));
+      await interaction.editReply(v2ProgressAnswer(progress, first));
       await sendPhotos(interaction, photos, priv);
     }
     for (const chunk of chunks) {
@@ -180,13 +182,14 @@ export function createShared(deps) {
    * @param {any} channel
    * @param {{text: string, photos: any[]}} result
    * @param {any} [existing] a preview message to edit instead of sending the first chunk
+   * @param {string} [progress] thinking/tool block kept above the answer
    */
-  async function sendChannelAnswer(channel, result, existing = null) {
-    const { chunks, first } = splitAnswer(result);
+  async function sendChannelAnswer(channel, result, existing = null, progress = '') {
+    const { chunks, first } = splitAnswer(result, progress.length);
     const photos = result.photos ?? [];
     let attached = false;
     try {
-      const payload = v2Answer(first, [], photos);
+      const payload = v2ProgressAnswer(progress, first, photos);
       if (existing?.edit) await existing.edit(payload);
       else await channel.send(payload);
       attached = photos.length > 0;
@@ -194,7 +197,7 @@ export function createShared(deps) {
       logger?.warn('combined photo answer failed, sending photos separately', {
         error: String(/** @type {any} */ (error)?.message ?? error),
       });
-      const payload = v2Message(first);
+      const payload = v2ProgressAnswer(progress, first);
       if (existing?.edit) await existing.edit(payload);
       else await channel.send(payload);
     }

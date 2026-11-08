@@ -1,8 +1,8 @@
 import { QUEUE_BUSY_TEXT } from '../../core/ai/agent/queue.js';
 import { collectTextAttachments } from './attachments.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
-import { createProgressFeed, thinkingBlock } from './progress.js';
-import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from './ui.js';
+import { createProgressFeed } from './progress.js';
+import { createPreviewer, photoBatches, photoPayload, splitForProgress, v2Message, v2ProgressAnswer } from './ui.js';
 
 /**
  * Ordinary Discord chat: admission, vision bytes, one streaming placeholder reply, then the
@@ -129,7 +129,8 @@ export function createMessageHandler(deps) {
             }
             return;
           }
-          const chunks = result.text ? chunkContent(result.text) : [];
+          const progress = showThinking ? feed.summary() : '';
+          const chunks = result.text ? splitForProgress(result.text, progress.length) : [];
           const first = chunks.shift();
           const photos = result.photos ?? [];
           let photosEmbedded = false;
@@ -148,14 +149,14 @@ export function createMessageHandler(deps) {
               });
             } else {
               try {
-                await placeholder.edit(v2Answer(first || 'Fresh pixels, as requested. 🖼️', [], photos));
+                await placeholder.edit(v2ProgressAnswer(progress, first || 'Fresh pixels, as requested. 🖼️', photos));
                 photosEmbedded = photos.length > 0;
               } catch (error) {
                 logger?.debug('discord combined photo answer failed', {
                   chatId: event.chatId,
                   error: String(/** @type {any} */ (error)?.message ?? error),
                 });
-                await placeholder.edit(v2Message(first || 'Fresh pixels, as requested. 🖼️')).catch((editError) => {
+                await placeholder.edit(v2Message([progress, first].filter(Boolean).join('\n\n') || 'Fresh pixels, as requested. 🖼️')).catch((editError) => {
                   logger?.debug('discord placeholder edit failed', {
                     chatId: event.chatId,
                     error: String(/** @type {any} */ (editError)?.message ?? editError),
@@ -166,7 +167,7 @@ export function createMessageHandler(deps) {
           } else if (first || photos.length) {
             try {
               placeholder = await message.reply(
-                v2Answer(first || 'Fresh pixels, as requested. 🖼️', [], photos),
+                v2ProgressAnswer(progress, first || 'Fresh pixels, as requested. 🖼️', photos),
               );
               photosEmbedded = photos.length > 0;
             } catch (error) {
@@ -175,7 +176,7 @@ export function createMessageHandler(deps) {
                 error: String(/** @type {any} */ (error)?.message ?? error),
               });
               placeholder = await message.reply(
-                v2Message(first || 'Fresh pixels, as requested. 🖼️'),
+                v2Message([progress, first].filter(Boolean).join('\n\n') || 'Fresh pixels, as requested. 🖼️'),
               );
             }
           }
@@ -214,17 +215,6 @@ export function createMessageHandler(deps) {
                   });
                 }
               }
-            }
-          }
-          if (showThinking && result.text) {
-            const block = thinkingBlock(feed.thinking());
-            if (block) {
-              await message.channel.send(v2Message(block)).catch((error) => {
-                logger?.warn('discord thinking follow-up failed', {
-                  chatId: event.chatId,
-                  error: String(/** @type {any} */ (error)?.message ?? error),
-                });
-              });
             }
           }
         } catch (error) {

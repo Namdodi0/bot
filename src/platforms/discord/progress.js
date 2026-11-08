@@ -25,22 +25,40 @@ function toolLine(event) {
   }
 }
 
+/** @param {any} event */
+function toolResultLine(event) {
+  return `${event.ok === false ? '⚠️' : '✅'} ${
+    TOOL_LABELS[event.name] ?? String(event.name ?? 'Tool')
+  } ${event.ok === false ? 'failed. Pivoting.' : 'done — let me cook.'}`;
+}
+
+const MAX_REASONING_CHARS = 800;
+const MAX_TOOL_LINES = 6;
+const MAX_SUMMARY_CHARS = 1400;
+
 /**
- * Live status shown above the streaming answer; it disappears when the final answer
- * replaces the preview. Reasoning is clipped to the newest 600 characters.
+ * Live status shown above the streaming answer. The same block is kept above the final
+ * answer: reasoning excerpt plus every tool call and its outcome.
  */
 export function createProgressFeed() {
   let mode = 'idle';
   let reasoning = '';
-  let tool = '';
+  /** @type {string[]} */
+  const toolLines = [];
+
+  /** @param {string} line */
+  function addToolLine(line) {
+    toolLines.push(String(line).slice(0, 140));
+    if (toolLines.length > MAX_TOOL_LINES) {
+      toolLines.splice(0, toolLines.length - MAX_TOOL_LINES);
+    }
+  }
 
   /** @param {any} event */
   function update(event) {
     switch (event?.type) {
       case 'thinking':
         mode = 'thinking';
-        reasoning = '';
-        tool = '';
         break;
       case 'reasoning':
         mode = 'reasoning';
@@ -48,45 +66,35 @@ export function createProgressFeed() {
         break;
       case 'tool':
         mode = 'tool';
-        reasoning = '';
-        tool = toolLine(event);
+        addToolLine(toolLine(event));
         break;
       case 'tool-result':
         mode = 'tool';
-        tool = `${
-          event.ok === false ? '⚠️' : '✅'
-        } ${TOOL_LABELS[event.name] ?? String(event.name ?? 'Tool')} ${event.ok === false ? 'failed. Pivoting.' : 'done — let me cook.'}`;
+        addToolLine(toolResultLine(event));
         break;
       case 'finalizing':
         mode = 'finalizing';
-        reasoning = '';
-        tool = '';
         break;
       default:
         break;
     }
   }
 
+  function summary() {
+    /** @type {string[]} */
+    const lines = [];
+    if (reasoning) lines.push(`> 🧠 ${reasoning.slice(-MAX_REASONING_CHARS)}`);
+    for (const line of toolLines) lines.push(`> ${line}`);
+    return lines.join('\n').slice(0, MAX_SUMMARY_CHARS);
+  }
+
   function text() {
-    if (mode === 'tool' && tool) return `> ${tool}`;
-    if (mode === 'reasoning' && reasoning) return `> 🧠 ${reasoning.slice(-600)}`;
+    const base = summary();
+    if (base) return base;
     if (mode === 'thinking') return '> 🧠 Thinking…';
     if (mode === 'finalizing') return '> ✍️ Writing the answer…';
     return '';
   }
 
-  return { update, text, thinking: () => reasoning };
-}
-
-/**
- * Reasoning excerpt posted after the answer when the channel enables it.
- * @param {string} text
- * @param {number} [limit]
- */
-export function thinkingBlock(text, limit = 3000) {
-  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
-  if (!clean) return '';
-  const clipped = clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
-  return `> 🧠 **Thinking**
-> ${clipped}`;
+  return { update, text, summary };
 }
