@@ -96,7 +96,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - **Secrets** are never logged raw. Use `collectSecrets`/logger redaction. `.env`, `data/`,
   and generated zips with secrets stay out of git.
 - **Image URLs** must pass `createImageValidator` before `sendPhoto`; Discord uploads
-  validated bytes. Vision input is current-turn only: `event.imageDataList` (largest first,
+  validated bytes. The image tool is capped at `MAX_IMAGES_PER_SEND` (2) images per reply.
+  Vision input is current-turn only: `event.imageDataList` (largest first,
   at most `MAX_VISION_IMAGES` = 5), the vision alias from `config.model.visionAlias`, and
   `config.model.visionReasoning` (default `high`) for image turns. The durable record keeps a
   text note instead of image bytes.
