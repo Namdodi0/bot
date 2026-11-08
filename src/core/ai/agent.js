@@ -145,8 +145,6 @@ export function createAgent(deps) {
         return;
       }
       if (event.kind === 'sticker') {
-        // Platforms that support stickers handle the echo themselves; others just say so.
-        if (await platform.handleIncoming?.(event, { stopTyping })) return;
         await reply('I cannot view stickers yet — please send text instead.');
         return;
       }

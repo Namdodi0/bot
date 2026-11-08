@@ -14,9 +14,7 @@ function makeDiscordCommandPlatform() {
     capabilities: { uploadMedia: true, stickers: false, nativeInteractions: true },
     limits: { text: 2000, caption: 2000 },
     formatOutgoing: (text) => String(text),
-    isAdmin: () => true,
     prompt: {},
-    commands: { specs: [] },
     tools: {},
     stickers: {
       enabled: true,
@@ -24,7 +22,6 @@ function makeDiscordCommandPlatform() {
       resolve: async () => ({ id: '123456789012345678', name: 'wave' }),
       send: async () => {},
     },
-    healthServices: ['tavily'],
     explainError: () => null,
   };
 }

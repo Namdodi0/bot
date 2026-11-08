@@ -34,24 +34,12 @@ export function createDiscordPlatform(input) {
     },
     limits: { text: 2000, caption: 2000 },
     formatOutgoing: (/** @type {string} */ text) => normalizeWhitespace(String(text ?? '')),
-    isAdmin: (/** @type {any} */ event) => event?.isAdmin === true,
     prompt: { register: registerDiscordPrompt, toolGuidance: DISCORD_TOOL_GUIDANCE },
-    commands: {
-      // Slash commands are native (specs.js/commands.js); the shared text router is unused.
-      specs: [],
-      run: async () => undefined,
-    },
     tools: {
       definitions: () => stickerToolDefinitions(config),
       run: runStickerTool,
     },
     stickers,
-    healthServices: ['firecrawl', 'tavily'],
     explainError: () => null,
-    start: async () => {
-      await transport.start();
-      return { ready: {}, done: Promise.resolve() };
-    },
-    stop: () => transport.stop(),
   };
 }

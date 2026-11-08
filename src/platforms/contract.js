@@ -25,8 +25,6 @@
  * @property {string} [botName]
  * @property {boolean} [isAdmin]
  * @property {boolean} [private] the answer is visible only to the sender; keep it out of shared context
- * @property {any} [rawMessage]
- * @property {any} [rawInteraction]
  *
  * @typedef {Object} PlatformTransport
  * @property {string} [displayName]
@@ -66,31 +64,9 @@
  */
 
 /**
- * @typedef {Object} PlatformCommands
- * @property {Array<Record<string, any>>} specs
- * @property {Record<string, string>} [helpOverrides]
- * @property {string} [helpNote]
- * @property {(name: string, args: string, ctx: any) => Promise<any>|any} [run]
- * @property {Record<string, (interaction: any) => Promise<void>|void>} [native]
- */
-
-/**
  * @typedef {Object} PlatformTools
  * @property {(input: {config: any}) => any[]} [definitions]
  * @property {(name: string, args: any, ctx: any) => Promise<{ok: boolean, text: string, data?: any}|null>} [run]
- */
-
-/**
- * @typedef {Object} PlatformStartInput
- * @property {(event: any) => void} onEvent
- * @property {AbortSignal} [signal]
- * @property {boolean} [once]
- */
-
-/**
- * @typedef {Object} PlatformStartResult
- * @property {any} [ready] info for the startup banner
- * @property {Promise<void>} done resolves when message intake stops
  */
 
 /**
@@ -98,20 +74,14 @@
  * @property {'discord'} name
  * @property {string} label human-readable platform name for user-facing text
  * @property {PlatformTransport} transport
- * @property {'gateway'|'polling'|'webhook'} transportMode
+ * @property {'gateway'} transportMode
  * @property {PlatformCapabilities} capabilities
  * @property {PlatformLimits} limits
  * @property {(text: string) => string} formatOutgoing
- * @property {(event: any) => boolean} isAdmin
  * @property {PlatformPrompt} prompt
- * @property {PlatformCommands} commands
  * @property {PlatformTools} [tools]
  * @property {any} [stickers] platform sticker service, when supported
- * @property {string[]} healthServices
  * @property {(error: any) => string|null} explainError
- * @property {(input: PlatformStartInput) => Promise<PlatformStartResult>} start
- * @property {() => Promise<void>} stop
- * @property {(event: any, helpers: {stopTyping: () => Promise<void>|void}) => Promise<boolean>} [handleIncoming]
  */
 
 export {};

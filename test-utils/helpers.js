@@ -1,7 +1,6 @@
 import { createSilentLogger } from '../src/core/logger.js';
 import { normalizeWhitespace } from '../src/core/text/format.js';
 import { registerDiscordPrompt } from '../src/platforms/discord/prompt.js';
-import { COMMANDS as DISCORD_COMMANDS, HELP_NOTE as DISCORD_HELP_NOTE } from '../src/platforms/discord/specs.js';
 
 export const silentLogger = createSilentLogger();
 
@@ -125,13 +124,7 @@ export function makeDiscordPlatform(input = {}) {
     },
     limits: { text: 2000, caption: 2000 },
     formatOutgoing: (text) => normalizeWhitespace(String(text ?? '')),
-    isAdmin: (event) => event?.isAdmin === true,
     prompt: { register: registerDiscordPrompt },
-    commands: {
-      specs: DISCORD_COMMANDS,
-      helpNote: DISCORD_HELP_NOTE,
-      run: async () => undefined,
-    },
     stickers: {
       enabled: true,
       list: async () => [{ id: '1', name: 'wave', tags: [] }],
@@ -151,10 +144,7 @@ export function makeDiscordPlatform(input = {}) {
       ],
       run: async (name) => (name === 'send_sticker' ? { ok: true, text: 'Sent the sticker "wave".' } : null),
     },
-    healthServices: ['tavily'],
     explainError: () => null,
-    start: async () => ({ ready: {}, done: Promise.resolve() }),
-    stop: async () => {},
     ...(input.overrides ?? {}),
   };
 }
