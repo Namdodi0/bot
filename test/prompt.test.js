@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPrompt } from '../src/core/ai/prompt/index.js';
-import { makeDiscordPlatform, makeZaloPlatform } from '../test-utils/helpers.js';
+import { makeDiscordPlatform } from '../test-utils/helpers.js';
 
 test('discord answers format math for plain text', () => {
   const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'friendly' });
@@ -12,7 +12,7 @@ test('discord answers format math for plain text', () => {
 });
 
 test('the merged grok tone combines truth-seeking and unhinged comedy', () => {
-  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'grok' });
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'grok' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /Grok unhinged comedian/);
   assert.match(text, /maximally truthful/);
@@ -24,13 +24,13 @@ test('the merged grok tone combines truth-seeking and unhinged comedy', () => {
 });
 
 test('the old unhinged tone name resolves to the merged tone', () => {
-  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'unhinged' });
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'unhinged' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /Grok unhinged comedian/);
 });
 
 test('the owner-priority rule names Nhật Nam and Namdodi', () => {
-  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'shy' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /OWNER PRIORITY/);
   assert.match(text, /Nhật Nam/);
@@ -42,7 +42,7 @@ test('the owner-priority rule names Nhật Nam and Namdodi', () => {
 });
 
 test('the shy tone is sến, cringe and emoji-heavy', () => {
-  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'shy' });
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'shy' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /EXTREME CUTE \+ SẾN/);
   assert.match(text, /at least 6/);
@@ -52,7 +52,7 @@ test('the shy tone is sến, cringe and emoji-heavy', () => {
 
 test('homework mode overlays tutor rules on the current tone', () => {
   const registry = createPrompt({
-    platform: makeZaloPlatform(),
+    platform: makeDiscordPlatform(),
     chatType: 'GROUP',
     tone: 'roast-extreme',
     homework: true,
@@ -66,21 +66,21 @@ test('homework mode overlays tutor rules on the current tone', () => {
 });
 
 test('the bot is a Ronaldo fan', () => {
-  const registry = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'roast-extreme' });
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'roast-extreme' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /Cristiano Ronaldo fan/);
   assert.match(text, /never invent trophies or numbers/);
 });
 test('vision guidance appears only when the turn can actually see an image', () => {
   const withImage = createPrompt({
-    platform: makeZaloPlatform(),
+    platform: makeDiscordPlatform(),
     chatType: 'GROUP',
     tone: 'friendly',
     visionInput: true,
   });
   assert.match(withImage.render(withImage.assemble({ text: 'what is this?' })), /VISION: one or more images are attached/);
 
-  const withoutImage = createPrompt({ platform: makeZaloPlatform(), chatType: 'GROUP', tone: 'friendly' });
+  const withoutImage = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'friendly' });
   assert.doesNotMatch(
     withoutImage.render(withoutImage.assemble({ text: 'what is this?' })),
     /VISION: one or more images are attached/,

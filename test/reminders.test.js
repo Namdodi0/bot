@@ -33,7 +33,7 @@ test('parseReminderArgs: clock time, tomorrow and dd/mm in Vietnam time', () => 
 });
 
 test('createReminderStore: caps per chat, delivers due items, persists', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-rem-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-rem-'));
   const file = path.join(dir, 'reminders.json');
   let nowMs = NOW;
   /** @type {Array<{chatId: string, text: string}>} */
@@ -70,7 +70,7 @@ test('createReminderStore: caps per chat, delivers due items, persists', async (
 });
 
 test('createReminderStore: concurrent saves cannot overwrite a newer snapshot', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-rem-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-rem-'));
   const file = path.join(dir, 'reminders.json');
   const store = createReminderStore({ file, now: () => NOW, send: async () => {}, logger: createSilentLogger() });
   await store.load();

@@ -1,5 +1,5 @@
 /**
- * The platform contract: everything the shared engine needs from Zalo or Discord.
+ * The platform contract: everything the shared engine needs from a transport.
  * Platform modules (src/platforms/*) own transport, formatting, limits, admin rules,
  * prompt sections, tools, commands and lifecycle. The engine must not branch on a
  * platform name.
@@ -21,7 +21,7 @@
  * @property {string} messageId
  * @property {number} date
  * @property {string} eventName
- * @property {'zalo'|'discord'} [platform]
+ * @property {'discord'} [platform]
  * @property {string} [botName]
  * @property {boolean} [isAdmin]
  * @property {boolean} [private] the answer is visible only to the sender; keep it out of shared context
@@ -69,7 +69,7 @@
 
 /**
  * @typedef {Object} PlatformCommands
- * @property {import('../core/commands/registry.js').CommandSpec[]} specs
+ * @property {Array<Record<string, any>>} specs
  * @property {Record<string, string>} [helpOverrides]
  * @property {string} [helpNote]
  * @property {(name: string, args: string, ctx: any) => Promise<any>|any} [run]
@@ -97,7 +97,7 @@
 
 /**
  * @typedef {Object} Platform
- * @property {'zalo'|'discord'} name
+ * @property {'discord'} name
  * @property {string} label human-readable platform name for user-facing text
  * @property {PlatformTransport} transport
  * @property {'gateway'|'polling'|'webhook'} transportMode

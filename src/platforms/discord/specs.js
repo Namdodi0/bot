@@ -2,7 +2,7 @@ import { ApplicationCommandType, PermissionFlagsBits } from 'discord.js';
 
 /**
  * Discord-native command surface: slash commands first, plus two message context menus.
- * Zalo-only commands (tone, split, think) are intentionally absent.
+ * Native Discord command surface only; no typed text commands.
  */
 export const COMMANDS = [
   {

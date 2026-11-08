@@ -6,10 +6,7 @@
 
 export const TOP_LEVEL_KEYS = [
   'platform',
-  'mode',
   'dataDir',
-  'allowedChatIds',
-  'adminIds',
   'tone',
   'typing',
   'typingIntervalMs',
@@ -30,9 +27,7 @@ export const TOP_LEVEL_KEYS = [
 ];
 
 export const SECTION_KEYS = {
-  zalo: ['botId', 'baseUrl', 'parseMode'],
   discord: ['guildId', 'allowedChannelIds', 'respondToAllChannelIds', 'stickers', 'presence'],
-  webhook: ['port', 'host', 'path', 'secret', 'publicUrl'],
   nim: [
     'baseUrl',
     'model',
@@ -89,7 +84,6 @@ export const SECTION_KEYS = {
   ],
   search: ['enabled', 'auto', 'baseUrl', 'depth', 'maxResults', 'country', 'cacheTtlMs'],
   image: ['enabled'],
-  sticker: ['enabled', 'echo', 'ids'],
 };
 
 export const NESTED_SECTION_KEYS = {
@@ -109,7 +103,4 @@ export const KNOWN_NESTED_SECTION_KEYS = Object.fromEntries(
   Object.entries(NESTED_SECTION_KEYS).map(([name, keys]) => [name, new Set(keys)]),
 );
 
-export const ZALO_SECTION_KEYS = KNOWN_SECTION_KEYS.zalo;
 export const DISCORD_SECTION_KEYS = KNOWN_SECTION_KEYS.discord;
-export const WEBHOOK_SECTION_KEYS = KNOWN_SECTION_KEYS.webhook;
-export const STICKER_SECTION_KEYS = KNOWN_SECTION_KEYS.sticker;

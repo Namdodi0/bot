@@ -15,10 +15,8 @@ import {
 } from './core/config-helpers.js';
 import { KNOWN_NESTED_SECTION_KEYS, KNOWN_SECTION_KEYS, KNOWN_TOP_LEVEL_KEYS } from './config-schema.js';
 import { parseDiscordConfig } from './platforms/discord/config.js';
-import { parseZaloConfig } from './platforms/zalo/config.js';
 import { VERSION } from './core/version.js';
 
-/** @typedef {'polling'|'webhook'} TransportMode */
 /** @typedef {'none'|'low'|'medium'|'high'|'auto'} ReasoningMode */
 /** @typedef {'auto'|'on'|'off'} ProgressiveMode */
 
@@ -28,11 +26,10 @@ export { ConfigError };
 // Panel/pm2/systemd may start the bot with a different cwd, which makes a relative dataDir
 // point at a brand-new directory and the context "disappear" after every restart.
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_CONFIG_PATH = path.join(PROJECT_ROOT, 'config.json');
+const DEFAULT_CONFIG_PATH = path.join(PROJECT_ROOT, 'config.discord.json');
 
 /** Settings that used to live in .env. They are ignored now; warn so old deployments migrate. */
 const LEGACY_ENV_KEYS = new Set([
-  'MODE',
   'AI_REASONING',
   'NIM_REASONING',
   'PROGRESSIVE',
@@ -50,16 +47,6 @@ const LEGACY_ENV_KEYS = new Set([
   'SEARCH_COUNTRY',
   'SEARCH_CACHE_TTL_MS',
   'DATA_DIR',
-  'ZALO_BOT_ID',
-  'ZALO_BASE_URL',
-  'ZALO_PARSE_MODE',
-  'ALLOWED_CHAT_IDS',
-  'ADMIN_IDS',
-  'WEBHOOK_PORT',
-  'WEBHOOK_HOST',
-  'WEBHOOK_PATH',
-  'WEBHOOK_PUBLIC_URL',
-  'WEBHOOK_SECRET',
   'NIM_BASE_URL',
   'NIM_MODEL',
   'NIM_ULTRA_MODEL',
@@ -146,14 +133,12 @@ export function maskSecret(value) {
 /** List the secrets that must be redacted in logs. */
 export function collectSecrets(config) {
   return [
-    config.zalo.token,
     config.nim.apiKey,
     config.deepseek.apiKey,
     config.refuseless?.apiKey,
     config.search.apiKey,
     config.search.firecrawlApiKey,
     config.discord?.token,
-    config.webhook.secret,
   ].filter(Boolean);
 }
 
@@ -193,7 +178,6 @@ export function collectUnknownConfigKeys(root) {
 const CLI_OPTIONS = {
   config: { type: 'string' },
   model: { type: 'string' },
-  mode: { type: 'string' },
   think: { type: 'string' },
   'max-tokens': { type: 'string' },
   'no-search': { type: 'boolean' },
@@ -203,19 +187,17 @@ const CLI_OPTIONS = {
   verbose: { type: 'boolean' },
   json: { type: 'boolean' },
   'dry-run': { type: 'boolean' },
-  once: { type: 'boolean' },
   help: { type: 'boolean' },
 };
 
-export const HELP_TEXT = `zalo-group-bot — Zalo bot for group chats (DeepSeek / NVIDIA NIM + Tavily)
+export const HELP_TEXT = `discord-ai-bot — Discord AI bot (NVIDIA NIM + Firecrawl/Tavily)
 
-Usage: node index.js [flags]
-  Secrets are read from .env; non-secret settings from config.json.
+Usage: node src/discord.js [flags]
+  Secrets are read from .env; non-secret settings from config.discord.json.
 
 Flags:
-  --config <path>    Config file (default: config.json in the repo root)
-  --model <alias>    Default model: deepseek | pro | nim | ultra | nim-light | ds-abl-free
-  --mode <m>         polling | webhook
+  --config <path>    Config file (default: config.discord.json in the repo root)
+  --model <alias>    Default model alias
   --think <mode>     none | low | medium | high | auto
   --max-tokens <n>   Cap on generated tokens (empty = unlimited)
   --progressive <m>  auto | on | off  (send chunked replies on slow answers)
@@ -223,13 +205,13 @@ Flags:
   --no-search        Disable web search
   --no-typing        Do not send the "typing" status
   --dry-run          Do not send real messages (log only)
-  --once             Handle a single update then exit (for testing)
   --verbose          Debug-level logging
   --json             JSON logs (default is pretty, with colors + icons)
   --help             Print this help
 
-Secrets: ZALO_BOT_TOKEN, NIM_API_KEY, DEEPSEEK_API_KEY, TAVILY_API_KEY (see .env.example).
-Settings: see config.example.json.`;
+Secrets: DISCORD_BOT_TOKEN, NIM_API_KEY, DEEPSEEK_API_KEY, REFUSELESS_API_KEY,
+FIRECRAWL_API_KEY, TAVILY_API_KEY (see .env.example).
+Settings: see config.discord.example.json.`;
 
 /**
  * @param {{argv?: string[], env?: Record<string, unknown>, cwd?: string, config?: Record<string, any>, configPath?: string}} [input]
@@ -277,8 +259,8 @@ export function loadConfig(input = {}) {
     .sort();
   if (legacyEnvKeys.length && !configFileFound) {
     throw new ConfigError(
-      `Non-secret settings found in the environment/.env but config.json is missing. ` +
-        `Move them to config.json (copy config.example.json): ${legacyEnvKeys.join(', ')}`,
+      `Non-secret settings found in the environment/.env but config.discord.json is missing. ` +
+        `Move them to config.discord.json (copy config.discord.example.json): ${legacyEnvKeys.join(', ')}`,
     );
   }
 
@@ -290,11 +272,10 @@ export function loadConfig(input = {}) {
   const contextSection = section(root, 'context');
   const searchSection = section(root, 'search');
   const imageSection = section(root, 'image');
-  const stickerSection = section(root, 'sticker');
 
-  const platform = asString(root.platform, 'config.platform', 'zalo').toLowerCase();
-  if (!['zalo', 'discord'].includes(platform)) {
-    throw new ConfigError(`config.platform must be "zalo" or "discord" (got: "${platform}")`);
+  const platform = asString(root.platform, 'config.platform', 'discord').toLowerCase();
+  if (platform !== 'discord') {
+    throw new ConfigError(`config.platform must be "discord" (got: "${platform}")`);
   }
 
   const dataDirRaw = asString(root.dataDir, 'config.dataDir', './data') || './data';
@@ -302,24 +283,15 @@ export function loadConfig(input = {}) {
     ? path.normalize(dataDirRaw)
     : path.resolve(PROJECT_ROOT, dataDirRaw);
 
-  // Both sections are parsed regardless of `platform` so the config object keeps the same
-  // shape for every entry point; only the missing-token policy depends on the platform.
-  const zaloConfig = parseZaloConfig({ root, env, cli, dataDir });
   const { discord } = parseDiscordConfig({ root, env });
-
-  if (platform === 'zalo' && !zaloConfig.token) {
-    throw new ConfigError('Missing ZALO_BOT_TOKEN (see .env.example)');
-  }
   const nimKey = asString(env.NIM_API_KEY, 'NIM_API_KEY');
   const deepseekKey = asString(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY');
   const refuselessKey = asString(env.REFUSELESS_API_KEY, 'REFUSELESS_API_KEY');
   const tavilyKey = asString(env.TAVILY_API_KEY, 'TAVILY_API_KEY');
   const firecrawlKey = asString(env.FIRECRAWL_API_KEY, 'FIRECRAWL_API_KEY');
-  if (platform === 'discord' && !discord.token) {
-    throw new ConfigError('Missing DISCORD_BOT_TOKEN (required when config.platform is "discord")');
+  if (!discord.token) {
+    throw new ConfigError('Missing DISCORD_BOT_TOKEN (see .env.example)');
   }
-
-  const mode = zaloConfig.mode;
 
   const reasoning = String(
     cli.think ?? asString(aiSection.reasoning, 'config.ai.reasoning', 'none'),
@@ -520,15 +492,8 @@ export function loadConfig(input = {}) {
     configFileFound,
     ignoredEnvKeys: legacyEnvKeys,
     unknownConfigKeys,
-    zalo: {
-      token: zaloConfig.token,
-      ...zaloConfig.zalo,
-    },
-    allowedChatIds: zaloConfig.allowedChatIds,
-    adminIds: zaloConfig.adminIds,
     discord,
-    mode: /** @type {TransportMode} */ (mode),
-    webhook: zaloConfig.webhook,
+    mode: 'gateway',
     nim: {
       apiKey: nimKey,
       baseUrl: asString(nimSection.baseUrl, 'config.nim.baseUrl', 'https://integrate.api.nvidia.com/v1').replace(/\/+$/, ''),
@@ -634,13 +599,6 @@ export function loadConfig(input = {}) {
     image: {
       enabled: asBool(imageSection.enabled, 'config.image.enabled', true),
     },
-    sticker: {
-      enabled: asBool(stickerSection.enabled, 'config.sticker.enabled', true),
-      // echo the same sticker back when someone sends a sticker to the bot
-      echo: asBool(stickerSection.echo, 'config.sticker.echo', true),
-      file: zaloConfig.sticker.file,
-      extraIds: zaloConfig.sticker.extraIds,
-    },
     tone,
     typing: cli['no-typing'] ? false : asBool(root.typing, 'config.typing', true),
     typingIntervalMs: /** @type {number} */ (asInt(root.typingIntervalMs, 'config.typingIntervalMs', 4000, { min: 1000 })),
@@ -707,9 +665,6 @@ export function describeConfig(config) {
     replyChunks: config.maxMessagesPerReply > 0 ? `≤${config.maxMessagesPerReply}` : 'unlimited',
     userRateLimit:
       config.userRateLimitPerMinute > 0 ? `${config.userRateLimitPerMinute}/min/user` : 'off',
-    allowedChats: config.allowedChatIds.length || 'all',
-    admins: config.adminIds.length || 'everyone',
-    token: maskSecret(config.zalo.token),
     nimKey: maskSecret(config.nim.apiKey),
     deepseekKey: maskSecret(config.deepseek.apiKey),
     refuselessKey: maskSecret(config.refuseless.apiKey),

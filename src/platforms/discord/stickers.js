@@ -2,7 +2,7 @@ const CACHE_TTL_MS = 5 * 60_000;
 
 /**
  * Parse `config.discord.stickers.ids`: "123456789012345678:wave,987654321098765432:cat".
- * Discord sticker ids are snowflakes (digits), unlike Zalo's 20-hex ids.
+ * Discord sticker ids are snowflakes (digits).
  * @param {string} raw
  * @returns {Array<{id: string, name: string, tags: string[]}>}
  */

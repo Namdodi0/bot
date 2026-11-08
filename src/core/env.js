@@ -1,13 +1,13 @@
 // Load the .env file inside the code — no dependency on Node's `--env-file-if-exists` flag.
 //
 // Why: many hosting panels (Pterodactyl/Wispbyte, pm2, systemd, Docker CMD…)
-// run `node index.js` or `node src/index.js` themselves and drop the env-file flag, so the bot
-// dies with "fatal: Missing ZALO_BOT_TOKEN" even though .env is right there. Loading inside the
+// run `node src/discord.js` themselves and drop the env-file flag, so the bot
+// dies with "missing DISCORD_BOT_TOKEN" even though .env is right there. Loading inside the
 // code means the config is there however it is started.
 //
 // Rule: variables already present in process.env (panel/CI/terminal) ALWAYS win over the file,
 // unless they are empty or whitespace-only — panels often pre-declare an empty
-// `ZALO_BOT_TOKEN=` (or `" "`), in which case .env is allowed to fill it in.
+// `DISCORD_BOT_TOKEN=` (or `" "`), in which case .env is allowed to fill it in.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -132,7 +132,7 @@ export function loadEnvFiles(options = {}) {
 
     for (const [key, value] of parseEnvFile(String(text))) {
       const current = env[key];
-      // A whitespace-only value (e.g. `ZALO_BOT_TOKEN=" "` in a panel) is as unusable as an
+      // A whitespace-only value (e.g. `DISCORD_BOT_TOKEN=" "` in a panel) is as unusable as an
       // empty one: it would otherwise win over the file and then trim to "" later.
       if (current === undefined || String(current).trim() === '') {
         env[key] = value;
@@ -177,7 +177,7 @@ export function describeEnvHints() {
   }
   if (report.missing.length) {
     lines.push(
-      `  → create a .env file there (API keys only; non-secret settings live in config.json), ` +
+      `  → create a .env file there (API keys only; non-secret settings live in config.discord.json), ` +
         'or declare the API keys directly in the host panel',
     );
   }

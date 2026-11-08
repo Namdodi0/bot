@@ -1,25 +1,18 @@
 {
-  "name": "zalo-group-bot",
+  "name": "discord-ai-bot",
   "version": "1.6.0",
   "private": true,
   "type": "module",
-  "description": "Zalo group chatbot powered by NVIDIA NIM (Nemotron 3.5 Super VL) + Tavily web search",
+  "description": "Discord AI bot powered by NVIDIA NIM (Nemotron) + Firecrawl/Tavily web search",
   "engines": {
     "node": ">=20.6"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "webhook": "node src/index.js --mode webhook",
-    "smoke": "node scripts/smoke.js",
+    "start": "node src/discord.js",
+    "dev": "node --watch src/discord.js",
     "bench:models": "node scripts/bench-models.js",
-    "simulate": "node scripts/simulate.js",
-    "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack.ps1",
     "test": "node --test",
-    "typecheck": "tsc -p tsconfig.json",
-    "start:discord": "node src/discord.js",
-    "dev:discord": "node --watch src/discord.js",
-    "start:both": "node src/both.js"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

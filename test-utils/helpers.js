@@ -1,17 +1,7 @@
 import { createSilentLogger } from '../src/core/logger.js';
 import { normalizeWhitespace } from '../src/core/text/format.js';
-import { prepareOutgoing } from '../src/platforms/zalo/format.js';
 import { registerDiscordPrompt } from '../src/platforms/discord/prompt.js';
 import { COMMANDS as DISCORD_COMMANDS, HELP_NOTE as DISCORD_HELP_NOTE } from '../src/platforms/discord/specs.js';
-import {
-  createZaloCommandRunner,
-  zaloHelpNote,
-  ZALO_COMMAND_SPECS,
-  ZALO_HELP_OVERRIDES,
-} from '../src/platforms/zalo/commands.js';
-import { createZaloIncomingHandler } from '../src/platforms/zalo/incoming.js';
-import { registerZaloPrompt, ZALO_TOOL_GUIDANCE } from '../src/platforms/zalo/prompt.js';
-import { createZaloToolRunner, zaloToolDefinitions } from '../src/platforms/zalo/tools.js';
 
 export const silentLogger = createSilentLogger();
 
@@ -22,17 +12,7 @@ export const silentLogger = createSilentLogger();
 export function makeConfig(overrides = {}) {
   const base = {
     help: false,
-    token: 'test-token',
-    zalo: {
-      token: 'test-token',
-      botId: '',
-      baseUrl: 'https://bot-api.zaloplatforms.com',
-      parseMode: 'markdown',
-    },
-    allowedChatIds: [],
-    adminIds: [],
-    mode: 'polling',
-    webhook: { port: 8787, host: '127.0.0.1', path: '/zalo/webhook', secret: 'secret-1234', publicUrl: '' },
+    platform: 'discord',
     nim: {
       apiKey: 'test-nim-key',
       baseUrl: 'https://integrate.api.nvidia.com/v1',
@@ -95,7 +75,6 @@ export function makeConfig(overrides = {}) {
   return {
     ...base,
     ...overrides,
-    zalo: { ...base.zalo, ...(overrides.zalo ?? {}) },
     nim: { ...base.nim, ...(overrides.nim ?? {}) },
     deepseek: { ...base.deepseek, ...(overrides.deepseek ?? {}) },
     model: { ...base.model, ...(overrides.model ?? {}) },
@@ -124,56 +103,6 @@ export function makeTransport(overrides = {}) {
     ...overrides,
   };
   return transport;
-}
-
-/**
- * Zalo platform double for engine tests.
- * @param {{config?: any, transport?: any, stickers?: any, logger?: any, metrics?: any, overrides?: Record<string, any>}} [input]
- */
-export function makeZaloPlatform(input = {}) {
-  const config = input.config ?? makeConfig();
-  const transport = input.transport ?? makeTransport();
-  const stickers = input.stickers ?? null;
-  const logger = input.logger ?? silentLogger;
-  const metrics = input.metrics ?? { inc() {}, observe() {} };
-  return {
-    name: 'zalo',
-    label: 'Zalo',
-    transport,
-    transportMode: config.mode ?? 'polling',
-    capabilities: {
-      stickers: true,
-      uploadMedia: false,
-      nativeInteractions: false,
-      messageEdits: false,
-      embeds: false,
-      threads: false,
-    },
-    limits: { text: 1900, caption: 1900 },
-    formatOutgoing: (text) => prepareOutgoing(text, { parseMode: config.zalo?.parseMode ?? 'markdown' }),
-    isAdmin: (event) => {
-      const adminIds = config.adminIds ?? [];
-      return !adminIds.length || adminIds.includes(String(event?.senderId ?? ''));
-    },
-    prompt: { register: registerZaloPrompt, toolGuidance: ZALO_TOOL_GUIDANCE },
-    commands: {
-      specs: ZALO_COMMAND_SPECS,
-      helpOverrides: ZALO_HELP_OVERRIDES,
-      helpNote: zaloHelpNote(config),
-      run: createZaloCommandRunner({ config, stickers, transport, logger, metrics }),
-    },
-    tools: {
-      definitions: zaloToolDefinitions,
-      run: createZaloToolRunner({ config, stickers, transport, logger, metrics }),
-    },
-    healthServices: ['zalo', 'tavily'],
-    explainError: (error) =>
-      error?.status === 401 ? 'Zalo rejected the bot token. Admin, please check ZALO_BOT_TOKEN.' : null,
-    handleIncoming: createZaloIncomingHandler({ config, stickers, transport, logger, metrics }),
-    start: async () => ({ ready: {}, done: Promise.resolve() }),
-    stop: async () => {},
-    ...(input.overrides ?? {}),
-  };
 }
 
 /**

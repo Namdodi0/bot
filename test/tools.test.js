@@ -1,16 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createToolRuntime } from '../src/core/ai/tools.js';
-import { makeTransport, makeZaloPlatform, silentLogger } from '../test-utils/helpers.js';
+import { makeTransport, makeDiscordPlatform, silentLogger } from '../test-utils/helpers.js';
+
+const okValidator = {
+  validate: async () => ({ ok: true }),
+  download: async () => ({ ok: true, data: Buffer.from('img'), contentType: 'image/png' }),
+};
 
 function runtime(config, stickerStore) {
   const transport = makeTransport();
-  const platform = makeZaloPlatform({ config, transport, stickers: stickerStore });
+  const platform = makeDiscordPlatform({ config, transport, stickers: stickerStore });
   const tools = createToolRuntime({
     config,
     tavily: { search: async () => ({ results: [], images: [] }) },
     platform,
-    validator: { validate: async () => ({ ok: true }) },
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
@@ -54,14 +59,14 @@ test('web_search still works when auto=off (used by /search)', async () => {
   assert.equal(result.ok, true);
 });
 
-test('send_image tries the next candidate when Zalo rejects the first URL', async () => {
+test('send_image tries the next candidate when the platform rejects the first URL', async () => {
   /** @type {string[]} */
   const attempted = [];
   const transport = {
     sendPhoto: async (_chatId, url) => {
       attempted.push(url);
       if (url.endsWith('a.png')) {
-        const error = new Error('rejected by Zalo');
+        const error = new Error('rejected by the platform');
         /** @type {any} */ (error).status = 400;
         throw error;
       }
@@ -72,8 +77,8 @@ test('send_image tries the next candidate when Zalo rejects the first URL', asyn
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images: ['https://x/a.png', 'https://x/b.png'] }) },
-    platform: makeZaloPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
+    platform: makeDiscordPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
   });
@@ -89,7 +94,7 @@ test('send_image does not duplicate an image after an unconfirmed delivery', asy
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images: ['https://x/a.png', 'https://x/b.png'] }) },
-    platform: makeZaloPlatform({
+    platform: makeDiscordPlatform({
       config: baseConfig(),
       stickers: fakeStickers,
       transport: {
@@ -100,7 +105,7 @@ test('send_image does not duplicate an image after an unconfirmed delivery', asy
         sendSticker: async () => ({ ok: true }),
       },
     }),
-    validator: { validate: async () => ({ ok: true }) },
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
@@ -148,8 +153,8 @@ test('no send_image tool when Tavily (search) is disabled', () => {
   const tools = createToolRuntime({
     config: baseConfig({ search: { enabled: false, auto: false, depth: 'fast', maxResults: 4, country: 'vietnam' } }),
     tavily: null,
-    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
+    platform: makeDiscordPlatform({ config: baseConfig(), stickers: fakeStickers }),
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
   });
@@ -169,8 +174,8 @@ test('set_reminder tool: definition, add and validation', async () => {
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: null,
-    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
+    platform: makeDiscordPlatform({ config: baseConfig(), stickers: fakeStickers }),
+    validator: okValidator,
     reminders,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
@@ -196,8 +201,8 @@ test('set_reminder refuses to mutate state after the turn deadline', async () =>
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: null,
-    platform: makeZaloPlatform({ config: baseConfig(), stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
+    platform: makeDiscordPlatform({ config: baseConfig(), stickers: fakeStickers }),
+    validator: okValidator,
     reminders: {
       add: async () => {
         added += 1;
@@ -237,8 +242,8 @@ test('send_image caps the requested count at 2', async () => {
         images: String(query).endsWith('2') ? images.slice(6) : images.slice(0, 6),
       }),
     },
-    platform: makeZaloPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
+    platform: makeDiscordPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
@@ -257,7 +262,7 @@ test('send_image passes the image URL to an injected sink instead of the chat id
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images: ['https://img.example/a.png'] }) },
-    platform: makeZaloPlatform({
+    platform: makeDiscordPlatform({
       config: baseConfig(),
       stickers: fakeStickers,
       transport: {
@@ -267,7 +272,7 @@ test('send_image passes the image URL to an injected sink instead of the chat id
         sendSticker: async () => ({ ok: true }),
       },
     }),
-    validator: { validate: async () => ({ ok: true }) },
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
@@ -303,8 +308,8 @@ test('send_image shares one 2-image budget across calls in a reply', async () =>
   const tools = createToolRuntime({
     config: baseConfig(),
     tavily: { search: async () => ({ results: [], images }) },
-    platform: makeZaloPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
-    validator: { validate: async () => ({ ok: true }) },
+    platform: makeDiscordPlatform({ config: baseConfig(), transport, stickers: fakeStickers }),
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
     sendDelayMs: 0,
@@ -336,12 +341,12 @@ test('send_image stops after a provider quota error instead of retrying queries'
         throw error;
       },
     },
-    platform: makeZaloPlatform({
+    platform: makeDiscordPlatform({
       config: baseConfig(),
       stickers: fakeStickers,
       transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
     }),
-    validator: { validate: async () => ({ ok: true }) },
+    validator: okValidator,
     logger: silentLogger,
     metrics: { inc() {}, observe() {} },
   });
@@ -362,18 +367,19 @@ test('send_image validates candidates in parallel', async () => {
         images: Array.from({ length: 5 }, (_, index) => `https://img.example/${index}.jpg`),
       }),
     },
-    platform: makeZaloPlatform({
+    platform: makeDiscordPlatform({
       config: baseConfig(),
       stickers: fakeStickers,
       transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
     }),
     validator: {
-      validate: async () => {
+      validate: async () => ({ ok: true }),
+      download: async () => {
         active += 1;
         maxActive = Math.max(maxActive, active);
         await new Promise((resolve) => setTimeout(resolve, 30));
         active -= 1;
-        return { ok: true };
+        return { ok: true, data: Buffer.from('img'), contentType: 'image/png' };
       },
     },
     logger: silentLogger,

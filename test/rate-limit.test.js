@@ -14,7 +14,7 @@ test('rate limit overrides also accept a sender name', () => {
 });
 
 test('rate limit windows survive a restart', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-rate-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-rate-'));
   const file = path.join(dir, 'rate-limits.json');
   const config = { userRateLimitPerMinute: 1 };
 

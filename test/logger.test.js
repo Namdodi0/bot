@@ -47,7 +47,7 @@ test('JSON: redacts secrets but keeps non-sensitive keys', () => {
 });
 
 test('two file sinks split normal and debug output', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-logs-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-logs-'));
   const out = sink();
   const logger = createLogger({
     level: 'info',
@@ -74,7 +74,7 @@ test('two file sinks split normal and debug output', async () => {
 });
 
 test('file sink rotates while running when it exceeds rotateBytes', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-log-rotate-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-log-rotate-'));
   const file = path.join(dir, 'bot.log');
   const out = sink();
   const logger = createLogger({

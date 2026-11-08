@@ -7,7 +7,7 @@ import { createContextStore } from '../src/core/context/store.js';
 import { silentLogger } from '../test-utils/helpers.js';
 
 test('store saves, reloads, resets', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
   await store.init();
 
@@ -32,7 +32,7 @@ test('store saves, reloads, resets', async () => {
 });
 
 test('concurrent loads of the same chat share one record instance', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72 });
   await store.init();
 
@@ -43,7 +43,7 @@ test('concurrent loads of the same chat share one record instance', async () => 
 });
 
 test('reset keepMeta preserves settings when the chat is not cached', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
   await store.init();
 
@@ -64,7 +64,7 @@ test('reset keepMeta preserves settings when the chat is not cached', async () =
 });
 
 test('private messages are never written to disk', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
   await store.init();
 
@@ -87,7 +87,7 @@ test('private messages are never written to disk', async () => {
 });
 
 test('store prune deletes files past TTL', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 1 });
   await store.init();
 
@@ -106,7 +106,7 @@ test('store prune deletes files past TTL', async () => {
 });
 
 test('store reset by default (no keepMeta) deletes the whole file', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 2 });
   await store.init();
   const record = await store.get('chat-3');
@@ -118,7 +118,7 @@ test('store reset by default (no keepMeta) deletes the whole file', async () => 
 });
 
 test('flush waits for an already-started debounced write', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 72, debounceMs: 1 });
   await store.init();
   const record = await store.get('flush-barrier', { chatType: 'GROUP' });
@@ -160,7 +160,7 @@ test('flush waits for an already-started debounced write', async () => {
 });
 
 test('prune never evicts a pinned chat or deletes its file', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 1, debounceMs: 2 });
   await store.init();
   const record = await store.get('pinned-chat', { chatType: 'GROUP' });
@@ -183,7 +183,7 @@ test('prune never evicts a pinned chat or deletes its file', async () => {
 });
 
 test('CONTEXT_TTL_HOURS=0: prune deletes no context', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-store-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-store-'));
   const store = createContextStore({ dir, logger: silentLogger, ttlHours: 0, debounceMs: 2 });
   await store.init();
 

@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { createTokenMeter } from '../context/token-meter.js';
 import { CircuitOpenError, HttpError } from '../http.js';
-import { stripMention } from '../text/format.js';
 import { QUEUE_BUSY_TEXT, QueueFullError, createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
 import { createCollectorSink, createSenderFactory } from './agent/sending.js';
 import { FALLBACK_MIN_MS, findBreak, planAttemptBudget, preview, sleep } from './agent/helpers.js';
@@ -10,10 +9,10 @@ import { LLM_ERROR, isRetryableLlmError } from './llm/errors.js';
 import { createRetryExecutor } from './llm/retry.js';
 
 /**
- * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, platform: import('../../platforms/contract.js').Platform, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, commands: ReturnType<typeof import('../commands/index.js').createCommands>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>, rateLimitFile?: string}} deps
+ * @param {{config: any, logger: import('../logger.js').Logger, metrics: any, platform: import('../../platforms/contract.js').Platform, llm: ReturnType<typeof import('./router.js').createModelRouter>, store: ReturnType<typeof import('../context/store.js').createContextStore>, tools: ReturnType<typeof import('./tools.js').createToolRuntime>, http?: ReturnType<typeof import('../http.js').createHttp>, compaction: ReturnType<typeof import('../context/compaction/engine.js').createCompactionEngine>, rateLimitFile?: string}} deps
  */
 export function createAgent(deps) {
-  const { config, logger, metrics, platform, llm, store, tools, commands, compaction } = deps;
+  const { config, logger, metrics, platform, llm, store, tools, compaction } = deps;
   const transport = platform.transport;
   const meter = createTokenMeter();
   const retryExecutor = createRetryExecutor({
@@ -152,13 +151,6 @@ export function createAgent(deps) {
         return;
       }
 
-      const cleanedText = stripMention(
-        event.text ?? '',
-        [event.botName || transport.displayName].filter(Boolean),
-      );
-      const command = commands.parseCommand(cleanedText);
-      const normalizedEvent = cleanedText === (event.text ?? '') ? event : { ...event, text: cleanedText };
-
       /** @param {Record<string, any>} turnOptions */
       async function runAsTurn(turnOptions) {
         const turnId = crypto.randomUUID();
@@ -167,7 +159,7 @@ export function createAgent(deps) {
         const fork = controllers.size > 1 ? structuredClone(record) : record;
         try {
           await conversation(
-            normalizedEvent,
+            event,
             fork,
             { ...turnOptions, signal: controller.signal, turnId },
             stopTyping,
@@ -177,66 +169,6 @@ export function createAgent(deps) {
           if (fork !== record) mergeTurn(record, fork, turnId, event.chatId);
         }
       }
-      if (command && !options.skipCommands) {
-        const ctx = {
-          chatId: event.chatId,
-          chatType: event.chatType,
-          senderId: event.senderId,
-          senderName: event.senderName,
-          platform: platform.name,
-          isAdmin: platform.isAdmin(event),
-          record,
-        };
-        const result = await commands.run(command, ctx);
-        metrics.inc(`commands.${command.name}`);
-
-        if (result.kind === 'search') {
-          await runAsTurn({ forceSearch: result.query });
-          return;
-        }
-        if (result.kind === 'image') {
-          // images do not go through makeSender → stop typing before sending
-          await stopTyping();
-          const imageResult = await tools.run(
-            'send_image',
-            { query: result.query },
-            {
-              chatId: event.chatId,
-              senderId: event.senderId,
-              deadline:
-                config.responseTimeoutMs > 0
-                  ? Date.now() + config.responseTimeoutMs
-                  : Number.POSITIVE_INFINITY,
-              ...(collector ? { sendPhoto: collector.sendPhoto } : {}),
-            },
-          );
-          if (!imageResult.ok) await reply(imageResult.text);
-          return;
-        }
-        if (result.kind === 'sticker') {
-          await stopTyping();
-          if (typeof transport.sendSticker !== 'function') {
-            const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
-            await sendText(sender, 'Stickers are not supported on this platform.');
-            return;
-          }
-          try {
-            await transport.sendSticker(event.chatId, result.stickerId);
-            metrics.inc('sticker.command');
-          } catch (error) {
-            logger.warn('sticker command failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
-            const sender = makeSender(event.chatId, stopTyping, { replyToMessageId: event.messageId });
-            await sendText(sender, 'Could not send the sticker, please try again.');
-          }
-          return;
-        }
-        if (result.kind === 'text' && result.text) {
-          await reply(result.text);
-          return;
-        }
-        return;
-      }
-
       await runAsTurn({});
     } catch (error) {
       if (controller.signal.aborted) {

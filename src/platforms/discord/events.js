@@ -2,7 +2,7 @@ import { MAX_VISION_IMAGES } from '../../core/ai/agent/helpers.js';
 
 /**
  * Pure Discord normalization and admission helpers (no discord.js import, easy to test).
- * Channel ids are used as-is; the Discord process never shares a chat namespace with Zalo.
+ * Channel ids are used as-is.
  */
 
 /**

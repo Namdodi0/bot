@@ -7,7 +7,7 @@ import { loadConfig } from '../src/config.js';
 
 function baseEnv(extra = {}) {
   return {
-    ZALO_BOT_TOKEN: '123:abc',
+    DISCORD_BOT_TOKEN: 'discord-test-token',
     NIM_API_KEY: 'nvapi-test',
     DEEPSEEK_API_KEY: 'sk-test',
     TAVILY_API_KEY: 'tvly-test',
@@ -20,12 +20,11 @@ function load(settings = {}, env = baseEnv(), argv = []) {
 }
 
 async function tempDir() {
-  return fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-config-'));
+  return fsp.mkdtemp(path.join(os.tmpdir(), 'discord-config-'));
 }
 
 test('invalid enum values are rejected', () => {
   assert.throws(() => load({ search: { depth: 'turbo' } }), /config\.search\.depth/);
-  assert.throws(() => load({ mode: 'carrier-pigeon' }), /config\.mode/);
   assert.throws(() => load({ progressive: 'sometimes' }), /config\.progressive/);
   assert.throws(() => load({ model: { defaultAlias: 'gpt-9' } }), /config\.model\.defaultAlias/);
   assert.throws(() => load({ model: { visionAlias: 'gpt-9' } }), /config\.model\.visionAlias/);
@@ -55,7 +54,7 @@ test('sampling defaults keep the tail tight to limit language drift', () => {
 test('FIRECRAWL_API_KEY enables search without a Tavily key', () => {
   const config = loadConfig({
     argv: [],
-    env: { ZALO_BOT_TOKEN: '123:abc', NIM_API_KEY: 'nvapi-test', FIRECRAWL_API_KEY: 'fc-test' },
+    env: { DISCORD_BOT_TOKEN: 'discord-test-token', NIM_API_KEY: 'nvapi-test', FIRECRAWL_API_KEY: 'fc-test' },
     config: { dataDir: os.tmpdir(), model: { defaultAlias: 'ultra' } },
   });
   assert.equal(config.search.enabled, true);
@@ -73,15 +72,6 @@ test('vision reasoning defaults to high and rejects unknown modes', () => {
   assert.equal(load({ dataDir: os.tmpdir() }).model.visionReasoning, 'high');
   assert.equal(load({ model: { visionReasoning: 'medium' } }).model.visionReasoning, 'medium');
   assert.throws(() => load({ model: { visionReasoning: 'max' } }), /config\.model\.visionReasoning/);
-});
-
-test('config.webhook.secret overrides the generated secret', () => {
-  const config = load({ mode: 'webhook', dataDir: os.tmpdir(), webhook: { secret: 'fixed-secret-123' } });
-  assert.equal(config.webhook.secret, 'fixed-secret-123');
-  assert.throws(
-    () => load({ mode: 'webhook', webhook: { secret: 'short' } }),
-    /config\.webhook\.secret/,
-  );
 });
 
 test('a missing explicit config file throws for configPath and --config', async () => {
@@ -108,6 +98,5 @@ test('unknown config keys are reported instead of silently dropped', () => {
   const config = load({ allowChatIds: ['g1'], dataDir: os.tmpdir(), nim: { temperature: 0.5 } });
 
   assert.deepEqual(config.unknownConfigKeys, ['allowChatIds']);
-  assert.deepEqual(config.allowedChatIds, []);
 });
 

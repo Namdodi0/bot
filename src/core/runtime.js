@@ -12,7 +12,6 @@ import { createReminderStore } from './ai/reminders.js';
 import { createModelRouter } from './ai/router.js';
 import { createSummarizer } from './ai/summarize.js';
 import { createToolRuntime } from './ai/tools.js';
-import { createCommands } from './commands/index.js';
 import { collectSecrets, describeConfig, isEphemeralDataDir } from '../config.js';
 import { createCompactionEngine } from './context/compaction/engine.js';
 import { createContextStore } from './context/store.js';
@@ -50,7 +49,7 @@ export function createBoot(input) {
     logger.warn('config file not found — using built-in defaults', { path: config.configFile });
   }
   if (config.ignoredEnvKeys?.length) {
-    logger.warn('non-secret .env settings are ignored; move them to config.json', {
+    logger.warn('non-secret .env settings are ignored; move them to config.discord.json', {
       keys: config.ignoredEnvKeys,
     });
   }
@@ -83,7 +82,7 @@ export function createBoot(input) {
 
 /**
  * Shared bot engine: context store, models, tools, commands, agent and lifecycle.
- * The entry point provides one platform (Zalo or Discord) and starts its transport.
+ * The Discord entry point provides the platform and starts its transport.
  * @param {{config: any, platform: import('../platforms/contract.js').Platform, boot: ReturnType<typeof createBoot>, manageSignals?: boolean}} input
  */
 export async function createRuntime(input) {
@@ -206,17 +205,6 @@ export async function createRuntime(input) {
     logger,
     metrics,
   });
-  const commands = createCommands({
-    config,
-    store,
-    metrics,
-    platform,
-    http: httpClient,
-    models,
-    reminders,
-    logger,
-    compaction,
-  });
   const agent = createAgent({
     config,
     logger,
@@ -225,7 +213,6 @@ export async function createRuntime(input) {
     llm: models,
     store,
     tools,
-    commands,
     http: httpClient,
     compaction,
     rateLimitFile: path.join(config.dataDir, 'rate-limits.json'),
@@ -345,7 +332,7 @@ export async function createRuntime(input) {
     });
   }
 
-  // A combined entry (src/both.js) owns process signals and shuts both runtimes down once.
+  // The entry point normally owns process signals and shutdown.
   if (input.manageSignals !== false) {
     process.on('SIGINT', () => {
       shutdown('SIGINT').then(() => process.exit(0));
@@ -423,7 +410,6 @@ export async function createRuntime(input) {
     summarize,
     compaction,
     tools,
-    commands,
     agent,
     primary,
     fallback,

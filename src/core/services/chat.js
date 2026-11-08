@@ -24,9 +24,9 @@ function tailTranscript(lines, maxChars) {
 }
 
 /**
- * Shared chat settings/context operations used by both the Zalo text commands and the
- * native Discord commands. Keeping this in one place prevents the two command layers from
- * drifting on model selection, reset, compaction and summarisation.
+ * Shared chat settings/context operations used by the native Discord commands. Keeping
+ * model selection, reset, compaction and summarisation in one place keeps the handlers
+ * consistent.
  * @param {{config: any, store: any, models: any, compaction: any}} deps
  */
 export function createChatServices({ config, store, models, compaction }) {

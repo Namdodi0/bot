@@ -8,7 +8,7 @@ import { createContextStore } from '../src/core/context/store.js';
 import { createChatServices } from '../src/core/services/chat.js';
 
 async function makeHarness() {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-sync-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-sync-'));
   // Keep the debounce timer pending so flush() owns the write and cleanup cannot race it.
   const store = createContextStore({ dir, debounceMs: 60_000 });
   await store.init();

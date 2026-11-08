@@ -6,19 +6,17 @@ import path from 'node:path';
 import { createAgent } from '../src/core/ai/agent.js';
 import { LLM_ERROR, LlmError } from '../src/core/ai/llm/errors.js';
 import { createToolRuntime } from '../src/core/ai/tools.js';
-import { createCommands } from '../src/core/commands/index.js';
 import { createCompactionEngine } from '../src/core/context/compaction/engine.js';
 import { createContextStore } from '../src/core/context/store.js';
 import { HttpError } from '../src/core/http.js';
 import { createMetrics } from '../src/core/metrics.js';
-import { makeConfig, makeDiscordPlatform, makeZaloPlatform, silentLogger, textEvent } from '../test-utils/helpers.js';
-import { createZaloAdmission } from '../src/platforms/zalo/incoming.js';
+import { makeConfig, makeDiscordPlatform, silentLogger, textEvent } from '../test-utils/helpers.js';
 
 /**
  * @param {{replies?: any[], configOverrides?: Record<string, any>, tavily?: any, nimError?: any, delayMs?: number, deltaText?: string, logger?: any, toolRuntime?: any}} [options]
  */
 async function setup(options = {}) {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zalo-bot-test-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-bot-test-'));
   const config = makeConfig({
     ...(options.configOverrides ?? {}),
     context: { dir, ...(options.configOverrides?.context ?? {}) },
@@ -144,10 +142,7 @@ async function setup(options = {}) {
     size: () => 1,
   };
 
-  const platform =
-    options.platformName === 'discord'
-      ? makeDiscordPlatform({ transport })
-      : makeZaloPlatform({ config, transport, stickers, logger, metrics });
+  const platform = makeDiscordPlatform({ transport });
   const tools =
     options.toolRuntime ??
     createToolRuntime({
@@ -164,20 +159,7 @@ async function setup(options = {}) {
     metrics,
     summarize: async () => 'test summary',
   });
-  const commands = createCommands({
-    config,
-    store,
-    metrics,
-    platform,
-    http: {
-      stateOf: () => ({ failures: 0, open: false, openedUntil: 0 }),
-      listStates: () => [],
-    },
-    models: llm,
-    logger,
-    compaction,
-  });
-  const agent = createAgent({ config, logger, metrics, platform, llm, store, tools, commands, compaction });
+  const agent = createAgent({ config, logger, metrics, platform, llm, store, tools, compaction });
 
   return { agent, sent, sentStickers, events, nimCalls, store, config, metrics, dir, platform };
 }
@@ -285,12 +267,6 @@ test('skips messages sent by the bot', async () => {
   const { agent, sent } = await setup();
   await agent.handle(textEvent('hi', { isBot: true }));
   assert.equal(sent.length, 0);
-});
-
-test('the Zalo admission gate rejects chats outside the allowlist', () => {
-  const admits = createZaloAdmission(makeConfig({ allowedChatIds: ['other-chat'] }));
-  assert.equal(admits(textEvent('hi')), false);
-  assert.equal(admits(textEvent('hi', { chatId: 'other-chat' })), true);
 });
 
 test('an image sent with text is noted and image content never reaches the model', async () => {
