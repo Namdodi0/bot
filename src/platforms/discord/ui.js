@@ -163,11 +163,11 @@ export function textPanel(title, text, options = {}) {
 }
 
 /** @param {string} message @param {string} [title] */
-export function errorPanel(message, title = 'Error') {
+export function errorPanel(message, title = 'Hold up') {
   return v2Panel({
     icon: '⚠️',
     title,
-    body: String(message ?? 'Something went wrong.'),
+    body: String(message ?? 'Something broke. Try again?'),
     color: COLORS.error,
   });
 }
@@ -242,13 +242,13 @@ export function streamPreview(text, limit = 3800) {
 export function askModal(priv, inThread) {
   const input = new TextInputBuilder()
     .setCustomId('prompt')
-    .setLabel('Your question')
+    .setLabel("What's on your mind?")
     .setStyle(TextInputStyle.Paragraph)
     .setMaxLength(4000)
     .setRequired(true);
   return new ModalBuilder()
     .setCustomId(`ask-form:${priv ? 1 : 0}:${inThread ? 1 : 0}`)
-    .setTitle('Ask the AI')
+    .setTitle('Ask me anything')
     .addComponents(/** @type {any} */ (new ActionRowBuilder().addComponents(input)));
 }
 
@@ -262,7 +262,7 @@ export function statusPanel(data) {
   const replies = snapshot.latency?.['agent.reply'];
   return v2Panel({
     icon: '📊',
-    title: 'Bot status',
+    title: 'Vitals',
     thumbnail: data.avatar,
     ephemeral: true,
     body: [
@@ -318,7 +318,7 @@ export function paginationRow(pagerId, page, total) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`page:${pagerId}:${page - 1}`)
-      .setLabel('Previous')
+      .setLabel('⬅️ Back')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 0),
     new ButtonBuilder()
@@ -328,7 +328,7 @@ export function paginationRow(pagerId, page, total) {
       .setDisabled(true),
     new ButtonBuilder()
       .setCustomId(`page:${pagerId}:${page + 1}`)
-      .setLabel('Next')
+      .setLabel('Next ➡️')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= total - 1),
   );
@@ -338,7 +338,7 @@ export function paginationRow(pagerId, page, total) {
 /** Add-reminder button shown on the reminder list. */
 export function remindButtons() {
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('remind:new').setLabel('Add reminder').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('remind:new').setLabel('➕ Add reminder').setStyle(ButtonStyle.Primary),
   );
   return [row];
 }
@@ -349,7 +349,7 @@ export function remindModal() {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('remind-when')
-        .setLabel('When (HH:MM, HH:MM tomorrow, +10m)')
+        .setLabel('When? (HH:MM, tomorrow, +10m)')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMaxLength(50),
@@ -359,7 +359,7 @@ export function remindModal() {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('remind-text')
-        .setLabel('What to remind you about')
+        .setLabel('What should I remind you about?')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMaxLength(500),
@@ -378,7 +378,7 @@ export function remindModal() {
 export function modelSelect(models, current) {
   const select = new StringSelectMenuBuilder()
     .setCustomId('model:select')
-    .setPlaceholder('Choose a model')
+    .setPlaceholder('Pick a brain')
     .addOptions(
       models.slice(0, 25).map((item) =>
         new StringSelectMenuOptionBuilder()
@@ -426,7 +426,7 @@ export function remindersPanel(items, rows = []) {
     return v2Panel({
       icon: '⏰',
       title: 'Reminders',
-      body: 'No reminders in this channel yet.\nUse `/remind add` or the button below.',
+      body: 'Nothing scheduled. The future is a blank canvas — use `/remind add` or the button below. 🎨',
       rows,
       ephemeral: true,
     });
@@ -451,7 +451,7 @@ export function remindersPanel(items, rows = []) {
 export const TONES = [
   { value: '__default', label: 'Default' },
   { value: 'friendly', label: 'Friendly' },
-  { value: 'shy', label: 'Shy (extreme cute)' },
+  { value: 'shy', label: 'Shy (sến mode)' },
   { value: 'grok', label: 'Grok (comedian)' },
   { value: 'roast', label: 'Roast' },
   { value: 'roast-hard', label: 'Roast hard' },
@@ -485,17 +485,17 @@ export function settingsPanel(record, config, currentModel, visionModel = null, 
       : `default (${config?.ai?.reasoning ?? 'none'})`;
   const vision = visionModel
     ? `${meta.visionModel ? '' : 'default '}(\`${visionModel.alias}\` — ${visionModel.label})`
-    : 'not configured';
+    : 'not configured yet';
   return v2Panel({
     icon: '⚙️',
-    title: 'Channel settings',
-    footer: 'Changes apply to this channel only.',
+    title: 'Channel controls',
+    footer: 'These dials only affect this channel.',
     rows,
     ephemeral: true,
     body: [
       `**Model** · \`${currentModel.alias}\` — ${currentModel.label}`,
       `**Vision** · ${vision}`,
-      `**Tone** · ${tone}`,
+      `**Personality** · ${tone}`,
       `**Think effort** · ${reasoning}`,
       `**Default privacy** · ${meta.privateDefault ? 'private' : 'public'}`,
       `**Auto-thread** · ${meta.autoThread ? 'on' : 'off'}`,
@@ -537,7 +537,7 @@ export function settingsRows(models, record, currentModel) {
   return [
     selectRow({
       customId: 'settings:model',
-      placeholder: 'Choose a model',
+      placeholder: 'Pick a brain',
       options: models.slice(0, 25).map((item) => ({
         label: item.label,
         value: item.alias,
@@ -547,17 +547,17 @@ export function settingsRows(models, record, currentModel) {
     }),
     selectRow({
       customId: 'settings:tone',
-      placeholder: 'Choose a tone',
+      placeholder: 'Pick a personality',
       options: TONES.map((item) => ({ ...item, default: item.value === tone })),
     }),
     selectRow({
       customId: 'settings:reasoning',
-      placeholder: 'Think effort',
+      placeholder: 'How hard should I think?',
       options: REASONING_MODES.map((item) => ({ ...item, default: item.value === reasoning })),
     }),
     selectRow({
       customId: 'settings:privacy',
-      placeholder: 'Default privacy for /ask',
+      placeholder: 'Who sees /ask answers?',
       options: [
         { value: 'public', label: 'Public', default: !meta.privateDefault },
         { value: 'private', label: 'Private', default: meta.privateDefault === true },
@@ -565,7 +565,7 @@ export function settingsRows(models, record, currentModel) {
     }),
     selectRow({
       customId: 'settings:thread',
-      placeholder: 'Answer /ask in a new thread',
+      placeholder: 'Answer /ask in a thread?',
       options: [
         { value: 'off', label: 'Off', default: meta.autoThread !== true },
         { value: 'on', label: 'On', default: meta.autoThread === true },
@@ -585,7 +585,7 @@ export function catchupPanel(hours, count, text) {
     title: 'Catch-up',
     subtitle: `last ${hours} hour${hours === 1 ? '' : 's'}`,
     body: String(text ?? '').trim() || 'Nothing to summarize.',
-    footer: `${count} message${count === 1 ? '' : 's'} summarized`,
+    footer: `${count} message${count === 1 ? '' : 's'} survived the scroll`,
     ephemeral: true,
   });
 }

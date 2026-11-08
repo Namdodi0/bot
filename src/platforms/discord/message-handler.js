@@ -110,7 +110,7 @@ export function createMessageHandler(deps) {
           await previewer.flush();
           if (result.stopped) {
             if (placeholder) {
-              await placeholder.edit(v2Message('⏹️ Stopped.')).catch((error) => {
+              await placeholder.edit(v2Message('⏹️ Stopped. The answer hit the brakes.')).catch((error) => {
                 logger?.debug('discord stopped placeholder edit failed', {
                   chatId: event.chatId,
                   error: String(/** @type {any} */ (error)?.message ?? error),
@@ -152,14 +152,14 @@ export function createMessageHandler(deps) {
               });
             } else {
               try {
-                await placeholder.edit(v2Answer(first || 'Here are the images.', rows, photos));
+                await placeholder.edit(v2Answer(first || 'Fresh pixels, as requested. 🖼️', rows, photos));
                 photosEmbedded = photos.length > 0;
               } catch (error) {
                 logger?.debug('discord combined photo answer failed', {
                   chatId: event.chatId,
                   error: String(/** @type {any} */ (error)?.message ?? error),
                 });
-                await placeholder.edit(v2Message(first || 'Here are the images.', rows)).catch((editError) => {
+                await placeholder.edit(v2Message(first || 'Fresh pixels, as requested. 🖼️', rows)).catch((editError) => {
                   logger?.debug('discord placeholder edit failed', {
                     chatId: event.chatId,
                     error: String(/** @type {any} */ (editError)?.message ?? editError),
@@ -169,14 +169,18 @@ export function createMessageHandler(deps) {
             }
           } else if (first || photos.length) {
             try {
-              placeholder = await message.reply(v2Answer(first || 'Here are the images.', rows, photos));
+              placeholder = await message.reply(
+                v2Answer(first || 'Fresh pixels, as requested. 🖼️', rows, photos),
+              );
               photosEmbedded = photos.length > 0;
             } catch (error) {
               logger?.warn('discord combined photo reply failed', {
                 chatId: event.chatId,
                 error: String(/** @type {any} */ (error)?.message ?? error),
               });
-              placeholder = await message.reply(v2Message(first || 'Here are the images.', rows));
+              placeholder = await message.reply(
+                v2Message(first || 'Fresh pixels, as requested. 🖼️', rows),
+              );
             }
           }
           for (const chunk of chunks) {

@@ -499,7 +499,7 @@ export function createTurnRunner(deps) {
       if (remainder.trim()) {
         await sendText(responseSink, remainder);
       } else if (!progressive.flushed && !finalText.trim()) {
-        await sendText(responseSink, 'I do not have an answer for this one yet — please ask again a bit more clearly.');
+        await sendText(responseSink, 'I drew a blank on that one. Ask me again, maybe with fewer riddles. 🫥');
       }
     }
 

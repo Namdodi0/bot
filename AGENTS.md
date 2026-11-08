@@ -167,7 +167,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 
 - ESM imports with explicit `.js` extensions; JSDoc types for public functions (checkJs is on).
 - Prefer small, focused functions; no comments that merely restate the code.
-- Keep user-facing strings English and centralized where practical.
+- Keep user-facing strings English and centralized where practical. Discord interaction copy
+  follows the bot persona: playful, a little cocky, emoji-forward, never corporate; errors
+  stay actionable and admin boundaries stay explicit.
 - Do not commit, push, rewrite history, or change git config unless explicitly asked.
 - Keep diffs scoped: no drive-by refactors or formatting churn.
 

@@ -10,7 +10,9 @@ export function createStickerHandlers(shared) {
     async sticker(interaction) {
       const stickers = platform.stickers;
       if (!stickers?.enabled) {
-        await replyEphemeral(interaction, { content: 'Stickers are disabled in the config.' });
+        await replyEphemeral(interaction, {
+          content: 'Stickers are switched off in the config. A tragedy. 🎭',
+        });
         return;
       }
       await interaction.deferReply(ephemeral);
@@ -21,7 +23,8 @@ export function createStickerHandlers(shared) {
           const items = await stickers.list(channel);
           if (!items.length) {
             await interaction.editReply({
-              content: 'No server stickers found. Add ids in `config.discord.stickers.ids` or give the bot Manage Expressions.',
+              content:
+                'No stickers in this server yet. Add some ids in `config.discord.stickers.ids` or hand me **Manage Expressions**. 🎨',
             });
             return;
           }
@@ -29,18 +32,22 @@ export function createStickerHandlers(shared) {
             .slice(0, 25)
             .map((item) => `• **${item.name}** — \`${item.id}\``)
             .join('\n');
-          await interaction.editReply({ content: `**Server stickers** (${items.length})\n${lines}` });
+          await interaction.editReply({ content: `🎨 **Sticker shelf** (${items.length})\n${lines}` });
           return;
         }
         const sticker = await stickers.resolve(channel, query);
         if (!sticker) {
-          await interaction.editReply({ content: `No sticker matches "${query}" in this server.` });
+          await interaction.editReply({
+            content: `No sticker matches "${query}" here. Try a better vibe. 🎭`,
+          });
           return;
         }
         await stickers.send(channel, sticker);
-        await interaction.editReply({ content: `Sent the sticker **${sticker.name}**.` });
+        await interaction.editReply({ content: `🎯 Delivered **${sticker.name}**.` });
       } catch (error) {
-        await interaction.editReply({ content: `Could not send the sticker: ${String(/** @type {any} */ (error)?.message ?? error)}` });
+        await interaction.editReply({
+          content: `The sticker refused to leave: ${String(/** @type {any} */ (error)?.message ?? error)}`,
+        });
       }
     },
   };

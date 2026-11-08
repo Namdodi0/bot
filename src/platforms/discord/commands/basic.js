@@ -41,7 +41,7 @@ export function createBasicHandlers(shared) {
     const lines = [
       ...COMMANDS.filter((command) => command.type === 1).map((command) => `**/${command.name}** — ${command.description}`),
       '',
-      '*Message menus*',
+      '**Message menus**',
       ...COMMANDS.filter((command) => command.type === 3).map((command) => `**${command.name}** — message menu`),
     ];
     const pages = [];
@@ -53,14 +53,14 @@ export function createBasicHandlers(shared) {
   /** @param {string} reason */
   function reminderError(reason) {
     const messages = {
-      'invalid-time': 'Invalid reminder time.',
-      'too-long': `The reminder text is too long (max ${REMINDER_LIMITS.MAX_REMINDER_CHARS}).`,
-      'chat-limit': `This channel already has ${REMINDER_LIMITS.MAX_PER_CHAT} reminders; cancel one first.`,
-      'total-limit': 'The reminder limit has been reached.',
-      invalid: 'Invalid reminder.',
-      'not-configured': 'Reminders are not configured.',
+      'invalid-time': 'That time makes no sense. Try `HH:MM`, `tomorrow`, or `+10m`. ⏰',
+      'too-long': `That reminder is too long (max ${REMINDER_LIMITS.MAX_REMINDER_CHARS} chars). Trim it.`,
+      'chat-limit': `This channel already has ${REMINDER_LIMITS.MAX_PER_CHAT} reminders. Cancel one first.`,
+      'total-limit': 'The reminder limit is full. Even I have limits.',
+      invalid: 'That reminder is invalid. Try again.',
+      'not-configured': "Reminders aren't configured here. Somebody forgot to flip the switch. 🔌",
     };
-    return messages[/** @type {keyof typeof messages} */ (reason)] ?? 'Could not create the reminder.';
+    return messages[/** @type {keyof typeof messages} */ (reason)] ?? 'Could not create the reminder. Rude.';
   }
 
   function deadline() {
@@ -80,7 +80,7 @@ export function createBasicHandlers(shared) {
     const chatId = String(interaction.channelId);
     if (!runtime.agent.rateLimited?.(chatId, interaction.user.id)) return false;
     await replyEphemeral(interaction, {
-      content: 'You are using commands too quickly — please wait a minute and try again.',
+      content: "Whoa, easy. You're hitting commands too fast — give it a minute. 🏎️",
     });
     return true;
   }
@@ -115,14 +115,14 @@ export function createBasicHandlers(shared) {
       if (pages.length <= 1) {
         await replyEphemeral(
           interaction,
-          textPanel('AI bot commands', pages[0], { icon: '📚', thumbnail: avatarUrl() }),
+          textPanel('Command deck', pages[0], { icon: '📚', thumbnail: avatarUrl() }),
         );
         return;
       }
-      const pager = makePager(interaction.user.id, pages, 'AI bot commands', '📚');
+      const pager = makePager(interaction.user.id, pages, 'Command deck', '📚');
       await replyEphemeral(
         interaction,
-        textPanel('AI bot commands', pages[0], {
+        textPanel('Command deck', pages[0], {
           icon: '📚',
           thumbnail: avatarUrl(),
           rows: paginationRow(pager, 0, pages.length),
@@ -154,19 +154,23 @@ export function createBasicHandlers(shared) {
     async ping(interaction) {
       const gateway = (await platform.transport.ping()) || 0;
       const roundtrip = Date.now() - Number(interaction.createdTimestamp);
-      await replyEphemeral(interaction, { content: `Pong — gateway ${gateway}ms, roundtrip ${roundtrip}ms.` });
+      await replyEphemeral(interaction, {
+        content: `🏓 Pong — gateway **${gateway}ms**, round trip **${roundtrip}ms**. My reflexes are ridiculous.`,
+      });
     },
 
     async stop(interaction) {
       const stopped = runtime.agent?.stop?.(String(interaction.channelId)) === true;
       await replyEphemeral(interaction, {
-        content: stopped ? 'Stopped the current answer.' : 'Nothing is running in this channel.',
+        content: stopped
+          ? '🛑 Stopped. That answer is cancelled — the mic is yours.'
+          : 'Nothing to stop — this channel is already quiet. 😴',
       });
     },
 
     async reset(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, errorPanel('Only server admins can reset the context.'));
+        await replyEphemeral(interaction, errorPanel('Only server admins get to wipe the memory. 🔒'));
         return;
       }
       await interaction.deferReply(ephemeral);
@@ -175,13 +179,15 @@ export function createBasicHandlers(shared) {
       const outcome = await runExclusive(interaction, () => chat.reset(chatId, { all: full }));
       if (!outcome.ok) return;
       await interaction.editReply({
-        content: full ? 'Cleared the context and settings for this channel.' : 'Cleared this channel context (settings kept).',
+        content: full
+          ? '🧹 Memory wiped — context and channel settings are gone. Clean slate.'
+          : '🧹 Memory wiped. Your settings survived.',
       });
     },
 
     async compact(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, errorPanel('Only server admins can compact the context.'));
+        await replyEphemeral(interaction, errorPanel('Only server admins get to squeeze the context. 🔒'));
         return;
       }
       if (await commandRateLimited(interaction)) return;
@@ -191,10 +197,12 @@ export function createBasicHandlers(shared) {
       if (!outcome.ok) return;
       const result = outcome.value;
       if (!result?.changed) {
-        await interaction.editReply({ content: 'The context does not need compaction yet.' });
+        await interaction.editReply({ content: '📦 Nothing to squeeze — the context is already lean.' });
         return;
       }
-      await interaction.editReply({ content: `Compacted the context${result.summarized ? ' with a summary' : ''}.` });
+      await interaction.editReply({
+        content: `📦 Context compacted${result.summarized ? ' with a fresh summary' : ''}. Leaner, meaner.`,
+      });
     },
 
     async summary(interaction) {
@@ -219,12 +227,12 @@ export function createBasicHandlers(shared) {
         await interaction.editReply({
           content:
             result.reason === 'empty'
-              ? 'No summary returned.'
-              : 'There are not enough messages to summarize yet.',
+              ? 'No summary came back. The model ghosted me. 👻'
+              : 'Not enough messages to recap yet. Give me more chaos. 🍿',
         });
         return;
       }
-      const title = `Summary of the last ${result.count} messages`;
+      const title = `Recap — last ${result.count} messages`;
       const pages = splitPages(result.text);
       if (pages.length > 1) {
         const pager = makePager(interaction.user.id, pages, title, '📝');
@@ -251,11 +259,11 @@ export function createBasicHandlers(shared) {
       if (!outcome.ok) return;
       const result = outcome.value;
       if (!result.ok) {
-        await interaction.editReply(errorPanel(result.text));
+        await interaction.editReply(errorPanel(result.text, 'Search tripped'));
         return;
       }
       await interaction.editReply(
-        textPanel('Search', result.text, { icon: '🔎', subtitle: query }),
+        textPanel('Web search', result.text, { icon: '🔎', subtitle: query }),
       );
     },
 
@@ -274,12 +282,12 @@ export function createBasicHandlers(shared) {
       if (!outcome.ok) return;
       const { result, photos } = outcome.value;
       if (!photos.length) {
-        await interaction.editReply(errorPanel(result.text || 'No images found.'));
+        await interaction.editReply(errorPanel(result.text || 'No images found.', 'No pixels'));
         return;
       }
       const text =
         result.text ||
-        `Here ${photos.length === 1 ? 'is' : 'are'} ${photos.length} image${photos.length === 1 ? '' : 's'}.`;
+        `Fresh pixels, as requested — ${photos.length} image${photos.length === 1 ? '' : 's'}. 🖼️`;
       try {
         await interaction.editReply(v2Answer(text, [], photos));
       } catch (error) {
@@ -293,7 +301,9 @@ export function createBasicHandlers(shared) {
 
     async remind(interaction) {
       if (!reminderService.available()) {
-        await replyEphemeral(interaction, { content: 'Reminders are not configured.' });
+        await replyEphemeral(interaction, {
+          content: "Reminders aren't wired up here. Tell an admin to flip the switch. 🔌",
+        });
         return;
       }
       const chatId = String(interaction.channelId);
@@ -309,7 +319,9 @@ export function createBasicHandlers(shared) {
         const id = interaction.options.getInteger('id', true);
         const removed = await reminderService.cancel(chatId, id);
         await replyEphemeral(interaction, {
-          content: removed ? `Cancelled reminder #${removed.id}.` : `No reminder #${id} in this channel.`,
+          content: removed
+            ? `🗑️ Reminder #${removed.id} cancelled.`
+            : `No reminder #${id} here. Check the list.`,
         });
         return;
       }
@@ -317,22 +329,13 @@ export function createBasicHandlers(shared) {
       const text = String(interaction.options.getString('text', true)).trim();
       const created = await reminderService.add(chatId, when, text, interaction.user.id);
       if (!created.ok) {
-        const messages = {
-          'invalid-time': 'Invalid reminder time.',
-          'too-long': `The reminder text is too long (max ${REMINDER_LIMITS.MAX_REMINDER_CHARS}).`,
-          'chat-limit': `This channel already has ${REMINDER_LIMITS.MAX_PER_CHAT} reminders; cancel one first.`,
-          'total-limit': 'The reminder limit has been reached.',
-          invalid: 'Invalid reminder.',
-          'not-configured': 'Reminders are not configured.',
-        };
-        await replyEphemeral(interaction, {
-          content: messages[/** @type {keyof typeof messages} */ (created.reason)] ?? 'Could not create the reminder.',
-        });
+        await replyEphemeral(interaction, { content: reminderError(created.reason) });
         return;
       }
       const seconds = Math.floor(created.item.at / 1000);
       await replyEphemeral(interaction, {
-        content: `Reminder #${created.item.id} set for <t:${seconds}:f> (<t:${seconds}:R>): ${text}`,
+        content: `⏰ Locked in. Reminder #${created.item.id} fires <t:${seconds}:f> — that's <t:${seconds}:R>.
+> ${text}`,
       });
     },
   };
@@ -357,7 +360,8 @@ export function createBasicHandlers(shared) {
     }
     const seconds = Math.floor(created.item.at / 1000);
     await replyEphemeral(interaction, {
-      content: `Reminder #${created.item.id} set for <t:${seconds}:f> (<t:${seconds}:R>): ${created.item.text}`,
+      content: `⏰ Locked in. Reminder #${created.item.id} fires <t:${seconds}:f> — that's <t:${seconds}:R>.
+> ${created.item.text}`,
     });
     return true;
   }

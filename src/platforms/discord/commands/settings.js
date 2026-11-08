@@ -24,7 +24,10 @@ export function createSettingsHandlers(shared) {
   const handlers = {
     async settings(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, errorPanel('Only server admins can change channel settings.'));
+        await replyEphemeral(
+          interaction,
+          errorPanel('Only server admins get to touch these dials. 🔒'),
+        );
         return;
       }
       const chatId = String(interaction.channelId);
@@ -35,15 +38,15 @@ export function createSettingsHandlers(shared) {
         if (!saved.ok) {
           await replyEphemeral(
             interaction,
-            errorPanel(`"${requested}" is not a vision-capable model.`),
+            errorPanel(`"${requested}" is not a vision-capable model. It can't see. 👀`),
           );
           return;
         }
         const clearing = ['default', '__default'].includes(String(requested).trim().toLowerCase());
         await replyEphemeral(interaction, {
           content: clearing
-            ? `Vision model reset to the default${saved.model ? ` (\`${saved.model.alias}\` — ${saved.model.label})` : ''}.`
-            : `Vision model is now **${saved.model.label}** (\`${saved.model.alias}\`).`,
+            ? `Vision model reset to the default${saved.model ? ` (\`${saved.model.alias}\` — ${saved.model.label})` : ''}. Back to factory eyes. 👀`
+            : `Vision model is now **${saved.model.label}** (\`${saved.model.alias}\`). Eyes unlocked. 👀`,
         });
         return;
       }
@@ -53,7 +56,10 @@ export function createSettingsHandlers(shared) {
 
     async model(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, errorPanel('Only server admins can change the model.'));
+        await replyEphemeral(
+          interaction,
+          errorPanel('Only server admins get to swap the brain. 🔒'),
+        );
         return;
       }
       const chatId = String(interaction.channelId);
@@ -63,8 +69,9 @@ export function createSettingsHandlers(shared) {
       if (!name) {
         await replyEphemeral(
           interaction,
-          textPanel('Model', `Current: **${current.label}** (\`${current.alias}\`)`, {
+          textPanel('Model', `Currently running **${current.label}** (\`${current.alias}\`).`, {
             icon: '🧠',
+            subtitle: 'Pick a different brain below.',
             rows: modelSelect(chat.listModels(), current.alias),
           }),
         );
@@ -72,15 +79,23 @@ export function createSettingsHandlers(shared) {
       }
       const picked = chat.findModel(name);
       if (!picked) {
-        await replyEphemeral(interaction, errorPanel(`No model named "${name}".`));
+        await replyEphemeral(
+          interaction,
+          errorPanel(`No model named "${name}". Nice try, though.`, 'No dice'),
+        );
         return;
       }
       const saved = await chat.setModel(chatId, name, interaction.guildId ? 'GROUP' : 'PRIVATE');
       if (!saved.ok) {
-        await replyEphemeral(interaction, errorPanel(`No model named "${name}".`));
+        await replyEphemeral(
+          interaction,
+          errorPanel(`No model named "${name}". Nice try, though.`, 'No dice'),
+        );
         return;
       }
-      await replyEphemeral(interaction, { content: `Model is now **${saved.model.label}** (\`${saved.model.alias}\`).` });
+      await replyEphemeral(interaction, {
+        content: `Model is now **${saved.model.label}** (\`${saved.model.alias}\`). Fresh brain, same attitude. 🧠`,
+      });
     },
   };
 
@@ -107,7 +122,7 @@ export function createSettingsHandlers(shared) {
       .slice(0, vision ? 24 : 25)
       .map((item) => ({ name: `${item.alias} — ${item.label}`.slice(0, 100), value: item.alias }));
     if (vision && 'default'.includes(focused)) {
-      options.unshift({ name: 'default — use the configured vision model', value: 'default' });
+      options.unshift({ name: 'default — back to the configured vision model', value: 'default' });
     }
     return interaction.respond(options).catch((error) => {
       logger?.debug('discord autocomplete reply failed', {
@@ -121,13 +136,16 @@ export function createSettingsHandlers(shared) {
     const customId = String(interaction.customId ?? '');
     if (customId === 'model:select') {
       if (!isAdmin(interaction)) {
-        await interaction.reply({ content: 'Only server admins can change the model.', flags: MessageFlags.Ephemeral });
+        await interaction.reply({
+          content: 'Only server admins get to swap the brain. 🔒',
+          flags: MessageFlags.Ephemeral,
+        });
         return;
       }
       const alias = interaction.values?.[0];
       const picked = alias ? chat.findModel(alias) : null;
       if (!picked) {
-        await interaction.update(errorPanel('That model is no longer available.'));
+        await interaction.update(errorPanel('That model walked off the stage. Pick another. 🚪', 'No dice'));
         return;
       }
       const chatId = String(interaction.channelId);
@@ -136,7 +154,7 @@ export function createSettingsHandlers(shared) {
       );
       if (!outcome.ok) return;
       await interaction.update(
-        textPanel('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`, {
+        textPanel('Brain swapped', `Now running **${picked.label}** (\`${picked.alias}\`). Fresh neurons. 🧠`, {
           icon: '✅',
           ephemeral: true,
         }),
@@ -146,7 +164,10 @@ export function createSettingsHandlers(shared) {
 
     if (!customId.startsWith('settings:')) return;
     if (!isAdmin(interaction)) {
-      await interaction.reply({ content: 'Only server admins can change channel settings.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: 'Only server admins get to touch these dials. 🔒',
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
 
@@ -159,7 +180,7 @@ export function createSettingsHandlers(shared) {
       return;
     }
     if (field === 'model' && !chat.findModel(value)) {
-      await interaction.update(errorPanel('That model is no longer available.'));
+      await interaction.update(errorPanel('That model walked off the stage. Pick another. 🚪', 'No dice'));
       return;
     }
 

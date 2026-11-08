@@ -13,13 +13,13 @@ function toolLine(event) {
     case 'web_search':
       return query ? `🔎 Searching the web: ${query}` : '🔎 Searching the web…';
     case 'read_url':
-      return '🌐 Reading the page…';
+      return "🌐 Reading the page — it won't read itself…";
     case 'send_image':
-      return '🖼️ Looking for images…';
+      return '🖼️ Hunting for pixels…';
     case 'send_sticker':
-      return '🎨 Picking a sticker…';
+      return '🎨 Raiding the sticker drawer…';
     case 'set_reminder':
-      return '⏰ Setting a reminder…';
+      return '⏰ Arming a reminder…';
     default:
       return `🛠️ Running ${String(event?.name ?? 'tool')}…`;
   }
@@ -55,7 +55,7 @@ export function createProgressFeed() {
         mode = 'tool';
         tool = `${
           event.ok === false ? '⚠️' : '✅'
-        } ${TOOL_LABELS[event.name] ?? String(event.name ?? 'Tool')} ${event.ok === false ? 'failed' : 'done'}`;
+        } ${TOOL_LABELS[event.name] ?? String(event.name ?? 'Tool')} ${event.ok === false ? 'failed. Pivoting.' : 'done — let me cook.'}`;
         break;
       case 'finalizing':
         mode = 'finalizing';
@@ -70,7 +70,7 @@ export function createProgressFeed() {
   function text() {
     if (mode === 'tool' && tool) return `> ${tool}`;
     if (mode === 'reasoning' && reasoning) return `> 🧠 ${reasoning}`;
-    if (mode === 'thinking') return '> 🧠 Thinking…';
+    if (mode === 'thinking') return '> 🧠 Thinking… (scheming counts)';
     if (mode === 'finalizing') return '> ✍️ Writing the answer…';
     return '';
   }

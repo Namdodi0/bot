@@ -53,11 +53,17 @@ export function createShared(deps) {
     if (prefix !== 'page') return false;
     const pager = pagers.get(pagerId);
     if (!pager) {
-      await interaction.reply({ content: 'This list is too old — run the command again.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: 'That list expired — run the command again. ⏳',
+        flags: MessageFlags.Ephemeral,
+      });
       return true;
     }
     if (interaction.user.id !== pager.userId) {
-      await interaction.reply({ content: 'This is not your list.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: "That list isn't yours. Get your own. 🔒",
+        flags: MessageFlags.Ephemeral,
+      });
       return true;
     }
     const page = Math.max(0, Math.min(pager.pages.length - 1, Number(rawPage) || 0));
@@ -103,7 +109,7 @@ export function createShared(deps) {
   async function reportError(interaction, error) {
     const message = String(/** @type {any} */ (error)?.message ?? error);
     logger?.error('discord command failed', { command: interaction.commandName, error: message });
-    const payload = errorPanel('Something went wrong while handling that command.');
+    const payload = errorPanel('Something broke on my side — not your fault. Try again?', 'That broke');
     try {
       if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
       else await replyEphemeral(interaction, payload);
@@ -117,7 +123,9 @@ export function createShared(deps) {
   }
 
   async function busyReply(interaction) {
-    const payload = { content: 'I am handling too many messages right now, please try again in a few seconds.' };
+    const payload = {
+      content: "I'm juggling too many messages right now. Give me a few seconds and try again. 🤹",
+    };
     if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
     else await replyEphemeral(interaction, payload);
   }
@@ -148,7 +156,9 @@ export function createShared(deps) {
    */
   function splitAnswer(result) {
     const chunks = result.text ? chunkContent(result.text) : [];
-    const first = chunks.shift() ?? (result.photos.length ? 'Here are the images.' : 'I do not have an answer for that yet.');
+    const first =
+      chunks.shift() ??
+      (result.photos.length ? 'Fresh pixels, as requested. 🖼️' : 'I got nothing. Ask again? 🫥');
     return { chunks, first };
   }
 

@@ -39,7 +39,10 @@ export function createInteractionRouter(deps) {
         });
         return;
       }
-      const payload = { content: 'This channel is not allowed.', flags: MessageFlags.Ephemeral };
+      const payload = {
+        content: "This channel isn't on my guest list. 🚫",
+        flags: MessageFlags.Ephemeral,
+      };
       if (interaction.isRepliable()) {
         await interaction.reply(payload).catch((error) => {
           logger?.warn('discord blocked-channel reply failed', {

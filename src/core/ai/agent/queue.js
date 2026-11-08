@@ -148,7 +148,7 @@ export function createRateLimiter(config, options = {}) {
 }
 
 export const QUEUE_BUSY_TEXT =
-  'I am handling too many messages right now, please try again in a few seconds.';
+  "Whoa — I'm juggling too many messages right now. Give me a few seconds and try again. 🤹";
 
 export class QueueFullError extends Error {
   constructor() {

@@ -35,7 +35,7 @@ export function createCatchupHandlers(shared) {
       const chatId = String(interaction.channelId);
       if (runtime.agent.rateLimited?.(chatId, interaction.user.id)) {
         await replyEphemeral(interaction, {
-          content: 'You are using commands too quickly — please wait a minute and try again.',
+          content: "Whoa, easy. You're hitting commands too fast — give it a minute. 🏎️",
         });
         return;
       }
@@ -43,7 +43,7 @@ export function createCatchupHandlers(shared) {
       // bot must not reveal messages the member cannot read themselves.
       if (interaction.guildId && interaction.memberPermissions?.has?.(PermissionFlagsBits.ReadMessageHistory) !== true) {
         await replyEphemeral(interaction, {
-          content: 'You need the Read Message History permission in this channel to use /catchup.',
+          content: 'You need **Read Message History** here to pull that off. Go ask an admin. 🔐',
         });
         return;
       }
@@ -51,7 +51,7 @@ export function createCatchupHandlers(shared) {
       const hours = interaction.options.getInteger('hours') ?? 24;
       const channel = /** @type {any} */ (interaction.channel);
       if (!channel?.messages?.fetch) {
-        await interaction.editReply({ content: 'I cannot read messages in this channel.' });
+        await interaction.editReply({ content: "I can't read this channel. Check my permissions? 🧐" });
         return;
       }
 
@@ -92,14 +92,14 @@ export function createCatchupHandlers(shared) {
       } catch (error) {
         logger?.warn('discord catchup fetch failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
         await interaction.editReply({
-          content: 'I could not read this channel. I need the Read Message History permission here.',
+          content: "I couldn't read this channel. I need **Read Message History** here. 🧐",
         });
         return;
       }
 
       if (!collected.length) {
         await interaction.editReply({
-          content: `No messages in the last ${hours} hour${hours === 1 ? '' : 's'} to catch up on.`,
+          content: `Nothing happened in the last ${hours} hour${hours === 1 ? '' : 's'}. The channel took a nap. 😴`,
         });
         return;
       }
@@ -126,7 +126,9 @@ export function createCatchupHandlers(shared) {
       const summary = outcome.value;
       await previewer.flush();
       if (!summary.ok) {
-        await interaction.editReply({ content: 'I could not summarize those messages right now.' });
+        await interaction.editReply({
+          content: "I couldn't summarize that. The thoughts slipped away. 🫠",
+        });
         return;
       }
       const pages = splitPages(summary.text);

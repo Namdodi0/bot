@@ -53,11 +53,14 @@ export function createAskHandlers(shared) {
       return { ok: false, reason: 'The attachment must be an image.' };
     }
     if (Number(attachment.size) > MAX_VISION_BYTES) {
-      return { ok: false, reason: 'That image is too large (max 8 MB).' };
+      return { ok: false, reason: 'That image is too big (max 8 MB). I have limits.' };
     }
     const downloaded = await runtime.validator?.download?.(String(attachment.url ?? ''));
     if (!downloaded?.ok || !downloaded.data) {
-      return { ok: false, reason: `Could not download that image${downloaded?.reason ? ` (${downloaded.reason})` : ''}.` };
+      return {
+        ok: false,
+        reason: `Couldn't download that image${downloaded?.reason ? ` (${downloaded.reason})` : ''}. The link fought back.`,
+      };
     }
     return { ok: true, imageData: { data: downloaded.data, contentType: downloaded.contentType ?? contentType } };
   }
@@ -99,7 +102,7 @@ export function createAskHandlers(shared) {
       },
       async stop() {
         try {
-          await edit('⏹️ Stopped.');
+          await edit('⏹️ Stopped. The answer hit the brakes.');
         } catch {
           // The preview may already be gone.
         }
@@ -122,7 +125,9 @@ export function createAskHandlers(shared) {
     if (withImage) {
       const image = await askImage(interaction);
       if (!image.ok) {
-        await interaction.editReply(v2Message(String(/** @type {any} */ (image).reason ?? 'That image is not usable.')));
+        await interaction.editReply(
+          v2Message(String(/** @type {any} */ (image).reason ?? 'That image is unusable. Try another one. 🖼️')),
+        );
         return;
       }
       imageData = image.imageData;
@@ -131,7 +136,9 @@ export function createAskHandlers(shared) {
     if (useThread) {
       const channel = /** @type {any} */ (interaction.channel);
       if (!channel?.threads?.create) {
-        await interaction.editReply(v2Message('Threads are not available in this channel.'));
+        await interaction.editReply(
+          v2Message("Threads aren't available here. Discord said no. 🚫"),
+        );
         return;
       }
       const name = prompt.replace(/\s+/g, ' ').slice(0, 90) || 'AI answer';
@@ -159,7 +166,7 @@ export function createAskHandlers(shared) {
         origin: 'channel',
       });
       await sendChannelAnswer(thread, result, token, placeholder);
-      await interaction.editReply({ content: `Answered in ${thread}.`, allowedMentions: { parse: [] } });
+      await interaction.editReply({ content: `All yours in ${thread}. 🧵`, allowedMentions: { parse: [] } });
       return;
     }
 
@@ -187,7 +194,7 @@ export function createAskHandlers(shared) {
     await sendInteractionAnswer(interaction, result, token, priv);
     if (wantsThread) {
       await interaction.followUp({
-        content: 'Private answers skip threads, so this reply is ephemeral.',
+        content: 'Private answers skip threads — your secret stays right here. 🤫',
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
       });
@@ -198,7 +205,9 @@ export function createAskHandlers(shared) {
   async function contextAsk(interaction, prefix) {
     const content = messageText(interaction.targetMessage).trim().slice(0, 3000);
     if (!content) {
-      await replyEphemeral(interaction, { content: 'That message has no text to work with.' });
+      await replyEphemeral(interaction, {
+        content: 'That message has no text for me to chew on. 🍽️',
+      });
       return;
     }
     await interaction.deferReply(ephemeral);
@@ -259,11 +268,17 @@ export function createAskHandlers(shared) {
     if (prefix !== 'ask') return;
     const payload = tokens.get(tokenId);
     if (!payload) {
-      await interaction.reply({ content: 'This answer is too old — run `/ask` again.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: 'That answer is ancient — run `/ask` again. 👴',
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
     if (interaction.user.id !== payload.userId) {
-      await interaction.reply({ content: 'This is not your conversation.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: "Hands off — this conversation isn't yours. 🔒",
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
     if (action === 'good' || action === 'bad') {
@@ -274,7 +289,10 @@ export function createAskHandlers(shared) {
         rating: action,
       });
       await interaction.reply({
-        content: action === 'good' ? 'Thanks for the feedback 👍' : 'Got it — I will try to do better 👎',
+        content:
+          action === 'good'
+            ? "Appreciated. I'll keep cooking. 👍"
+            : "Ouch. Noted — I'll do better. 👎",
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -326,7 +344,7 @@ export function createAskHandlers(shared) {
       return;
     }
     const newToken = makeToken({ ...payload });
-    const chunks = chunkContent(result.text || 'No answer.');
+    const chunks = chunkContent(result.text || 'I got nothing. Ask again, maybe with fewer riddles. 🫥');
     const photos = result.photos ?? [];
     const followFlags = privateReply(payload.ephemeral);
     const editFinal = regenerating
@@ -358,7 +376,7 @@ export function createAskHandlers(shared) {
     const [, privFlag, threadFlag] = customId.split(':');
     const prompt = String(interaction.fields.getTextInputValue('prompt') ?? '').trim();
     if (!prompt) {
-      await replyEphemeral(interaction, { content: 'Ask me something first.' });
+      await replyEphemeral(interaction, { content: 'You called me over and said nothing? Try again. 🎤' });
       return;
     }
     try {

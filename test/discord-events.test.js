@@ -109,7 +109,7 @@ test('native interactions use the Discord allow-list, not the root config', asyn
   const blocked = interaction('blocked');
   await route(blocked);
   assert.equal(handled, 0);
-  assert.match(String(blocked.replies[0]?.content), /not allowed/);
+  assert.match(String(blocked.replies[0]?.content), /guest list/);
 
   const allowed = interaction('allowed');
   await route(allowed);
