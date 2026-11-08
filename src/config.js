@@ -144,7 +144,7 @@ export function collectSecrets(config) {
 
 /**
  * Dotted names of settings that config.js never reads. Reported at startup (never fatal):
- * a typo like `allowChatIds` would otherwise silently leave `allowedChatIds` empty.
+ * a typo like `allowChannelIds` would otherwise silently leave `allowedChannelIds` empty.
  * The key sets live in config-schema.js so parsers, examples and this check stay in sync.
  * @param {Record<string, any>} root
  */
