@@ -1,24 +1,19 @@
-import crypto from 'node:crypto';
 import { MessageFlags } from 'discord.js';
 import { eventFromInteraction, messageText } from '../events.js';
 import { createProgressFeed } from '../progress.js';
-import { answerButtons, askModal, chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from '../ui.js';
+import { askModal, createPreviewer, v2Message } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
 
 /**
- * `/ask` (slash + modal), the message context menus, and the Regenerate/Continue/Delete
- * buttons that replay a stored prompt.
+ * `/ask` (slash + modal) and the message context menus.
  * @param {ReturnType<typeof import('./shared.js').createShared>} shared
  */
 export function createAskHandlers(shared) {
   const {
     client,
-    logger,
     runtime,
     chat,
-    tokens,
-    makeToken,
     ephemeral,
     privateReply,
     reportError,
@@ -156,16 +151,7 @@ export function createAskHandlers(shared) {
         await preview.stop();
         return;
       }
-      const token = makeToken({
-        prompt,
-        answer: result.text,
-        chatId: thread.id,
-        chatType: 'GROUP',
-        userId: interaction.user.id,
-        ephemeral: false,
-        origin: 'channel',
-      });
-      await sendChannelAnswer(thread, result, token, placeholder);
+      await sendChannelAnswer(thread, result, placeholder);
       await interaction.editReply({ content: `All yours in ${thread}. 🧵`, allowedMentions: { parse: [] } });
       return;
     }
@@ -182,16 +168,7 @@ export function createAskHandlers(shared) {
       await preview.stop();
       return;
     }
-    const token = makeToken({
-      prompt,
-      answer: result.text,
-      chatId: String(interaction.channelId),
-      chatType: interaction.guildId ? 'GROUP' : 'PRIVATE',
-      userId: interaction.user.id,
-      ephemeral: priv,
-      origin: 'interaction',
-    });
-    await sendInteractionAnswer(interaction, result, token, priv);
+    await sendInteractionAnswer(interaction, result, priv);
     if (wantsThread) {
       await interaction.followUp({
         content: 'Private answers skip threads — your secret stays right here. 🤫',
@@ -223,16 +200,7 @@ export function createAskHandlers(shared) {
       await preview.stop();
       return;
     }
-    const token = makeToken({
-      prompt,
-      answer: result.text,
-      chatId: String(interaction.channelId),
-      chatType: interaction.guildId ? 'GROUP' : 'PRIVATE',
-      userId: interaction.user.id,
-      ephemeral: true,
-      origin: 'interaction',
-    });
-    await sendInteractionAnswer(interaction, result, token, true);
+    await sendInteractionAnswer(interaction, result, true);
   }
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
@@ -263,112 +231,6 @@ export function createAskHandlers(shared) {
   };
 
   /** @param {any} interaction */
-  async function handleButton(interaction) {
-    const [prefix, action, tokenId] = String(interaction.customId ?? '').split(':');
-    if (prefix !== 'ask') return;
-    const payload = tokens.get(tokenId);
-    if (!payload) {
-      await interaction.reply({
-        content: 'That answer is ancient — run `/ask` again. 👴',
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-    if (interaction.user.id !== payload.userId) {
-      await interaction.reply({
-        content: "Hands off — this conversation isn't yours. 🔒",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-    if (action === 'good' || action === 'bad') {
-      runtime.metrics?.inc(`feedback.${action}`);
-      logger?.info('discord answer feedback', {
-        chatId: payload.chatId,
-        userId: interaction.user.id,
-        rating: action,
-      });
-      await interaction.reply({
-        content:
-          action === 'good'
-            ? "Appreciated. I'll keep cooking. 👍"
-            : "Ouch. Noted — I'll do better. 👎",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-    // Thread answers are channel messages; every other answer is an interaction response.
-    const viaChannel = payload.origin === 'channel';
-    if (action === 'delete') {
-      await interaction.deferUpdate();
-      const removed = viaChannel ? interaction.message.delete() : interaction.deleteReply();
-      await removed.catch((error) => {
-        logger?.debug('discord answer delete failed', {
-          error: String(/** @type {any} */ (error)?.message ?? error),
-        });
-      });
-      return;
-    }
-    // The shared record has public answers already; a private answer was removed after its turn.
-    const priorAnswer = payload.ephemeral ? String(payload.answer ?? '').slice(-4000) : '';
-    const prompt =
-      action === 'continue'
-        ? priorAnswer
-          ? `Continue from where you left off. Previous answer:\n\n${priorAnswer}`
-          : 'Continue from where you left off.'
-        : payload.prompt;
-    const regenerating = action === 'regen';
-    if (regenerating) await interaction.deferUpdate();
-    else await interaction.deferReply(privateReply(payload.ephemeral));
-
-    const edit = regenerating
-      ? viaChannel
-        ? (text) => interaction.message.edit(v2Message(text))
-        : (text) => interaction.editReply(v2Message(text))
-      : (text) => interaction.editReply(v2Message(text));
-    const preview = createStreamPreview(edit);
-    const event = askEvent(interaction, prompt, {
-      chatId: payload.chatId,
-      chatType: payload.chatType,
-      messageId: `interaction:${crypto.randomUUID()}`,
-      ...(payload.ephemeral ? { private: true } : {}),
-    });
-    const result = await runtime.agent.stream(event, {
-      skipCommands: true,
-      onDelta: preview.onDelta,
-      onProgress: preview.onProgress,
-    });
-    await preview.flush();
-    if (result.stopped) {
-      await preview.stop();
-      return;
-    }
-    const newToken = makeToken({ ...payload });
-    const chunks = chunkContent(result.text || 'I got nothing. Ask again, maybe with fewer riddles. 🫥');
-    const photos = result.photos ?? [];
-    const followFlags = privateReply(payload.ephemeral);
-    const editFinal = regenerating
-      ? viaChannel
-        ? (value) => interaction.message.edit(value)
-        : (value) => interaction.editReply(value)
-      : (value) => interaction.editReply(value);
-    try {
-      await editFinal(v2Answer(chunks[0], answerButtons(newToken), photos));
-    } catch (error) {
-      logger?.warn('combined photo answer failed, sending photos separately', {
-        error: String(/** @type {any} */ (error)?.message ?? error),
-      });
-      await editFinal(v2Message(chunks[0], answerButtons(newToken)));
-      for (const group of photoBatches(photos)) {
-        await interaction.followUp({ ...photoPayload(group), ...followFlags });
-      }
-    }
-    for (const chunk of chunks.slice(1)) {
-      await interaction.followUp(v2Message(chunk, [], { ephemeral: payload.ephemeral }));
-    }
-  }
-
-  /** @param {any} interaction */
   async function handleModal(interaction) {
     if (!interaction.isModalSubmit?.()) return;
     const customId = String(interaction.customId ?? '');
@@ -391,5 +253,5 @@ export function createAskHandlers(shared) {
     }
   }
 
-  return { handlers, handleButton, handleModal };
+  return { handlers, handleModal };
 }

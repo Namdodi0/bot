@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { createAskHandlers } from './ask.js';
 import { createBasicHandlers } from './basic.js';
 import { createCatchupHandlers } from './catchup.js';
@@ -52,7 +53,13 @@ export function createCommandRuntime(deps) {
       const customId = String(interaction.customId ?? '');
       if (customId.startsWith('page:')) return shared.handlePager(interaction);
       if (customId.startsWith('remind:')) return basic.handleButton(interaction);
-      return ask.handleButton(interaction);
+      // Answer action rows were removed; acknowledge clicks on old messages instead of failing.
+      return interaction
+        .reply({
+          content: 'That button retired — mention me again for a fresh answer. 👋',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => {});
     },
     handleModal: async (/** @type {any} */ interaction) => {
       if (interaction.customId === 'remind-form') return basic.handleModal(interaction);

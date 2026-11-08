@@ -106,14 +106,13 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`, `/sticker`,
   `/remind`; message context menus are `Explain message`/`Summarize message`. Native handlers
   own V2 panels, buttons, selects, modals and ephemeral replies.
-- **Answers use Components V2.** `v2Message` is a top-level `TextDisplay` + optional action
-  row (no container chrome); `v2Answer` adds a `MediaGallery` so images share the answer
-  message. Every text answer — `/ask`, threads and ordinary chat — carries the same
-  Regenerate/Continue/Delete/feedback row. Text is chunked just under the 4000-char
-  TextDisplay cap, not the legacy 2000-char content cap. Command panels use a V2 Container
-  card (`v2Panel`); answers never do.
-- **Private Discord turns stay private.** `/ask private:true`, ephemeral context menus and
-  ephemeral regenerate/continue mark `event.private`; the core removes their entries from the
+- **Answers use Components V2.** `v2Message` is a top-level `TextDisplay` (no container
+  chrome, no action row); `v2Answer` adds a `MediaGallery` so images share the answer
+  message. Text is chunked just under the 4000-char TextDisplay cap, not the legacy
+  2000-char content cap. Command panels use a V2 Container card (`v2Panel`); answers never
+  do.
+- **Private Discord turns stay private.** `/ask private:true` and ephemeral context-menu
+  answers mark `event.private`; the core removes their entries from the
   shared record, disk snapshots, summaries and compaction.
 - **Discord access checks cover native interactions.** `discord.allowedChannelIds` gates
   slash commands and context menus as well as chat; `/catchup` requires the requester (not the

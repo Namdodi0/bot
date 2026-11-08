@@ -70,7 +70,7 @@ export function createProgressFeed() {
   function text() {
     if (mode === 'tool' && tool) return `> ${tool}`;
     if (mode === 'reasoning' && reasoning) return `> 🧠 ${reasoning}`;
-    if (mode === 'thinking') return '> 🧠 Thinking… (scheming counts)';
+    if (mode === 'thinking') return '> 🧠 Thinking…';
     if (mode === 'finalizing') return '> ✍️ Writing the answer…';
     return '';
   }

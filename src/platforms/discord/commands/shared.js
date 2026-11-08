@@ -2,13 +2,13 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { answerButtons, chunkContent, errorPanel, paginationRow, photoBatches, photoPayload, textPanel, v2Answer, v2Message } from '../ui.js';
+import { chunkContent, errorPanel, paginationRow, photoBatches, photoPayload, textPanel, v2Answer, v2Message } from '../ui.js';
 
-const TOKEN_TTL_MS = 15 * 60_000;
+const PAGER_TTL_MS = 15 * 60_000;
 
 /**
  * State and helpers shared by the native Discord command modules: the chat/reminder
- * services, the answer-button token store, ephemeral/admin plumbing and the send helpers.
+ * services, the pagination store, ephemeral/admin plumbing and the send helpers.
  * @param {{config: any, logger: any, platform: import('../../contract.js').Platform, runtime: any}} deps
  */
 export function createShared(deps) {
@@ -22,15 +22,12 @@ export function createShared(deps) {
   });
   const reminderService = runtime.reminderService ?? createReminderService({ reminders: runtime.reminders });
 
-  /** @type {Map<string, {prompt: string, answer?: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, origin: 'channel'|'interaction', at: number}>} */
-  const tokens = new Map();
   /** @type {Map<string, {pages: string[], title: string, icon: string, userId: string, at: number}>} */
   const pagers = new Map();
 
-  function pruneTokens() {
+  function prunePagers() {
     const now = Date.now();
-    for (const [id, value] of tokens) if (now - value.at > TOKEN_TTL_MS) tokens.delete(id);
-    for (const [id, value] of pagers) if (now - value.at > TOKEN_TTL_MS) pagers.delete(id);
+    for (const [id, value] of pagers) if (now - value.at > PAGER_TTL_MS) pagers.delete(id);
   }
 
   /**
@@ -41,7 +38,7 @@ export function createShared(deps) {
    * @param {string} [icon]
    */
   function makePager(userId, pages, title, icon = '') {
-    pruneTokens();
+    prunePagers();
     const id = crypto.randomUUID().slice(0, 12);
     pagers.set(id, { pages, title, icon, userId, at: Date.now() });
     return id;
@@ -75,14 +72,6 @@ export function createShared(deps) {
       }),
     );
     return true;
-  }
-
-  /** @param {{prompt: string, answer?: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, origin: 'channel'|'interaction'}} payload */
-  function makeToken(payload) {
-    pruneTokens();
-    const id = crypto.randomUUID().slice(0, 12);
-    tokens.set(id, { ...payload, at: Date.now() });
-    return id;
   }
 
   const ephemeral = { flags: MessageFlags.Ephemeral };
@@ -165,19 +154,18 @@ export function createShared(deps) {
   /**
    * @param {any} interaction
    * @param {{text: string, photos: any[]}} result
-   * @param {string} token
    * @param {boolean} priv
    */
-  async function sendInteractionAnswer(interaction, result, token, priv) {
+  async function sendInteractionAnswer(interaction, result, priv) {
     const { chunks, first } = splitAnswer(result);
     const photos = result.photos ?? [];
     try {
-      await interaction.editReply(v2Answer(first, answerButtons(token), photos));
+      await interaction.editReply(v2Answer(first, [], photos));
     } catch (error) {
       logger?.warn('combined photo answer failed, sending photos separately', {
         error: String(/** @type {any} */ (error)?.message ?? error),
       });
-      await interaction.editReply(v2Message(first, answerButtons(token)));
+      await interaction.editReply(v2Message(first));
       await sendPhotos(interaction, photos, priv);
     }
     for (const chunk of chunks) {
@@ -195,15 +183,14 @@ export function createShared(deps) {
   /**
    * @param {any} channel
    * @param {{text: string, photos: any[]}} result
-   * @param {string} token
    * @param {any} [existing] a preview message to edit instead of sending the first chunk
    */
-  async function sendChannelAnswer(channel, result, token, existing = null) {
+  async function sendChannelAnswer(channel, result, existing = null) {
     const { chunks, first } = splitAnswer(result);
     const photos = result.photos ?? [];
     let attached = false;
     try {
-      const payload = v2Answer(first, answerButtons(token), photos);
+      const payload = v2Answer(first, [], photos);
       if (existing?.edit) await existing.edit(payload);
       else await channel.send(payload);
       attached = photos.length > 0;
@@ -211,7 +198,7 @@ export function createShared(deps) {
       logger?.warn('combined photo answer failed, sending photos separately', {
         error: String(/** @type {any} */ (error)?.message ?? error),
       });
-      const payload = v2Message(first, answerButtons(token));
+      const payload = v2Message(first);
       if (existing?.edit) await existing.edit(payload);
       else await channel.send(payload);
     }
@@ -251,8 +238,6 @@ export function createShared(deps) {
     client,
     chat,
     reminderService,
-    tokens,
-    makeToken,
     pagers,
     makePager,
     runExclusive,

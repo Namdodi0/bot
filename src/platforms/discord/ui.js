@@ -278,36 +278,6 @@ export function statusPanel(data) {
   });
 }
 
-/** @param {string} token */
-export function answerButtons(token) {
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`ask:regen:${token}`)
-      .setEmoji('🔁')
-      .setLabel('Regenerate')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`ask:continue:${token}`)
-      .setEmoji('➡️')
-      .setLabel('Continue')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`ask:delete:${token}`)
-      .setEmoji('🗑️')
-      .setLabel('Delete')
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId(`ask:good:${token}`)
-      .setEmoji('👍')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`ask:bad:${token}`)
-      .setEmoji('👎')
-      .setStyle(ButtonStyle.Secondary),
-  );
-  return [row];
-}
-
 /**
  * Previous / page indicator / Next row for a stored pager.
  * @param {string} pagerId
