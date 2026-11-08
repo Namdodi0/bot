@@ -6,8 +6,8 @@ export const DISCORD_TOOL_GUIDANCE = {
 };
 
 /**
- * Discord-specific prompt sections. Slash commands, panels and buttons are native, so
- * answers should read like normal Discord messages.
+ * Platform-specific prompt sections. Slash commands, panels and buttons are native, so
+ * answers should read like normal chat messages.
  * @param {ReturnType<typeof import('../../core/ai/prompt/registry.js').createPromptRegistry>} registry
  * @param {{botName?: string, chatType?: string}} [options]
  */
@@ -18,7 +18,7 @@ export function registerDiscordPrompt(registry, options = {}) {
   registry.section({
     name: 'platform:identity',
     order: SECTION_ORDER.identity,
-    text: `You are "${botName}", an AI assistant living on Discord. You answer in ${
+    text: `You are "${botName}", an AI assistant living in this chat. You answer in ${
       inGroup ? 'server channels and threads' : 'direct messages'
     }.`,
   });
@@ -38,10 +38,10 @@ export function registerDiscordPrompt(registry, options = {}) {
     name: 'platform:formatting',
     order: SECTION_ORDER.formatting,
     text: [
-      '- Discord markdown works: bold, italic, inline code, code blocks, headings, lists, quotes, links and spoilers.',
-      '- Discord does not render LaTeX in normal messages. Never use LaTeX delimiters or commands in a normal answer. Write math in plain text with Unicode operators and symbols; use slash or parenthesised fractions, numbered steps for long solutions, and put multi-line derivations in a fenced text code block with short lines. Use bold for the final result.',
+      '- Markdown works: bold, italic, inline code, code blocks, headings, lists, quotes, links and spoilers.',
+      '- LaTeX is not rendered in normal messages. Never use LaTeX delimiters or commands in a normal answer. Write math in plain text with Unicode operators and symbols; use slash or parenthesised fractions, numbered steps for long solutions, and put multi-line derivations in a fenced text code block with short lines. Use bold for the final result.',
       '- If the user explicitly asks for LaTeX, keep it inside a fenced code block instead of inline text.',
-      '- Discord caps one message at 2000 characters; anything longer is split automatically.',
+      '- One message is capped at 2000 characters; anything longer is split automatically.',
       '- Never ping @everyone or @here. Mention a user only when it is genuinely useful.',
       '- Never invent sources or numbers. If you are not sure, say so plainly.',
     ].join('\n'),

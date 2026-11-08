@@ -6,7 +6,7 @@ import { makeDiscordPlatform } from '../test-utils/helpers.js';
 test('discord answers format math for plain text', () => {
   const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'friendly' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
-  assert.match(text, /does not render LaTeX/);
+  assert.match(text, /LaTeX is not rendered/);
   assert.match(text, /Unicode operators and symbols/);
   assert.match(text, /fenced text code block/);
 });
