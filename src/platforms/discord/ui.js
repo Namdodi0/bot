@@ -464,7 +464,7 @@ export function settingsPanel(record, config, currentModel, visionModel = null, 
   const vision = visionModel
     ? `${meta.visionModel ? '' : 'default '}(\`${visionModel.alias}\` — ${visionModel.label})`
     : 'not configured yet';
-  const showThinking = meta.showThinking === true;
+  const showThinking = meta.showThinking !== false;
   return v2Panel({
     icon: '⚙️',
     title: 'Channel controls',

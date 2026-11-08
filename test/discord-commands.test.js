@@ -181,12 +181,12 @@ test('/settings toggles thinking-after-answer for the channel', async () => {
   const { commands, runtime } = makeCommands();
   const click = interaction('', {}, { customId: 'settings:thinking' });
   await commands.handleButton(click);
-  assert.equal(runtime.record.meta.showThinking, true);
+  assert.equal(runtime.record.meta.showThinking, false);
   assert.match(JSON.stringify(click.edits.at(-1)), /Thinking after answer/);
 
   const again = interaction('', {}, { customId: 'settings:thinking' });
   await commands.handleButton(again);
-  assert.equal(runtime.record.meta.showThinking, false);
+  assert.equal(runtime.record.meta.showThinking, true);
 });
 
 test('/settings vision stores a per-channel vision model and can reset it', async () => {

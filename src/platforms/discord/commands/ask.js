@@ -116,7 +116,7 @@ export function createAskHandlers(shared) {
         String(interaction.channelId),
         interaction.guildId ? 'GROUP' : 'PRIVATE',
       );
-      return record?.meta?.showThinking === true;
+      return record?.meta?.showThinking !== false;
     } catch (error) {
       logger?.debug('discord chat settings read failed', {
         chatId: String(interaction.channelId),

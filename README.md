@@ -35,7 +35,7 @@ globally by default; set `discord.guildId` to register them in one guild instead
   clean final answer.
 - **Stop** — `/stop` aborts the active turn(s) in that channel and marks the preview stopped.
 - **Thinking after the answer** — `/settings` has a per-channel toggle that posts the model's
-  reasoning excerpt as a separate clipped follow-up once the answer is done (off by default).
+  reasoning excerpt as a separate clipped follow-up once the answer is done (on by default).
 - **Components V2 answers** — a top-level `TextDisplay`; images share the answer message
   through a `MediaGallery`. Answers carry no action row, and long answers are split at the
   4000-char V2 budget instead of the 2000-char content limit. Command panels use a V2

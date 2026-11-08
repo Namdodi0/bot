@@ -221,7 +221,7 @@ export function createSettingsHandlers(shared) {
     const outcome = await runExclusive(interaction, async () => {
       const record = await chat.getRecord(chatId, chatType);
       if (!record.meta) record.meta = {};
-      record.meta.showThinking = record.meta.showThinking !== true;
+      record.meta.showThinking = record.meta.showThinking === false;
       runtime.store.touch?.(chatId);
       return settingsPayload(record);
     });

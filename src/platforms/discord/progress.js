@@ -44,7 +44,7 @@ export function createProgressFeed() {
         break;
       case 'reasoning':
         mode = 'reasoning';
-        reasoning = `${reasoning}${String(event.text ?? '')}`.replace(/\s+/g, ' ').slice(-600);
+        reasoning = `${reasoning}${String(event.text ?? '')}`.replace(/\s+/g, ' ').slice(-8000);
         break;
       case 'tool':
         mode = 'tool';
@@ -69,7 +69,7 @@ export function createProgressFeed() {
 
   function text() {
     if (mode === 'tool' && tool) return `> ${tool}`;
-    if (mode === 'reasoning' && reasoning) return `> 🧠 ${reasoning}`;
+    if (mode === 'reasoning' && reasoning) return `> 🧠 ${reasoning.slice(-600)}`;
     if (mode === 'thinking') return '> 🧠 Thinking…';
     if (mode === 'finalizing') return '> ✍️ Writing the answer…';
     return '';
@@ -83,7 +83,7 @@ export function createProgressFeed() {
  * @param {string} text
  * @param {number} [limit]
  */
-export function thinkingBlock(text, limit = 1500) {
+export function thinkingBlock(text, limit = 3000) {
   const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
   if (!clean) return '';
   const clipped = clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;

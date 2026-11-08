@@ -80,7 +80,7 @@ export function createMessageHandler(deps) {
         let showThinking = false;
         try {
           const record = await runtime.chatServices?.getRecord?.(event.chatId, event.chatType);
-          showThinking = record?.meta?.showThinking === true;
+          showThinking = record?.meta?.showThinking !== false;
         } catch (error) {
           logger?.debug('discord chat settings read failed', {
             chatId: event.chatId,

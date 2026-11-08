@@ -24,8 +24,8 @@ test('progress feed shows thinking, reasoning and tool status', () => {
 
 test('thinking block is clipped and formatted for the follow-up message', () => {
   assert.equal(thinkingBlock('  first\nsecond  '), '> 🧠 **Thinking**\n> first second');
-  const clipped = thinkingBlock('x'.repeat(2000));
+  const clipped = thinkingBlock('x'.repeat(4000));
   assert.ok(clipped.endsWith('…'));
-  assert.ok(clipped.length < 1600);
+  assert.ok(clipped.length < 3100);
   assert.equal(thinkingBlock('   '), '');
 });
