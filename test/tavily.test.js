@@ -26,6 +26,7 @@ test('search: drops country for fast/ultra-fast and never retries a billed POST'
   const client = createTavilyClient({ apiKey: 'k', http, cacheTtlMs: 60_000 });
   await client.search('gold', { searchDepth: 'fast', country: 'vietnam' });
   assert.equal('country' in http.calls[0].body, false);
+  assert.equal(http.calls[0].body.safe_search, false);
   assert.equal(http.calls[0].retries, 0);
 
   await client.search('gold basic', { searchDepth: 'basic', country: 'vietnam' });

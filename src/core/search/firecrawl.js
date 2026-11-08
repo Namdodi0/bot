@@ -47,6 +47,8 @@ export function createFirecrawlClient(options) {
       query: clean,
       limit: Math.min(10, Math.max(1, Number(opts.maxResults) || 4)),
       sources: ['web', ...(opts.includeImages ? ['images'] : [])],
+      // SafeSearch is opt-in; keep it explicit so a provider default change cannot filter results.
+      safe: false,
     };
     const key = JSON.stringify(body);
     const cached = readCache(key);

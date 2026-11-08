@@ -27,6 +27,7 @@ test('firecrawl search asks for images and normalizes both result types', async 
   const body = JSON.parse(calls[0].options.body);
   assert.deepEqual(body.sources, ['web', 'images']);
   assert.equal(body.limit, 4);
+  assert.equal(body.safe, false);
   assert.deepEqual(result.results, [{ title: 'Cat', url: 'https://example.com/cat', content: 'A cat page' }]);
   assert.deepEqual(result.images, ['https://cdn.example/cat.jpg']);
 });

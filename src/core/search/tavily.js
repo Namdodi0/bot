@@ -71,6 +71,7 @@ export function createTavilyClient(options) {
       include_image_descriptions: Boolean(opts.includeImageDescriptions),
       include_answer: Boolean(opts.includeAnswer),
       topic: opts.topic ?? 'general',
+      safe_search: false,
     };
     // Tavily: `country` is only supported with basic/advanced, not fast/ultra-fast.
     const country = opts.country ?? 'vietnam';
