@@ -15,9 +15,7 @@ export function createDiscordPlatform(input) {
 
   const transport = createDiscordTransport({
     token: config.discord.token,
-    config: config.discord,
     logger,
-    metrics,
   });
   const stickers = createDiscordStickerService({ config, client: transport.client, logger, metrics });
   const runStickerTool = createStickerToolRunner({ stickers, logger });
@@ -32,7 +30,6 @@ export function createDiscordPlatform(input) {
       uploadMedia: true,
       nativeInteractions: true,
       messageEdits: true,
-      embeds: true,
       threads: true,
     },
     limits: { text: 2000, caption: 2000 },

@@ -107,10 +107,6 @@ export function createShared(deps) {
     }
   }
 
-  function deadline() {
-    return config.responseTimeoutMs > 0 ? Date.now() + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
-  }
-
   async function busyReply(interaction) {
     const payload = {
       content: "I'm juggling too many messages right now. Give me a few seconds and try again. 🤹",
@@ -238,7 +234,6 @@ export function createShared(deps) {
     client,
     chat,
     reminderService,
-    pagers,
     makePager,
     runExclusive,
     busyReply,

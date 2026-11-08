@@ -123,7 +123,7 @@ function readConfigFile(file) {
 }
 
 /** Shorten a secret so it is safe to print in logs. */
-export function maskSecret(value) {
+function maskSecret(value) {
   if (!value) return '(empty)';
   const text = String(value);
   if (text.length <= 10) return '***';
@@ -148,7 +148,7 @@ export function collectSecrets(config) {
  * The key sets live in config-schema.js so parsers, examples and this check stay in sync.
  * @param {Record<string, any>} root
  */
-export function collectUnknownConfigKeys(root) {
+function collectUnknownConfigKeys(root) {
   /** @type {string[]} */
   const unknown = [];
   for (const key of Object.keys(root ?? {})) {

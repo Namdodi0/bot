@@ -161,7 +161,7 @@ export function createImageValidator(options = {}) {
         {
           method,
           headers,
-          lookup: (hostname, options_, callback) => {
+          lookup: (_hostname, options_, callback) => {
             const list = addresses.map((address) => ({ address, family: net.isIP(address) }));
             const wantsAll = Boolean(/** @type {any} */ (options_)?.all);
             if (wantsAll) callback(null, /** @type {any} */ (list));
@@ -213,7 +213,7 @@ export function createImageValidator(options = {}) {
         {
           method: 'GET',
           headers,
-          lookup: (hostname, options_, callback) => {
+          lookup: (_hostname, options_, callback) => {
             const list = addresses.map((address) => ({ address, family: net.isIP(address) }));
             const wantsAll = Boolean(/** @type {any} */ (options_)?.all);
             if (wantsAll) callback(null, /** @type {any} */ (list));

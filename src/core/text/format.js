@@ -1,8 +1,3 @@
-/** @param {string} value */
-export function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /** @param {string} text */
 export function normalizeWhitespace(text) {
   return String(text ?? '')
@@ -10,28 +5,6 @@ export function normalizeWhitespace(text) {
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-/**
- * Remove "@Bot deepseek" from group message content.
- * A bot name without '@' is only removed at the start of a sentence followed by ':'
- * or ',' (avoiding clipping sentences like "What is Bot deepseek?").
- * @param {string} text
- * @param {string[]} names bot names (display_name / config)
- */
-export function stripMention(text, names = []) {
-  let out = normalizeWhitespace(text);
-  for (const name of names) {
-    const clean = String(name ?? '').trim();
-    if (!clean) continue;
-    // Require a boundary after the name: "An" must not match the start of "Anh".
-    out = out.replace(new RegExp(`@\\s*${escapeRegExp(clean)}(?![\\p{L}\\p{N}_])`, 'giu'), ' ');
-    out = out.replace(new RegExp(`^\\s*${escapeRegExp(clean)}\\s*[:,]\\s*`, 'iu'), '');
-  }
-  return out
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/^[\s,;:\-–—]+/u, '')
     .trim();
 }
 

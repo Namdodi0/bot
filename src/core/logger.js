@@ -82,7 +82,7 @@ function redactValue(value, secrets) {
  * Display width (emoji count as 2 columns) for aligning the banner.
  * @param {string} text
  */
-export function visualWidth(text) {
+function visualWidth(text) {
   let width = 0;
   for (const char of String(text)) {
     const code = char.codePointAt(0) ?? 0;
@@ -403,4 +403,3 @@ export function createSilentLogger() {
 }
 
 export { ANSI, LEVEL_META, LEVELS };
-export const __test__ = { redactText, redactValue, formatPretty, formatFields, formatValue, colorEnabled, clockTime };

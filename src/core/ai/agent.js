@@ -3,7 +3,7 @@ import { createTokenMeter } from '../context/token-meter.js';
 import { CircuitOpenError, HttpError } from '../http.js';
 import { QUEUE_BUSY_TEXT, QueueFullError, createQueue, createRateLimiter, createSeenTracker } from './agent/queue.js';
 import { createCollectorSink, createSenderFactory } from './agent/sending.js';
-import { FALLBACK_MIN_MS, findBreak, planAttemptBudget, preview, sleep } from './agent/helpers.js';
+import { FALLBACK_MIN_MS, preview, sleep } from './agent/helpers.js';
 import { createTurnRunner } from './agent/turn.js';
 import { LLM_ERROR, isRetryableLlmError } from './llm/errors.js';
 import { createRetryExecutor } from './llm/retry.js';
@@ -325,4 +325,3 @@ export function createAgent(deps) {
   };
 }
 
-export const __test__ = { findBreak, planAttemptBudget };

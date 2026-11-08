@@ -14,10 +14,10 @@ const TEXT_EXTENSIONS = new Set([
 
 const TEXT_TYPES = ['json', 'xml', 'javascript', 'yaml', 'csv', 'toml', 'markdown'];
 
-export const MAX_TEXT_FILES = 3;
-export const MAX_TEXT_CHARS = 16_000;
-export const MAX_TEXT_CHARS_PER_FILE = 8_000;
-export const MAX_TEXT_BYTES = 1_000_000;
+const MAX_TEXT_FILES = 3;
+const MAX_TEXT_CHARS = 16_000;
+const MAX_TEXT_CHARS_PER_FILE = 8_000;
+const MAX_TEXT_BYTES = 1_000_000;
 
 /**
  * @param {any} attachment discord.js Attachment-like
@@ -41,7 +41,7 @@ export function isTextAttachment(attachment) {
  * @param {number} [limit]
  * @returns {string}
  */
-export function clipAttachmentText(text, limit = MAX_TEXT_CHARS_PER_FILE) {
+function clipAttachmentText(text, limit = MAX_TEXT_CHARS_PER_FILE) {
   const normalized = String(text ?? '').replace(/\r\n?/g, '\n').trim();
   if (normalized.length <= limit) return normalized;
   return `${normalized.slice(0, Math.max(0, limit))}\n[file truncated]`;

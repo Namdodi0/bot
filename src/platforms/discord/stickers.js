@@ -6,7 +6,7 @@ const CACHE_TTL_MS = 5 * 60_000;
  * @param {string} raw
  * @returns {Array<{id: string, name: string, tags: string[]}>}
  */
-export function parseDiscordStickerIds(raw) {
+function parseDiscordStickerIds(raw) {
   /** @type {Array<{id: string, name: string, tags: string[]}>} */
   const out = [];
   for (const part of String(raw ?? '').split(',')) {

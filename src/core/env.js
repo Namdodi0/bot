@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Files tried, in priority order (the first one wins). */
-export const DEFAULT_ENV_FILES = ['.env', '.env.local'];
+const DEFAULT_ENV_FILES = ['.env', '.env.local'];
 
 /** Repo root derived from this file (src/core/env.js → ../..), independent of the process cwd. */
 export const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -71,7 +71,7 @@ function normalizeValue(raw) {
  * @param {string} text
  * @returns {Array<[string, string]>}
  */
-export function parseEnvFile(text) {
+function parseEnvFile(text) {
   /** @type {Array<[string, string]>} */
   const entries = [];
   const clean = String(text).replace(/^\uFEFF/, '');
@@ -187,4 +187,3 @@ export function describeEnvHints() {
   return lines;
 }
 
-export const __test__ = { normalizeValue };

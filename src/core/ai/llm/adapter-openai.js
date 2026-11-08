@@ -128,7 +128,7 @@ export const REFUSELESS_REASONING_MAP = {
 };
 
 /** Neutral sampling names -> OpenAI-compatible wire names. */
-export const SAMPLING_FIELDS = {
+const SAMPLING_FIELDS = {
   topP: 'top_p',
   topK: 'top_k',
   minP: 'min_p',
@@ -549,4 +549,3 @@ export function createOpenAiCompatAdapter(options) {
   return { id: provider, chat, warmup, model, endpoint, provider, credentialed: Boolean(apiKey) };
 }
 
-export const __test__ = { parseChoice, reasoningEffort, tokensPerSec };

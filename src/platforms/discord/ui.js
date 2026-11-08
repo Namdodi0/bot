@@ -20,10 +20,10 @@ import {
 import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
 
-export const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
-export const PREVIEW_INTERVAL_MS = 1000;
+const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
+const PREVIEW_INTERVAL_MS = 1000;
 /** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
-export const V2_TEXT_LIMIT = 4000;
+const V2_TEXT_LIMIT = 4000;
 
 /**
  * Components V2 answer payload: a top-level TextDisplay (plain-message look) plus optional
@@ -97,7 +97,7 @@ function compactField(field) {
  * TextDisplays; panels use this card.
  * @param {{title?: string, icon?: string, subtitle?: string, body?: string, description?: string, fields?: Array<{name?: string, value?: string}>, footer?: string, thumbnail?: string|null, color?: number, rows?: any[], ephemeral?: boolean}} [options]
  */
-export function v2Panel(options = {}) {
+function v2Panel(options = {}) {
   const container = new ContainerBuilder().setAccentColor(options.color ?? COLORS.info);
   const icon = String(options.icon ?? '').trim();
   const title = String(options.title ?? '').trim();
@@ -220,7 +220,7 @@ export function chunkContent(text, limit = 3900) {
  * @param {string} text
  * @param {number} [limit]
  */
-export function streamPreview(text, limit = 3800) {
+function streamPreview(text, limit = 3800) {
   try {
     let value = String(text ?? '');
     if (!value.trim()) return '';
@@ -362,7 +362,7 @@ export function modelSelect(models, current) {
 }
 
 /** @param {{url?: string, data?: Buffer, contentType?: string, caption?: string}} photo */
-export function photoAttachment(photo) {
+function photoAttachment(photo) {
   return new AttachmentBuilder(photo.data ? Buffer.from(photo.data) : String(photo.url), {
     name: photoFilename(photo.url ?? '', photo.contentType),
   });

@@ -72,7 +72,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/core/http.js` — fetch wrapper: timeout, retry (honors `Retry-After`), per-service
   breaker (only retryable failures count; streaming outcomes are recorded after the body),
   SSE opening.
-- `src/core/text/format.js` — chunking, mention stripping, time/duration helpers.
+- `src/core/text/format.js` — chunking, whitespace and time/duration helpers.
 - `src/core/text/language.js` is not present; language drift is handled by the prompt rule.
 
 ## Invariants

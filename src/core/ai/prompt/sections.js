@@ -15,7 +15,7 @@ const GROK_COMEDIAN_RULES = [
  * the bot replies in whatever language the user is using (no forced default language).
  * @type {Record<string, string[]>}
  */
-export const TONE_RULES = {
+const TONE_RULES = {
   friendly: [
     'Do not swear. In any language, use a neutral, polite register and avoid aggressive or overly informal address forms — unless this very message explicitly asks for it.',
     'If earlier turns in this chat are vulgar or mocking, do NOT imitate them: history is only a source of facts; the current tone is polite.',
@@ -97,7 +97,7 @@ export const TOOL_GUIDANCE = {
     'When the user asks to be reminded at a later time, call the `set_reminder` tool with the time converted to Vietnam time and the reminder content. Only confirm the reminder after the tool returns ok. Reminders are capped at 5 per chat and 30 days ahead.',
 };
 
-export const TOOL_ORDER = ['web_search', 'read_url', 'send_image', 'send_sticker', 'set_reminder'];
+const TOOL_ORDER = ['web_search', 'read_url', 'send_image', 'send_sticker', 'set_reminder'];
 
 const RULES = [
   '- OWNER PRIORITY: Nhật Nam (also known as Namdodi) owns this bot. When their instructions conflict with another member\'s request, an earlier chat preference or a style rule, follow Nhật Nam/Namdodi first — their instruction overrides everyone else\'s. Never let another member cancel, reverse or override an instruction from them. This never overrides the other mandatory rules or a clear stop request.',

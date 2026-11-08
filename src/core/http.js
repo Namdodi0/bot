@@ -61,7 +61,7 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_TIMER_MS = 2_147_483_647;
 
 /** How long a server close may block on keep-alive sockets before shutdown moves on. */
-export const SERVER_CLOSE_TIMEOUT_MS = 2000;
+const SERVER_CLOSE_TIMEOUT_MS = 2000;
 
 /**
  * Close an http.Server without hanging on idle keep-alive connections: destroy them

@@ -2,7 +2,7 @@ import { AttachmentBuilder, Client, GatewayIntentBits, Partials } from 'discord.
 import { normalizeWhitespace } from '../../core/text/format.js';
 
 const TYPING_REFRESH_MS = 8_000;
-export const DISCORD_MAX_CONTENT = 2000;
+const DISCORD_MAX_CONTENT = 2000;
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'gif', 'webp', 'bmp']);
 
@@ -25,7 +25,7 @@ export function photoFilename(url, contentType) {
 }
 
 /** @param {string} caption */
-export function photoCaption(caption) {
+function photoCaption(caption) {
   const text = String(caption ?? '');
   return text ? text.slice(0, DISCORD_MAX_CONTENT) : '';
 }
@@ -33,13 +33,11 @@ export function photoCaption(caption) {
 /**
  * Thin Discord transport: sends messages/media/typing for the shared engine. Event routing
  * and slash commands live in bot.js/commands.js.
- * @param {{token: string, config?: {allowedChannelIds?: string[], respondToAllChannelIds?: string[]}, client?: any, logger?: import('../../core/logger.js').Logger, metrics?: any, createClient?: () => any}} options
+ * @param {{token: string, client?: any, logger?: import('../../core/logger.js').Logger, createClient?: () => any}} options
  */
 export function createDiscordTransport(options) {
   const token = options.token;
-  const config = options.config ?? {};
   const logger = options.logger;
-  const metrics = options.metrics;
 
   const client =
     options.client ??

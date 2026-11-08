@@ -70,7 +70,7 @@ export function turnEntry(input) {
  * as a durable user message and refreshed on every turn.
  * @param {{source: string, text: string, ts?: number}} input
  */
-export function contextEntry(input) {
+function contextEntry(input) {
   return {
     role: 'user',
     kind: MESSAGE_KIND.CONTEXT,
@@ -158,15 +158,6 @@ export function syncContexts(record, contexts, ts = Date.now()) {
     }
   }
   return record;
-}
-
-/** @param {any} record */
-export function latestSummary(record) {
-  const messages = record?.messages ?? [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index].kind === MESSAGE_KIND.SUMMARY) return messages[index].text;
-  }
-  return '';
 }
 
 /**

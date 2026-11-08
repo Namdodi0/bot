@@ -87,4 +87,3 @@ export function createMetrics(options = {}) {
   return { inc, observe, gauge, recordRequest, get, snapshot, startedAt };
 }
 
-export const __test__ = { percentile };

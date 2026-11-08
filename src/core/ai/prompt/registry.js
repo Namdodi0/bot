@@ -1,4 +1,4 @@
-export class PromptVariableError extends Error {
+class PromptVariableError extends Error {
   /** @param {string} message @param {{section?: string, variable?: string}} [meta] */
   constructor(message, meta = {}) {
     super(message);
@@ -12,7 +12,7 @@ const VARIABLE_NAME = /^[a-z][a-z0-9_]*$/;
 const REFERENCE = /\{\{\s*([a-z][a-z0-9_]*)\s*\}\}/g;
 
 /** @param {string} text @param {Record<string,string>} variables @param {string} section */
-export function interpolate(text, variables, section) {
+function interpolate(text, variables, section) {
   return String(text ?? '').replace(REFERENCE, (_match, name) => {
     const value = variables[name];
     if (value === undefined) {

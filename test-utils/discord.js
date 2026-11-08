@@ -1,7 +1,7 @@
 import { createCommandRuntime } from '../src/platforms/discord/commands.js';
 import { makeConfig, silentLogger } from './helpers.js';
 
-export function makeDiscordCommandPlatform() {
+function makeDiscordCommandPlatform() {
   return {
     name: 'discord',
     label: 'Discord',
@@ -29,7 +29,7 @@ export function makeDiscordCommandPlatform() {
   };
 }
 
-export function makeDiscordCommandRuntime() {
+function makeDiscordCommandRuntime() {
   const record = { messages: [], turns: 0, meta: {} };
   return {
     record,

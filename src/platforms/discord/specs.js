@@ -171,4 +171,3 @@ export const HELP_NOTE = [
   'Right-click a message → Apps → **Explain message** / **Summarize message**.',
 ].join('\n');
 
-export const COMMAND_NAMES = new Set(COMMANDS.map((command) => command.name));

@@ -4,7 +4,7 @@
  * typo report, examples and platform parsers cannot drift apart.
  */
 
-export const TOP_LEVEL_KEYS = [
+const TOP_LEVEL_KEYS = [
   'platform',
   'dataDir',
   'tone',
@@ -26,7 +26,7 @@ export const TOP_LEVEL_KEYS = [
   'opsPort',
 ];
 
-export const SECTION_KEYS = {
+const SECTION_KEYS = {
   discord: ['guildId', 'allowedChannelIds', 'respondToAllChannelIds', 'stickers', 'presence'],
   nim: [
     'baseUrl',
@@ -86,7 +86,7 @@ export const SECTION_KEYS = {
   image: ['enabled'],
 };
 
-export const NESTED_SECTION_KEYS = {
+const NESTED_SECTION_KEYS = {
   'discord.stickers': ['enabled', 'ids'],
   'discord.presence': ['status', 'type', 'text', 'url'],
 };

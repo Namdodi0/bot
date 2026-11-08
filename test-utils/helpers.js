@@ -121,7 +121,6 @@ export function makeDiscordPlatform(input = {}) {
       uploadMedia: true,
       nativeInteractions: true,
       messageEdits: true,
-      embeds: true,
       threads: true,
     },
     limits: { text: 2000, caption: 2000 },

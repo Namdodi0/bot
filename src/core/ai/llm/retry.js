@@ -1,5 +1,5 @@
 /** A provider Retry-After hint never blocks the turn for longer than this. */
-export const RETRY_AFTER_CAP_MS = 30_000;
+const RETRY_AFTER_CAP_MS = 30_000;
 
 /**
  * Retry executor kept separate from the adapter: the adapter declares the policy, the executor re-runs it.

@@ -2,10 +2,10 @@ export const DEFAULT_MAX_TOOL_ROUNDS = 3;
 export const TOOL_ROUND_WARN = 20;
 /** Images a single incoming message may contribute to one vision turn. */
 export const MAX_VISION_IMAGES = 5;
-export const FALLBACK_RESERVE_RATIO = 0.25;
-export const FALLBACK_RESERVE_MAX_MS = 8000;
+const FALLBACK_RESERVE_RATIO = 0.25;
+const FALLBACK_RESERVE_MAX_MS = 8000;
 export const FALLBACK_MIN_MS = 2500;
-export const MIN_ATTEMPT_MS = 1500;
+const MIN_ATTEMPT_MS = 1500;
 export const SLOW_CALL_WARN_MS = 120_000;
 
 /**

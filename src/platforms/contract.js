@@ -50,7 +50,6 @@
  * @property {boolean} uploadMedia
  * @property {boolean} nativeInteractions
  * @property {boolean} messageEdits
- * @property {boolean} embeds
  * @property {boolean} threads
  */
 
