@@ -111,6 +111,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   message. Text is chunked just under the 4000-char TextDisplay cap, not the legacy
   2000-char content cap. Command panels use a V2 Container card (`v2Panel`); answers never
   do.
+- **Post-answer thinking is opt-in per channel.** The `/settings` toggle writes
+  `record.meta.showThinking`; when on, the Discord platform posts a clipped reasoning excerpt
+  as a separate follow-up after the answer. It never becomes part of the answer payload.
 - **Private Discord turns stay private.** `/ask private:true` and ephemeral context-menu
   answers mark `event.private`; the core removes their entries from the
   shared record, disk snapshots, summaries and compaction.

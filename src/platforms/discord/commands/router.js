@@ -53,6 +53,7 @@ export function createCommandRuntime(deps) {
       const customId = String(interaction.customId ?? '');
       if (customId.startsWith('page:')) return shared.handlePager(interaction);
       if (customId.startsWith('remind:')) return basic.handleButton(interaction);
+      if (customId.startsWith('settings:')) return settings.handleButton(interaction);
       // Answer action rows were removed; acknowledge clicks on old messages instead of failing.
       return interaction
         .reply({

@@ -177,6 +177,18 @@ test('/help returns an ephemeral V2 Container panel', async () => {
   assert.equal(container.components[0].type, 10);
 });
 
+test('/settings toggles thinking-after-answer for the channel', async () => {
+  const { commands, runtime } = makeCommands();
+  const click = interaction('', {}, { customId: 'settings:thinking' });
+  await commands.handleButton(click);
+  assert.equal(runtime.record.meta.showThinking, true);
+  assert.match(JSON.stringify(click.edits.at(-1)), /Thinking after answer/);
+
+  const again = interaction('', {}, { customId: 'settings:thinking' });
+  await commands.handleButton(again);
+  assert.equal(runtime.record.meta.showThinking, false);
+});
+
 test('/settings vision stores a per-channel vision model and can reset it', async () => {
   const { commands, runtime } = makeCommands();
   const pick = interaction('settings', { vision: 'mistral-large' });

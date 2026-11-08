@@ -1,6 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { eventFromInteraction, messageText } from '../events.js';
-import { createProgressFeed } from '../progress.js';
+import { createProgressFeed, thinkingBlock } from '../progress.js';
 import { askModal, createPreviewer, v2Message } from '../ui.js';
 
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
@@ -12,6 +12,7 @@ const MAX_VISION_BYTES = 8 * 1024 * 1024;
 export function createAskHandlers(shared) {
   const {
     client,
+    logger,
     runtime,
     chat,
     ephemeral,
@@ -95,6 +96,9 @@ export function createAskHandlers(shared) {
       flush() {
         return previewer.flush();
       },
+      thinking() {
+        return feed.thinking();
+      },
       async stop() {
         try {
           await edit('⏹️ Stopped. The answer hit the brakes.');
@@ -103,6 +107,40 @@ export function createAskHandlers(shared) {
         }
       },
     };
+  }
+
+  /** @param {any} interaction */
+  async function thinkingEnabled(interaction) {
+    try {
+      const record = await chat.getRecord(
+        String(interaction.channelId),
+        interaction.guildId ? 'GROUP' : 'PRIVATE',
+      );
+      return record?.meta?.showThinking === true;
+    } catch (error) {
+      logger?.debug('discord chat settings read failed', {
+        chatId: String(interaction.channelId),
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * @param {(payload: any) => Promise<any>} send
+   * @param {string} text
+   * @param {boolean} [ephemeral]
+   */
+  async function postThinking(send, text, ephemeral = false) {
+    const block = thinkingBlock(text);
+    if (!block) return;
+    try {
+      await send(v2Message(block, [], { ephemeral }));
+    } catch (error) {
+      logger?.warn('discord thinking follow-up failed', {
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      });
+    }
   }
 
   /**
@@ -115,6 +153,7 @@ export function createAskHandlers(shared) {
     // A private answer must never be posted to a public thread.
     const useThread = wantsThread && !priv;
     await interaction.deferReply(useThread ? ephemeral : privateReply(priv));
+    const showThinking = await thinkingEnabled(interaction);
 
     let imageData = options.imageData ?? null;
     if (withImage) {
@@ -152,6 +191,9 @@ export function createAskHandlers(shared) {
         return;
       }
       await sendChannelAnswer(thread, result, placeholder);
+      if (showThinking && result.text) {
+        await postThinking((payload) => thread.send(payload), preview.thinking());
+      }
       await interaction.editReply({ content: `All yours in ${thread}. 🧵`, allowedMentions: { parse: [] } });
       return;
     }
@@ -169,6 +211,9 @@ export function createAskHandlers(shared) {
       return;
     }
     await sendInteractionAnswer(interaction, result, priv);
+    if (showThinking && result.text) {
+      await postThinking((payload) => interaction.followUp(payload), preview.thinking(), priv);
+    }
     if (wantsThread) {
       await interaction.followUp({
         content: 'Private answers skip threads — your secret stays right here. 🤫',
@@ -188,6 +233,7 @@ export function createAskHandlers(shared) {
       return;
     }
     await interaction.deferReply(ephemeral);
+    const showThinking = await thinkingEnabled(interaction);
     const prompt = `${prefix}\n\n${content}`;
     const preview = createStreamPreview((text) => interaction.editReply(v2Message(text)));
     const result = await runtime.agent.stream(askEvent(interaction, prompt, { private: true }), {
@@ -201,6 +247,9 @@ export function createAskHandlers(shared) {
       return;
     }
     await sendInteractionAnswer(interaction, result, true);
+    if (showThinking && result.text) {
+      await postThinking((payload) => interaction.followUp(payload), preview.thinking(), true);
+    }
   }
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */

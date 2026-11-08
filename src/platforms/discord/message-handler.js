@@ -1,7 +1,7 @@
 import { QUEUE_BUSY_TEXT } from '../../core/ai/agent/queue.js';
 import { collectTextAttachments } from './attachments.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
-import { createProgressFeed } from './progress.js';
+import { createProgressFeed, thinkingBlock } from './progress.js';
 import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from './ui.js';
 
 /**
@@ -77,6 +77,16 @@ export function createMessageHandler(deps) {
           }
         }
         metrics?.inc('discord.messages.in');
+        let showThinking = false;
+        try {
+          const record = await runtime.chatServices?.getRecord?.(event.chatId, event.chatType);
+          showThinking = record?.meta?.showThinking === true;
+        } catch (error) {
+          logger?.debug('discord chat settings read failed', {
+            chatId: event.chatId,
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+        }
 
         // Ordinary chat streams into one placeholder reply, the same way /ask does.
         const stopTyping = config.typing ? transport.startTyping(event.chatId) : async () => {};
@@ -204,6 +214,17 @@ export function createMessageHandler(deps) {
                   });
                 }
               }
+            }
+          }
+          if (showThinking && result.text) {
+            const block = thinkingBlock(feed.thinking());
+            if (block) {
+              await message.channel.send(v2Message(block)).catch((error) => {
+                logger?.warn('discord thinking follow-up failed', {
+                  chatId: event.chatId,
+                  error: String(/** @type {any} */ (error)?.message ?? error),
+                });
+              });
             }
           }
         } catch (error) {

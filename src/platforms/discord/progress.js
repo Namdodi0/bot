@@ -75,5 +75,18 @@ export function createProgressFeed() {
     return '';
   }
 
-  return { update, text };
+  return { update, text, thinking: () => reasoning };
+}
+
+/**
+ * Reasoning excerpt posted after the answer when the channel enables it.
+ * @param {string} text
+ * @param {number} [limit]
+ */
+export function thinkingBlock(text, limit = 1500) {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  const clipped = clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
+  return `> 🧠 **Thinking**
+> ${clipped}`;
 }

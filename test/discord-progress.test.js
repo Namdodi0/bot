@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createProgressFeed } from '../src/platforms/discord/progress.js';
+import { createProgressFeed, thinkingBlock } from '../src/platforms/discord/progress.js';
 
 test('progress feed shows thinking, reasoning and tool status', () => {
   const feed = createProgressFeed();
@@ -10,6 +10,7 @@ test('progress feed shows thinking, reasoning and tool status', () => {
 
   feed.update({ type: 'reasoning', text: 'need to search' });
   assert.match(feed.text(), /need to search/);
+  assert.equal(feed.thinking(), 'need to search');
 
   feed.update({ type: 'tool', name: 'web_search', query: 'tin tức' });
   assert.match(feed.text(), /Searching the web: tin tức/);
@@ -19,4 +20,12 @@ test('progress feed shows thinking, reasoning and tool status', () => {
 
   feed.update({ type: 'finalizing' });
   assert.match(feed.text(), /Writing the answer/);
+});
+
+test('thinking block is clipped and formatted for the follow-up message', () => {
+  assert.equal(thinkingBlock('  first\nsecond  '), '> 🧠 **Thinking**\n> first second');
+  const clipped = thinkingBlock('x'.repeat(2000));
+  assert.ok(clipped.endsWith('…'));
+  assert.ok(clipped.length < 1600);
+  assert.equal(thinkingBlock('   '), '');
 });

@@ -95,7 +95,7 @@ function compactField(field) {
  * Components V2 command panel: a Container card with an accent color, an optional header
  * thumbnail, one compact body block, a subtext footer and action rows. Answers stay bare
  * TextDisplays; panels use this card.
- * @param {{title?: string, icon?: string, subtitle?: string, body?: string, description?: string, fields?: Array<{name?: string, value?: string}>, footer?: string, thumbnail?: string|null, color?: number, rows?: any[], ephemeral?: boolean}} [options]
+ * @param {{title?: string, icon?: string, subtitle?: string, body?: string, description?: string, fields?: Array<{name?: string, value?: string}>, footer?: string, thumbnail?: string|null, headerButton?: {customId: string, label: string, style?: any, emoji?: string}|null, color?: number, rows?: any[], ephemeral?: boolean}} [options]
  */
 function v2Panel(options = {}) {
   const container = new ContainerBuilder().setAccentColor(options.color ?? COLORS.info);
@@ -108,14 +108,22 @@ function v2Panel(options = {}) {
   const fields = options.fields ?? [];
   const body = String(options.body ?? options.description ?? '').trim() || fields.slice(0, 20).map(compactField).join('\n');
 
-  if (heading && thumbnail) {
-    container.addSectionComponents(
-      new SectionBuilder()
-        .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(`## ${clipPanelText(heading, 240)}`),
-        )
-        .setThumbnailAccessory(new ThumbnailBuilder().setURL(thumbnail)),
+  const headerButton = options.headerButton;
+  if (heading && (thumbnail || headerButton)) {
+    const section = new SectionBuilder().addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`## ${clipPanelText(heading, 240)}`),
     );
+    if (thumbnail) {
+      section.setThumbnailAccessory(new ThumbnailBuilder().setURL(thumbnail));
+    } else if (headerButton) {
+      const button = new ButtonBuilder()
+        .setCustomId(String(headerButton.customId))
+        .setLabel(clipPanelText(headerButton.label, 80))
+        .setStyle(headerButton.style ?? ButtonStyle.Secondary);
+      if (headerButton.emoji) button.setEmoji(String(headerButton.emoji));
+      section.setButtonAccessory(button);
+    }
+    container.addSectionComponents(section);
   } else if (heading) {
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(`## ${clipPanelText(heading, 240)}`),
@@ -456,12 +464,19 @@ export function settingsPanel(record, config, currentModel, visionModel = null, 
   const vision = visionModel
     ? `${meta.visionModel ? '' : 'default '}(\`${visionModel.alias}\` — ${visionModel.label})`
     : 'not configured yet';
+  const showThinking = meta.showThinking === true;
   return v2Panel({
     icon: '⚙️',
     title: 'Channel controls',
     footer: 'These dials only affect this channel.',
     rows,
     ephemeral: true,
+    headerButton: {
+      customId: 'settings:thinking',
+      label: showThinking ? 'Thinking after answer: on' : 'Thinking after answer: off',
+      emoji: '🧠',
+      style: showThinking ? ButtonStyle.Success : ButtonStyle.Secondary,
+    },
     body: [
       `**Model** · \`${currentModel.alias}\` — ${currentModel.label}`,
       `**Vision** · ${vision}`,
@@ -469,6 +484,7 @@ export function settingsPanel(record, config, currentModel, visionModel = null, 
       `**Think effort** · ${reasoning}`,
       `**Default privacy** · ${meta.privateDefault ? 'private' : 'public'}`,
       `**Auto-thread** · ${meta.autoThread ? 'on' : 'off'}`,
+      `**Thinking after answer** · ${showThinking ? 'on' : 'off'}`,
     ].join('\n'),
   });
 }

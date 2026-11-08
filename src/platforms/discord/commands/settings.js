@@ -206,5 +206,29 @@ export function createSettingsHandlers(shared) {
     await interaction.update(outcome.value);
   }
 
-  return { handlers, handleAutocomplete, handleSelect };
+  /** @param {any} interaction */
+  async function handleButton(interaction) {
+    if (interaction.customId !== 'settings:thinking') return false;
+    if (!isAdmin(interaction)) {
+      await replyEphemeral(
+        interaction,
+        errorPanel('Only server admins get to touch these dials. 🔒'),
+      );
+      return true;
+    }
+    const chatId = String(interaction.channelId);
+    const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
+    const outcome = await runExclusive(interaction, async () => {
+      const record = await chat.getRecord(chatId, chatType);
+      if (!record.meta) record.meta = {};
+      record.meta.showThinking = record.meta.showThinking !== true;
+      runtime.store.touch?.(chatId);
+      return settingsPayload(record);
+    });
+    if (!outcome.ok) return true;
+    await interaction.update(outcome.value);
+    return true;
+  }
+
+  return { handlers, handleAutocomplete, handleSelect, handleButton };
 }

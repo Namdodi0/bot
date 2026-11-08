@@ -61,3 +61,55 @@ test('image preparation runs inside the per-chat queue, before the turn', async 
   await handler(message);
   assert.deepEqual(order, ['queue', 'download', 'stream']);
 });
+
+test('chat answers post the thinking block when the channel enables it', async () => {
+  /** @type {any[]} */
+  const sent = [];
+  const runtime = {
+    agent: {
+      exclusive: async (_chatId, task) => task(),
+      stream: async (_event, options) => {
+        options.onProgress({ type: 'reasoning', text: 'secret plan' });
+        return { text: 'done', photos: [] };
+      },
+    },
+    chatServices: { getRecord: async () => ({ meta: { showThinking: true } }) },
+  };
+  const transport = { startTyping: () => async () => {} };
+  const client = { user: { id: 'bot-1', username: 'Bot' } };
+  const handler = createMessageHandler({
+    config: makeConfig({ typing: false }),
+    logger: silentLogger,
+    metrics: { inc() {} },
+    transport,
+    runtime,
+    client,
+  });
+
+  const message = {
+    id: 'm3',
+    content: '<@bot-1> hi',
+    createdTimestamp: Date.now(),
+    author: { id: 'u1', username: 'alice', bot: false },
+    member: { displayName: 'Alice' },
+    channel: {
+      id: 'c1',
+      isDMBased: () => false,
+      send: async (payload) => {
+        sent.push(payload);
+      },
+    },
+    mentions: { users: new Map([['bot-1', {}]]) },
+    attachments: [],
+    async reply() {
+      return { edit: async () => {}, delete: async () => {} };
+    },
+  };
+
+  await handler(message);
+  const rendered = sent
+    .map((payload) => JSON.stringify((payload.components ?? []).map((component) => component.toJSON?.())))
+    .join('\n');
+  assert.match(rendered, /Thinking/);
+  assert.match(rendered, /secret plan/);
+});

@@ -34,6 +34,8 @@ globally by default; set `discord.guildId` to register them in one guild instead
   status and tool results appear above the answer while it streams, then are replaced by the
   clean final answer.
 - **Stop** — `/stop` aborts the active turn(s) in that channel and marks the preview stopped.
+- **Thinking after the answer** — `/settings` has a per-channel toggle that posts the model's
+  reasoning excerpt as a separate clipped follow-up once the answer is done (off by default).
 - **Components V2 answers** — a top-level `TextDisplay`; images share the answer message
   through a `MediaGallery`. Answers carry no action row, and long answers are split at the
   4000-char V2 budget instead of the 2000-char content limit. Command panels use a V2
@@ -66,7 +68,7 @@ globally by default; set `discord.guildId` to register them in one guild instead
 | `/ping` | Gateway and round-trip latency |
 | `/stop` | Cancel the current answer in this channel |
 | `/model` | Show or switch the model (admin) |
-| `/settings` | Model, tone, reasoning, privacy and thread defaults (admin) |
+| `/settings` | Model, tone, reasoning, privacy, threads and after-answer thinking (admin) |
 | `/reset` | Clear the channel context (admin) |
 | `/compact` | Compact the channel context now (admin) |
 | `/summary` | Summarize recent messages |
