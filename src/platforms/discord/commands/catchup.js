@@ -132,9 +132,9 @@ export function createCatchupHandlers(shared) {
       const pages = splitPages(summary.text);
       if (pages.length > 1) {
         const title = `Catch-up — last ${hours} hour${hours === 1 ? '' : 's'}`;
-        const pager = makePager(interaction.user.id, pages, title);
+        const pager = makePager(interaction.user.id, pages, title, '📰');
         await interaction.editReply(
-          textPanel(title, pages[0], { rows: paginationRow(pager, 0, pages.length) }),
+          textPanel(title, pages[0], { icon: '📰', rows: paginationRow(pager, 0, pages.length) }),
         );
         return;
       }

@@ -64,6 +64,7 @@ export function createSettingsHandlers(shared) {
         await replyEphemeral(
           interaction,
           textPanel('Model', `Current: **${current.label}** (\`${current.alias}\`)`, {
+            icon: '🧠',
             rows: modelSelect(chat.listModels(), current.alias),
           }),
         );
@@ -136,6 +137,7 @@ export function createSettingsHandlers(shared) {
       if (!outcome.ok) return;
       await interaction.update(
         textPanel('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`, {
+          icon: '✅',
           ephemeral: true,
         }),
       );

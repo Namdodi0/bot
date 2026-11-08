@@ -7,6 +7,7 @@ import {
   MediaGalleryBuilder,
   MessageFlags,
   ModalBuilder,
+  SectionBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
   StringSelectMenuBuilder,
@@ -14,6 +15,7 @@ import {
   TextDisplayBuilder,
   TextInputBuilder,
   TextInputStyle,
+  ThumbnailBuilder,
 } from 'discord.js';
 import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
@@ -22,8 +24,6 @@ export const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xe
 export const PREVIEW_INTERVAL_MS = 1000;
 /** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
 export const V2_TEXT_LIMIT = 4000;
-/** Leave headroom for a footer/rows when a panel carries several text blocks. */
-const PANEL_TEXT_LIMIT = 3500;
 
 /**
  * Components V2 answer payload: a top-level TextDisplay (plain-message look) plus optional
@@ -71,49 +71,78 @@ export function v2Answer(content, rows = [], photos = [], options = {}) {
   return payload;
 }
 
+/** Components V2 text counts across the whole message, so keep a shared safety margin. */
+const PANEL_TEXT_LIMIT = 3900;
+
 /** @param {string} text @param {number} [limit] */
 function clipPanelText(text, limit = PANEL_TEXT_LIMIT) {
   const raw = String(text ?? '');
-  return raw.length > limit ? `${raw.slice(0, limit - 1)}…` : raw;
+  return raw.length > limit ? `${raw.slice(0, Math.max(0, limit - 1))}…` : raw;
 }
 
 /**
- * Components V2 command panel: a Container card with an accent color, a title, optional
- * fields, footer and action rows. Answers stay bare TextDisplays; panels use this card.
- * @param {{title?: string, description?: string, fields?: Array<{name?: string, value?: string}>, footer?: string, color?: number, rows?: any[], ephemeral?: boolean}} [options]
+ * One compact stats row: `**Name** · value` for short values, a label line for long ones.
+ * @param {{name?: string, value?: string}} field
+ */
+function compactField(field) {
+  const name = String(field?.name ?? '').trim();
+  const value = String(field?.value ?? '').trim() || '—';
+  if (!name) return value;
+  return value.includes('\n') || value.length > 64 ? `**${name}**\n${value}` : `**${name}** · ${value}`;
+}
+
+/**
+ * Components V2 command panel: a Container card with an accent color, an optional header
+ * thumbnail, one compact body block, a subtext footer and action rows. Answers stay bare
+ * TextDisplays; panels use this card.
+ * @param {{title?: string, icon?: string, subtitle?: string, body?: string, description?: string, fields?: Array<{name?: string, value?: string}>, footer?: string, thumbnail?: string|null, color?: number, rows?: any[], ephemeral?: boolean}} [options]
  */
 export function v2Panel(options = {}) {
   const container = new ContainerBuilder().setAccentColor(options.color ?? COLORS.info);
+  const icon = String(options.icon ?? '').trim();
   const title = String(options.title ?? '').trim();
-  if (title) {
+  const heading = [icon, title].filter(Boolean).join(' ');
+  const subtitle = String(options.subtitle ?? '').trim();
+  const footer = String(options.footer ?? '').trim();
+  const thumbnail = String(options.thumbnail ?? '').trim();
+  const fields = options.fields ?? [];
+  const body = String(options.body ?? options.description ?? '').trim() || fields.slice(0, 20).map(compactField).join('\n');
+
+  if (heading && thumbnail) {
+    container.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(`## ${clipPanelText(heading, 240)}`),
+        )
+        .setThumbnailAccessory(new ThumbnailBuilder().setURL(thumbnail)),
+    );
+  } else if (heading) {
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`### ${clipPanelText(title, 250)}`),
+      new TextDisplayBuilder().setContent(`## ${clipPanelText(heading, 240)}`),
     );
   }
-  const description = String(options.description ?? '').trim();
-  if (description) {
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(clipPanelText(description)));
+  if (subtitle) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(clipPanelText(`-# ${subtitle}`, 300)),
+    );
   }
-  const fields = options.fields ?? [];
-  if (fields.length) {
+  if ((heading || subtitle) && (body || footer)) {
     container.addSeparatorComponents(
       new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
     );
-    for (const field of fields.slice(0, 20)) {
-      const name = String(field?.name ?? '').trim();
-      const value = String(field?.value ?? '').trim() || '—';
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(clipPanelText(name ? `**${name}**\n${value}` : value)),
-      );
-    }
   }
-  const footer = String(options.footer ?? '').trim();
+  const bodyBudget = Math.max(200, PANEL_TEXT_LIMIT - heading.length - subtitle.length - footer.length - 32);
+  if (body) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(clipPanelText(body, bodyBudget)),
+    );
+  }
   if (footer) {
     container.addSeparatorComponents(
       new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small),
     );
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(clipPanelText(`-# ${footer}`)),
+      new TextDisplayBuilder().setContent(clipPanelText(`-# ${footer}`, 400)),
     );
   }
   return {
@@ -127,16 +156,18 @@ export function v2Panel(options = {}) {
  * Simple title + body panel used by command output and pagers.
  * @param {string} title
  * @param {string} text
- * @param {{footer?: string, rows?: any[], ephemeral?: boolean, color?: number}} [options]
+ * @param {{icon?: string, subtitle?: string, footer?: string, thumbnail?: string|null, rows?: any[], ephemeral?: boolean, color?: number}} [options]
  */
 export function textPanel(title, text, options = {}) {
-  return v2Panel({ title, description: text, ...options });
+  return v2Panel({ title, body: text, ...options });
 }
 
-/** @param {string} message */
-export function errorPanel(message) {
+/** @param {string} message @param {string} [title] */
+export function errorPanel(message, title = 'Error') {
   return v2Panel({
-    description: String(message ?? 'Something went wrong.'),
+    icon: '⚠️',
+    title,
+    body: String(message ?? 'Something went wrong.'),
     color: COLORS.error,
   });
 }
@@ -222,7 +253,7 @@ export function askModal(priv, inThread) {
 }
 
 /**
- * @param {{model: any, mode: string, uptimeSec: number, messages: number, turns: number, contextFiles: number, ttlHours: number, ping: number, search: string, metrics: any}} data
+ * @param {{model: any, mode: string, uptimeSec: number, messages: number, turns: number, contextFiles: number, ttlHours: number, ping: number, search: string, metrics: any, avatar?: string|null}} data
  */
 export function statusPanel(data) {
   const snapshot = data.metrics?.snapshot?.() ?? {};
@@ -230,31 +261,49 @@ export function statusPanel(data) {
   const llm = snapshot.latency?.['llm.latency'];
   const replies = snapshot.latency?.['agent.reply'];
   return v2Panel({
+    icon: '📊',
     title: 'Bot status',
+    thumbnail: data.avatar,
     ephemeral: true,
-    fields: [
-      { name: 'Model', value: `\`${data.model.alias}\` — ${data.model.label}\n\`${data.model.provider}/${data.model.model}\`` },
-      { name: 'Transport', value: `${data.mode} · gateway ${data.ping}ms` },
-      { name: 'Uptime', value: formatDuration(data.uptimeSec * 1000) },
-      { name: 'Context', value: `${data.messages} messages · ${data.turns} turns · ${data.contextFiles} files on disk` },
-      { name: 'Search', value: data.search },
-      {
-        name: 'Latency',
-        value: `LLM p50 ${llm ? `${llm.p50}ms` : 'n/a'} · reply p50 ${replies ? `${replies.p50}ms` : 'n/a'}`,
-      },
-      { name: 'Traffic', value: `${count('messages.in')} received · ${count('messages.replied')} replies · ${count('messages.error')} errors` },
-    ],
+    body: [
+      `**Model** · \`${data.model.alias}\` — ${data.model.label}`,
+      `**Transport** · ${data.mode} · ${data.ping}ms ping`,
+      `**Uptime** · ${formatDuration(data.uptimeSec * 1000)}`,
+      `**Context** · ${data.messages} messages · ${data.turns} turns · ${data.contextFiles} files`,
+      `**Search** · ${data.search}`,
+      `**Latency** · LLM p50 ${llm ? `${llm.p50}ms` : 'n/a'} · reply p50 ${replies ? `${replies.p50}ms` : 'n/a'}`,
+      `**Traffic** · ${count('messages.in')} in · ${count('messages.replied')} replies · ${count('messages.error')} errors`,
+    ].join('\n'),
+    footer: `${data.model.provider}/${data.model.model}`,
   });
 }
 
 /** @param {string} token */
 export function answerButtons(token) {
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`ask:regen:${token}`).setLabel('Regenerate').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`ask:continue:${token}`).setLabel('Continue').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`ask:delete:${token}`).setLabel('Delete').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(`ask:good:${token}`).setLabel('👍').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`ask:bad:${token}`).setLabel('👎').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`ask:regen:${token}`)
+      .setEmoji('🔁')
+      .setLabel('Regenerate')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`ask:continue:${token}`)
+      .setEmoji('➡️')
+      .setLabel('Continue')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`ask:delete:${token}`)
+      .setEmoji('🗑️')
+      .setLabel('Delete')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`ask:good:${token}`)
+      .setEmoji('👍')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`ask:bad:${token}`)
+      .setEmoji('👎')
+      .setStyle(ButtonStyle.Secondary),
   );
   return [row];
 }
@@ -375,8 +424,9 @@ export function photoPayload(group) {
 export function remindersPanel(items, rows = []) {
   if (!items.length) {
     return v2Panel({
+      icon: '⏰',
       title: 'Reminders',
-      description: 'No reminders in this channel yet. Use `/remind add`.',
+      body: 'No reminders in this channel yet.\nUse `/remind add` or the button below.',
       rows,
       ephemeral: true,
     });
@@ -384,10 +434,14 @@ export function remindersPanel(items, rows = []) {
   const lines = items
     .slice()
     .sort((a, b) => a.at - b.at)
-    .map((item) => `**#${item.id}** — <t:${Math.floor(item.at / 1000)}:f> (<t:${Math.floor(item.at / 1000)}:R>)\n${item.text}`);
+    .map((item) => {
+      const seconds = Math.floor(item.at / 1000);
+      return `**#${item.id}** · <t:${seconds}:R> · <t:${seconds}:f>\n> ${item.text}`;
+    });
   return v2Panel({
+    icon: '⏰',
     title: `Reminders (${items.length})`,
-    description: lines.join('\n\n'),
+    body: lines.join('\n\n'),
     rows,
     ephemeral: true,
   });
@@ -433,18 +487,19 @@ export function settingsPanel(record, config, currentModel, visionModel = null, 
     ? `${meta.visionModel ? '' : 'default '}(\`${visionModel.alias}\` — ${visionModel.label})`
     : 'not configured';
   return v2Panel({
+    icon: '⚙️',
     title: 'Channel settings',
     footer: 'Changes apply to this channel only.',
     rows,
     ephemeral: true,
-    fields: [
-      { name: 'Model', value: `\`${currentModel.alias}\` — ${currentModel.label}` },
-      { name: 'Vision model', value: vision },
-      { name: 'Tone', value: tone },
-      { name: 'Think effort', value: reasoning },
-      { name: 'Default privacy', value: meta.privateDefault ? 'private' : 'public' },
-      { name: 'Auto-thread', value: meta.autoThread ? 'on' : 'off' },
-    ],
+    body: [
+      `**Model** · \`${currentModel.alias}\` — ${currentModel.label}`,
+      `**Vision** · ${vision}`,
+      `**Tone** · ${tone}`,
+      `**Think effort** · ${reasoning}`,
+      `**Default privacy** · ${meta.privateDefault ? 'private' : 'public'}`,
+      `**Auto-thread** · ${meta.autoThread ? 'on' : 'off'}`,
+    ].join('\n'),
   });
 }
 
@@ -526,8 +581,10 @@ export function settingsRows(models, record, currentModel) {
  */
 export function catchupPanel(hours, count, text) {
   return v2Panel({
-    title: `Catch-up — last ${hours} hour${hours === 1 ? '' : 's'}`,
-    description: String(text ?? '').trim() || 'Nothing to summarize.',
+    icon: '📰',
+    title: 'Catch-up',
+    subtitle: `last ${hours} hour${hours === 1 ? '' : 's'}`,
+    body: String(text ?? '').trim() || 'Nothing to summarize.',
     footer: `${count} message${count === 1 ? '' : 's'} summarized`,
     ephemeral: true,
   });

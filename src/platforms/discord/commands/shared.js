@@ -24,7 +24,7 @@ export function createShared(deps) {
 
   /** @type {Map<string, {prompt: string, answer?: string, chatId: string, chatType: string, userId: string, ephemeral: boolean, origin: 'channel'|'interaction', at: number}>} */
   const tokens = new Map();
-  /** @type {Map<string, {pages: string[], title: string, userId: string, at: number}>} */
+  /** @type {Map<string, {pages: string[], title: string, icon: string, userId: string, at: number}>} */
   const pagers = new Map();
 
   function pruneTokens() {
@@ -38,11 +38,12 @@ export function createShared(deps) {
    * @param {string} userId
    * @param {string[]} pages
    * @param {string} title
+   * @param {string} [icon]
    */
-  function makePager(userId, pages, title) {
+  function makePager(userId, pages, title, icon = '') {
     pruneTokens();
     const id = crypto.randomUUID().slice(0, 12);
-    pagers.set(id, { pages, title, userId, at: Date.now() });
+    pagers.set(id, { pages, title, icon, userId, at: Date.now() });
     return id;
   }
 
@@ -62,6 +63,7 @@ export function createShared(deps) {
     const page = Math.max(0, Math.min(pager.pages.length - 1, Number(rawPage) || 0));
     await interaction.update(
       textPanel(pager.title, pager.pages[page], {
+        icon: pager.icon,
         ephemeral: true,
         rows: paginationRow(pagerId, page, pager.pages.length),
       }),

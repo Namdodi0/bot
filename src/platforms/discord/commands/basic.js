@@ -67,6 +67,14 @@ export function createBasicHandlers(shared) {
     return config.responseTimeoutMs > 0 ? Date.now() + config.responseTimeoutMs : Number.POSITIVE_INFINITY;
   }
 
+  function avatarUrl() {
+    try {
+      return platform.transport.client?.user?.displayAvatarURL?.({ extension: 'png', size: 128 }) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** @param {any} interaction */
   async function commandRateLimited(interaction) {
     const chatId = String(interaction.channelId);
@@ -105,13 +113,18 @@ export function createBasicHandlers(shared) {
     async help(interaction) {
       const pages = helpPages();
       if (pages.length <= 1) {
-        await replyEphemeral(interaction, textPanel('AI bot commands', pages[0]));
+        await replyEphemeral(
+          interaction,
+          textPanel('AI bot commands', pages[0], { icon: '📚', thumbnail: avatarUrl() }),
+        );
         return;
       }
-      const pager = makePager(interaction.user.id, pages, 'AI bot commands');
+      const pager = makePager(interaction.user.id, pages, 'AI bot commands', '📚');
       await replyEphemeral(
         interaction,
         textPanel('AI bot commands', pages[0], {
+          icon: '📚',
+          thumbnail: avatarUrl(),
           rows: paginationRow(pager, 0, pages.length),
         }),
       );
@@ -133,6 +146,7 @@ export function createBasicHandlers(shared) {
           ping: (await platform.transport.ping(chatId)) || 0,
           search: config.search.enabled ? `${config.search.depth}/${config.search.maxResults}` : 'off',
           metrics: runtime.metrics,
+          avatar: avatarUrl(),
         }),
       );
     },
@@ -213,13 +227,13 @@ export function createBasicHandlers(shared) {
       const title = `Summary of the last ${result.count} messages`;
       const pages = splitPages(result.text);
       if (pages.length > 1) {
-        const pager = makePager(interaction.user.id, pages, title);
+        const pager = makePager(interaction.user.id, pages, title, '📝');
         await interaction.editReply(
-          textPanel(title, pages[0], { rows: paginationRow(pager, 0, pages.length) }),
+          textPanel(title, pages[0], { icon: '📝', rows: paginationRow(pager, 0, pages.length) }),
         );
         return;
       }
-      await interaction.editReply(textPanel(title, result.text));
+      await interaction.editReply(textPanel(title, result.text, { icon: '📝' }));
     },
 
     async search(interaction) {
@@ -240,7 +254,9 @@ export function createBasicHandlers(shared) {
         await interaction.editReply(errorPanel(result.text));
         return;
       }
-      await interaction.editReply(textPanel(`Search: ${query}`, result.text));
+      await interaction.editReply(
+        textPanel('Search', result.text, { icon: '🔎', subtitle: query }),
+      );
     },
 
     async image(interaction) {
