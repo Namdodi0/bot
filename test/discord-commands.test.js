@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MessageFlags } from 'discord.js';
+import { COMMANDS } from '../src/platforms/discord/specs.js';
 import { makeDiscordCommands as makeCommands, makeInteraction as interaction } from '../test-utils/discord.js';
+
+test('slash command descriptions stay within the Discord 100-char limit', () => {
+  /** @param {any[]} items @param {string} [prefix] */
+  const check = (items, prefix = '') => {
+    for (const item of items) {
+      const label = `${prefix}${item.name}`;
+      assert.ok(String(item.description ?? '').length <= 100, `${label} description is too long`);
+      if (item.options) check(item.options, `${label}:`);
+    }
+  };
+  check(COMMANDS);
+});
 
 function isV2(payload) {
   return Boolean(payload?.flags && (payload.flags & MessageFlags.IsComponentsV2) !== 0);

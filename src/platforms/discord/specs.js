@@ -53,7 +53,7 @@ export const COMMANDS = [
   {
     type: ApplicationCommandType.ChatInput,
     name: 'settings',
-    description: 'Tune this channel: brain, vision, personality, thinking, privacy, threads, after-answer thinking (admin)',
+    description: 'Tune this channel: model, vision, tone, thinking, privacy, threads, reasoning (admin)',
     help: '`/settings` — channel controls (admin)',
     default_member_permissions: String(PermissionFlagsBits.ManageGuild),
     options: [
