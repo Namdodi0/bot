@@ -18,6 +18,8 @@ import { photoFilename } from './transport.js';
 
 export const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
 export const PREVIEW_INTERVAL_MS = 1000;
+/** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
+export const V2_TEXT_LIMIT = 4000;
 
 /**
  * Components V2 answer payload: a top-level TextDisplay (plain-message look) plus optional
@@ -29,7 +31,7 @@ export const PREVIEW_INTERVAL_MS = 1000;
  */
 export function v2Message(content, rows = [], options = {}) {
   const raw = String(content ?? '');
-  const text = raw.trim() ? raw.slice(0, 4000) : '…';
+  const text = raw.trim() ? raw.slice(0, V2_TEXT_LIMIT) : '…';
   return {
     components: [new TextDisplayBuilder().setContent(text), ...rows],
     flags: MessageFlags.IsComponentsV2 | (options.ephemeral ? MessageFlags.Ephemeral : 0),
@@ -103,7 +105,7 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
 }
 
 /** @param {string} text @param {number} [limit] */
-export function chunkContent(text, limit = 2000) {
+export function chunkContent(text, limit = 3900) {
   return chunkText(text, { limit }).chunks;
 }
 
@@ -113,7 +115,7 @@ export function chunkContent(text, limit = 2000) {
  * @param {string} text
  * @param {number} [limit]
  */
-export function streamPreview(text, limit = 1900) {
+export function streamPreview(text, limit = 3800) {
   try {
     let value = String(text ?? '');
     if (!value.trim()) return '';

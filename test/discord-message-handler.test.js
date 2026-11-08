@@ -61,3 +61,47 @@ test('image preparation runs inside the per-chat queue, before the turn', async 
   await handler(message);
   assert.deepEqual(order, ['queue', 'download', 'stream']);
 });
+
+test('ordinary chat answers carry the V2 action row', async () => {
+  /** @type {any[]} */
+  const replies = [];
+  const runtime = {
+    agent: {
+      exclusive: async (_chatId, task) => task(),
+      stream: async () => ({ text: 'hello there', photos: [] }),
+    },
+  };
+  const transport = { startTyping: () => async () => {} };
+  const client = { user: { id: 'bot-1', username: 'Bot' } };
+  const handler = createMessageHandler({
+    config: makeConfig({ typing: false }),
+    logger: silentLogger,
+    metrics: { inc() {} },
+    transport,
+    runtime,
+    client,
+    makeToken: () => 'tok1',
+  });
+
+  const message = {
+    id: 'm2',
+    content: '<@bot-1> hi',
+    createdTimestamp: Date.now(),
+    author: { id: 'u1', username: 'alice', bot: false },
+    member: { displayName: 'Alice' },
+    channel: { id: 'c1', isDMBased: () => false, send: async () => ({}) },
+    mentions: { users: new Map([['bot-1', {}]]) },
+    attachments: [],
+    async reply(payload) {
+      replies.push(payload);
+      return { edit: async () => {}, delete: async () => {} };
+    },
+  };
+
+  await handler(message);
+  const payload = replies.at(-1);
+  assert.equal(payload.flags, 32768);
+  const row = payload.components.at(-1).toJSON();
+  assert.equal(row.type, 1);
+  assert.equal(row.components[0].custom_id, 'ask:regen:tok1');
+});

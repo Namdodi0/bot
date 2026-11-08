@@ -40,6 +40,7 @@ export function createCommandRuntime(deps) {
   }
 
   return {
+    shared,
     handleCommand,
     handleAutocomplete: async (/** @type {any} */ interaction) => {
       if (interaction.commandName === 'remind') return basic.handleAutocomplete(interaction);

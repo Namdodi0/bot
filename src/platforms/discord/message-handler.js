@@ -2,15 +2,15 @@ import { QUEUE_BUSY_TEXT } from '../../core/ai/agent/queue.js';
 import { collectTextAttachments } from './attachments.js';
 import { isBotAddressed, isBotRoleMentioned, isChannelAllowed, isRespondToAllChannel, toDiscordEvent } from './events.js';
 import { createProgressFeed } from './progress.js';
-import { chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from './ui.js';
+import { answerButtons, chunkContent, createPreviewer, photoBatches, photoPayload, v2Answer, v2Message } from './ui.js';
 
 /**
  * Ordinary Discord chat: admission, vision bytes, one streaming placeholder reply, then the
  * remaining chunks and photo groups. Commands are handled by interaction-router.js.
- * @param {{config: any, logger?: import('../../core/logger.js').Logger, metrics?: any, transport: any, runtime: any, client: any}} deps
+ * @param {{config: any, logger?: import('../../core/logger.js').Logger, metrics?: any, transport: any, runtime: any, client: any, makeToken?: (payload: any) => string}} deps
  */
 export function createMessageHandler(deps) {
-  const { config, logger, metrics, transport, runtime, client } = deps;
+  const { config, logger, metrics, transport, runtime, client, makeToken } = deps;
 
   /** @param {any} message */
   return async function handleMessage(message) {
@@ -122,6 +122,20 @@ export function createMessageHandler(deps) {
           const chunks = result.text ? chunkContent(result.text) : [];
           const first = chunks.shift();
           const photos = result.photos ?? [];
+          const prompt = String(event.text ?? '').trim();
+          const token =
+            prompt && typeof makeToken === 'function'
+              ? makeToken({
+                  prompt,
+                  answer: result.text,
+                  chatId: event.chatId,
+                  chatType: event.chatType,
+                  userId: event.senderId,
+                  ephemeral: false,
+                  origin: 'channel',
+                })
+              : null;
+          const rows = token ? answerButtons(token) : [];
           let photosEmbedded = false;
           logger?.debug('discord reply ready', {
             chatId: event.chatId,
@@ -138,14 +152,14 @@ export function createMessageHandler(deps) {
               });
             } else {
               try {
-                await placeholder.edit(v2Answer(first || 'Here are the images.', [], photos));
+                await placeholder.edit(v2Answer(first || 'Here are the images.', rows, photos));
                 photosEmbedded = photos.length > 0;
               } catch (error) {
                 logger?.debug('discord combined photo answer failed', {
                   chatId: event.chatId,
                   error: String(/** @type {any} */ (error)?.message ?? error),
                 });
-                await placeholder.edit(v2Message(first || 'Here are the images.')).catch((editError) => {
+                await placeholder.edit(v2Message(first || 'Here are the images.', rows)).catch((editError) => {
                   logger?.debug('discord placeholder edit failed', {
                     chatId: event.chatId,
                     error: String(/** @type {any} */ (editError)?.message ?? editError),
@@ -155,14 +169,14 @@ export function createMessageHandler(deps) {
             }
           } else if (first || photos.length) {
             try {
-              placeholder = await message.reply(v2Answer(first || 'Here are the images.', [], photos));
+              placeholder = await message.reply(v2Answer(first || 'Here are the images.', rows, photos));
               photosEmbedded = photos.length > 0;
             } catch (error) {
               logger?.warn('discord combined photo reply failed', {
                 chatId: event.chatId,
                 error: String(/** @type {any} */ (error)?.message ?? error),
               });
-              placeholder = await message.reply(v2Message(first || 'Here are the images.'));
+              placeholder = await message.reply(v2Message(first || 'Here are the images.', rows));
             }
           }
           for (const chunk of chunks) {

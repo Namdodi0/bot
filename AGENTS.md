@@ -108,7 +108,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   own embeds, buttons, selects, modals and ephemeral replies.
 - **Answers use Components V2.** `v2Message` is a top-level `TextDisplay` + optional action
   row (no container chrome); `v2Answer` adds a `MediaGallery` so images share the answer
-  message. Command panels keep embeds.
+  message. Every text answer — `/ask`, threads and ordinary chat — carries the same
+  Regenerate/Continue/Delete/feedback row. Text is chunked just under the 4000-char
+  TextDisplay cap, not the legacy 2000-char content cap. Command panels keep embeds.
 - **Private Discord turns stay private.** `/ask private:true`, ephemeral context menus and
   ephemeral regenerate/continue mark `event.private`; the core removes their entries from the
   shared record, disk snapshots, summaries and compaction.

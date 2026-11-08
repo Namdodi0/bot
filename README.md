@@ -35,7 +35,9 @@ globally by default; set `discord.guildId` to register them in one guild instead
   clean final answer.
 - **Stop** — `/stop` aborts the active turn(s) in that channel and marks the preview stopped.
 - **Components V2 answers** — a top-level `TextDisplay` plus action buttons; images share the
-  answer message through a `MediaGallery`. Command panels keep embeds.
+  answer message through a `MediaGallery`. Every text answer, including ordinary chat, carries
+  Regenerate/Continue/Delete and 👍/👎, and long answers are split at the 4000-char V2 budget
+  instead of the 2000-char content limit. Command panels keep embeds.
 - **Image tools** — the image tool sends at most 2 images per reply; vision accepts up to 5
   attached images per message (largest first). The vision alias is configured with
   `model.visionAlias`.

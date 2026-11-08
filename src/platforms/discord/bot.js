@@ -18,7 +18,15 @@ export function createDiscordBot(deps) {
   const client = transport.client;
 
   const commands = createCommandRuntime({ config, logger, platform, runtime });
-  const handleMessage = createMessageHandler({ config, logger, metrics, transport, runtime, client });
+  const handleMessage = createMessageHandler({
+    config,
+    logger,
+    metrics,
+    transport,
+    runtime,
+    client,
+    makeToken: commands.shared?.makeToken,
+  });
   const handleInteraction = createInteractionRouter({ config, logger, commands });
   const syncMessage = createMessageSync({ config, logger, metrics, runtime, client });
 
