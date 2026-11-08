@@ -7,7 +7,8 @@ import { createStickerHandlers } from './stickers.js';
 
 /**
  * Native Discord command handlers. Slash commands do not go through the shared text-command
- * router: they use Discord options, ephemeral replies, embeds, buttons and a select menu.
+ * router: they use Discord options, ephemeral replies, Components V2 panels, buttons and a
+ * select menu.
  * @param {{config: any, logger: import('../../../core/logger.js').Logger, platform: import('../../contract.js').Platform, runtime: any}} deps
  */
 export function createCommandRuntime(deps) {

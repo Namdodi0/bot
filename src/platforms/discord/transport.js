@@ -124,12 +124,6 @@ export function createDiscordTransport(options) {
     return message.react(String(emoji));
   }
 
-  /** @param {string} chatId @param {any} embed */
-  async function sendEmbed(chatId, embed) {
-    const channel = await channelOf(chatId);
-    return channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
-  }
-
   /** @param {string} chatId @param {string} name */
   async function createThread(chatId, name) {
     const channel = await channelOf(chatId);
@@ -192,7 +186,6 @@ export function createDiscordTransport(options) {
     sendSticker,
     editMessage,
     react,
-    sendEmbed,
     createThread,
     startTyping,
     stopAllTyping,

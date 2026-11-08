@@ -41,7 +41,6 @@
  * @property {(chatId?: string) => number|Promise<number>} ping
  * @property {(chatId: string, messageId: string, text: string) => Promise<any>} [editMessage]
  * @property {(chatId: string, messageId: string, emoji: string) => Promise<any>} [react]
- * @property {(chatId: string, embed: any) => Promise<any>} [sendEmbed]
  * @property {(chatId: string, name: string) => Promise<any>} [createThread]
  */
 

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { createChatServices } from '../../../core/services/chat.js';
 import { createReminderService } from '../../../core/services/reminders.js';
-import { answerButtons, chunkContent, errorEmbed, paginationRow, photoBatches, photoPayload, textEmbed, v2Answer, v2Message } from '../ui.js';
+import { answerButtons, chunkContent, errorPanel, paginationRow, photoBatches, photoPayload, textPanel, v2Answer, v2Message } from '../ui.js';
 
 const TOKEN_TTL_MS = 15 * 60_000;
 
@@ -60,10 +60,12 @@ export function createShared(deps) {
       return true;
     }
     const page = Math.max(0, Math.min(pager.pages.length - 1, Number(rawPage) || 0));
-    await interaction.update({
-      embeds: [textEmbed(pager.title, pager.pages[page])],
-      components: paginationRow(pagerId, page, pager.pages.length),
-    });
+    await interaction.update(
+      textPanel(pager.title, pager.pages[page], {
+        ephemeral: true,
+        rows: paginationRow(pagerId, page, pager.pages.length),
+      }),
+    );
     return true;
   }
 
@@ -89,14 +91,17 @@ export function createShared(deps) {
 
   /** @param {any} interaction */
   async function replyEphemeral(interaction, payload) {
-    return interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
+    return interaction.reply({
+      ...payload,
+      flags: Number(payload?.flags ?? 0) | MessageFlags.Ephemeral,
+    });
   }
 
   /** @param {any} interaction */
   async function reportError(interaction, error) {
     const message = String(/** @type {any} */ (error)?.message ?? error);
     logger?.error('discord command failed', { command: interaction.commandName, error: message });
-    const payload = { embeds: [errorEmbed('Something went wrong while handling that command.')], components: [] };
+    const payload = errorPanel('Something went wrong while handling that command.');
     try {
       if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
       else await replyEphemeral(interaction, payload);

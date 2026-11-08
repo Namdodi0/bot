@@ -2,14 +2,13 @@ import { REMINDER_LIMITS } from '../../../core/ai/reminders.js';
 import { COMMANDS, HELP_NOTE } from '../specs.js';
 import {
   createPreviewer,
-  errorEmbed,
-  helpEmbed,
+  errorPanel,
   paginationRow,
-  reminderEmbed,
+  remindersPanel,
   remindButtons,
   remindModal,
-  statusEmbed,
-  textEmbed,
+  statusPanel,
+  textPanel,
   v2Answer,
   v2Message,
 } from '../ui.js';
@@ -106,36 +105,36 @@ export function createBasicHandlers(shared) {
     async help(interaction) {
       const pages = helpPages();
       if (pages.length <= 1) {
-        await replyEphemeral(interaction, { embeds: [helpEmbed(COMMANDS, HELP_NOTE)] });
+        await replyEphemeral(interaction, textPanel('AI bot commands', pages[0]));
         return;
       }
       const pager = makePager(interaction.user.id, pages, 'AI bot commands');
-      await replyEphemeral(interaction, {
-        embeds: [textEmbed('AI bot commands', pages[0])],
-        components: paginationRow(pager, 0, pages.length),
-      });
+      await replyEphemeral(
+        interaction,
+        textPanel('AI bot commands', pages[0], {
+          rows: paginationRow(pager, 0, pages.length),
+        }),
+      );
     },
 
     async status(interaction) {
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
       const record = await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE');
-      await interaction.editReply({
-        embeds: [
-          statusEmbed({
-            model: chat.currentModel(record),
-            mode: platform.transportMode,
-            uptimeSec: runtime.metrics.snapshot().uptimeSec ?? 0,
-            messages: record.messages?.length ?? 0,
-            turns: record.turns ?? 0,
-            contextFiles: await runtime.store.count(),
-            ttlHours: config.context.ttlHours,
-            ping: (await platform.transport.ping(chatId)) || 0,
-            search: config.search.enabled ? `${config.search.depth}/${config.search.maxResults}` : 'off',
-            metrics: runtime.metrics,
-          }),
-        ],
-      });
+      await interaction.editReply(
+        statusPanel({
+          model: chat.currentModel(record),
+          mode: platform.transportMode,
+          uptimeSec: runtime.metrics.snapshot().uptimeSec ?? 0,
+          messages: record.messages?.length ?? 0,
+          turns: record.turns ?? 0,
+          contextFiles: await runtime.store.count(),
+          ttlHours: config.context.ttlHours,
+          ping: (await platform.transport.ping(chatId)) || 0,
+          search: config.search.enabled ? `${config.search.depth}/${config.search.maxResults}` : 'off',
+          metrics: runtime.metrics,
+        }),
+      );
     },
 
     async ping(interaction) {
@@ -153,7 +152,7 @@ export function createBasicHandlers(shared) {
 
     async reset(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can reset the context.')] });
+        await replyEphemeral(interaction, errorPanel('Only server admins can reset the context.'));
         return;
       }
       await interaction.deferReply(ephemeral);
@@ -168,7 +167,7 @@ export function createBasicHandlers(shared) {
 
     async compact(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can compact the context.')] });
+        await replyEphemeral(interaction, errorPanel('Only server admins can compact the context.'));
         return;
       }
       if (await commandRateLimited(interaction)) return;
@@ -190,9 +189,7 @@ export function createBasicHandlers(shared) {
       const count = interaction.options.getInteger('count') ?? 30;
       const chatId = String(interaction.channelId);
       let streamed = '';
-      const previewer = createPreviewer((text) =>
-        interaction.editReply({ content: text, allowedMentions: { parse: [] } }),
-      );
+      const previewer = createPreviewer((text) => interaction.editReply(v2Message(text)));
       const outcome = await runExclusive(interaction, () =>
         chat.summarize(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE', count, null, {
           onDelta: (delta) => {
@@ -217,13 +214,12 @@ export function createBasicHandlers(shared) {
       const pages = splitPages(result.text);
       if (pages.length > 1) {
         const pager = makePager(interaction.user.id, pages, title);
-        await interaction.editReply({
-          embeds: [textEmbed(title, pages[0])],
-          components: paginationRow(pager, 0, pages.length),
-        });
+        await interaction.editReply(
+          textPanel(title, pages[0], { rows: paginationRow(pager, 0, pages.length) }),
+        );
         return;
       }
-      await interaction.editReply({ embeds: [textEmbed(title, result.text)] });
+      await interaction.editReply(textPanel(title, result.text));
     },
 
     async search(interaction) {
@@ -241,10 +237,10 @@ export function createBasicHandlers(shared) {
       if (!outcome.ok) return;
       const result = outcome.value;
       if (!result.ok) {
-        await interaction.editReply({ embeds: [errorEmbed(result.text)] });
+        await interaction.editReply(errorPanel(result.text));
         return;
       }
-      await interaction.editReply({ embeds: [textEmbed(`Search: ${query}`, result.text)] });
+      await interaction.editReply(textPanel(`Search: ${query}`, result.text));
     },
 
     async image(interaction) {
@@ -262,7 +258,7 @@ export function createBasicHandlers(shared) {
       if (!outcome.ok) return;
       const { result, photos } = outcome.value;
       if (!photos.length) {
-        await interaction.editReply({ embeds: [errorEmbed(result.text || 'No images found.')] });
+        await interaction.editReply(errorPanel(result.text || 'No images found.'));
         return;
       }
       const text =
@@ -287,10 +283,10 @@ export function createBasicHandlers(shared) {
       const chatId = String(interaction.channelId);
       const sub = interaction.options.getSubcommand();
       if (sub === 'list') {
-        await replyEphemeral(interaction, {
-          embeds: [reminderEmbed(reminderService.list(chatId))],
-          components: remindButtons(),
-        });
+        await replyEphemeral(
+          interaction,
+          remindersPanel(reminderService.list(chatId), remindButtons()),
+        );
         return;
       }
       if (sub === 'cancel') {

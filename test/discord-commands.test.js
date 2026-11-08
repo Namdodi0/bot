@@ -263,6 +263,18 @@ test('every model-text payload from /ask disables mention parsing', async () => 
   }
 });
 
+test('/help returns an ephemeral V2 Container panel', async () => {
+  const { commands } = makeCommands();
+  const i = interaction('help');
+  await commands.handleCommand(i);
+  const payload = i.replies.at(-1);
+  assert.ok(isV2(payload), 'panels must use Components V2');
+  assert.ok((payload.flags & MessageFlags.Ephemeral) !== 0, 'the V2 flag must survive the ephemeral wrap');
+  const [container] = payloadJson(payload);
+  assert.equal(container.type, 17);
+  assert.equal(container.components[0].type, 10);
+});
+
 test('/settings vision stores a per-channel vision model and can reset it', async () => {
   const { commands, runtime } = makeCommands();
   const pick = interaction('settings', { vision: 'mistral-large' });

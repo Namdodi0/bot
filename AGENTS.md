@@ -37,7 +37,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - `src/platforms/contract.js` — the `Platform` contract.
 - `src/platforms/discord/` — native Discord bot: `specs.js` (slash/context-menu surface),
   `commands/` (router, ask/streaming, settings, catchup, stickers, basic handlers, shared
-  helpers), `ui.js` (embeds/attachments/Components V2/modals), `bot.js` (client +
+  helpers), `ui.js` (V2 answers/panels/attachments/modals), `bot.js` (client +
   registration), `message-handler.js` (admission + streaming chat), `message-sync.js`
   (edit/delete context sync), `interaction-router.js`, `presence.js`, `transport.js`,
   `events.js` (normalization/admission), `attachments.js` (text/markdown attachment
@@ -105,12 +105,13 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - **Discord is slash-first.** `/ask`, `/help`, `/status`, `/ping`, `/stop`, `/model`,
   `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`, `/sticker`,
   `/remind`; message context menus are `Explain message`/`Summarize message`. Native handlers
-  own embeds, buttons, selects, modals and ephemeral replies.
+  own V2 panels, buttons, selects, modals and ephemeral replies.
 - **Answers use Components V2.** `v2Message` is a top-level `TextDisplay` + optional action
   row (no container chrome); `v2Answer` adds a `MediaGallery` so images share the answer
   message. Every text answer — `/ask`, threads and ordinary chat — carries the same
   Regenerate/Continue/Delete/feedback row. Text is chunked just under the 4000-char
-  TextDisplay cap, not the legacy 2000-char content cap. Command panels keep embeds.
+  TextDisplay cap, not the legacy 2000-char content cap. Command panels use a V2 Container
+  card (`v2Panel`); answers never do.
 - **Private Discord turns stay private.** `/ask private:true`, ephemeral context menus and
   ephemeral regenerate/continue mark `event.private`; the core removes their entries from the
   shared record, disk snapshots, summaries and compaction.

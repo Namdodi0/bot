@@ -6,8 +6,8 @@ export const DISCORD_TOOL_GUIDANCE = {
 };
 
 /**
- * Discord-specific prompt sections. Slash-command UI and embeds are native, so answers
- * should read like normal Discord messages.
+ * Discord-specific prompt sections. Slash commands, panels and buttons are native, so
+ * answers should read like normal Discord messages.
  * @param {ReturnType<typeof import('../../core/ai/prompt/registry.js').createPromptRegistry>} registry
  * @param {{botName?: string, chatType?: string}} [options]
  */

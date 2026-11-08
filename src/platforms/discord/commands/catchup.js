@@ -1,5 +1,5 @@
 import { PermissionFlagsBits } from 'discord.js';
-import { catchupEmbed, createPreviewer, paginationRow, textEmbed } from '../ui.js';
+import { catchupPanel, createPreviewer, paginationRow, textPanel, v2Message } from '../ui.js';
 
 const CATCHUP_MAX_MESSAGES = 500;
 const CATCHUP_PAGE_SIZE = 100;
@@ -112,9 +112,7 @@ export function createCatchupHandlers(shared) {
         CATCHUP_MAX_TRANSCRIPT,
       );
       let streamed = '';
-      const previewer = createPreviewer((text) =>
-        interaction.editReply({ content: text, allowedMentions: { parse: [] } }),
-      );
+      const previewer = createPreviewer((text) => interaction.editReply(v2Message(text)));
       const outcome = await runExclusive(interaction, async () =>
         chat.summarizeText(transcript.text, {
           record: await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE'),
@@ -135,13 +133,12 @@ export function createCatchupHandlers(shared) {
       if (pages.length > 1) {
         const title = `Catch-up — last ${hours} hour${hours === 1 ? '' : 's'}`;
         const pager = makePager(interaction.user.id, pages, title);
-        await interaction.editReply({
-          embeds: [textEmbed(title, pages[0])],
-          components: paginationRow(pager, 0, pages.length),
-        });
+        await interaction.editReply(
+          textPanel(title, pages[0], { rows: paginationRow(pager, 0, pages.length) }),
+        );
         return;
       }
-      await interaction.editReply({ embeds: [catchupEmbed(hours, transcript.count, summary.text)] });
+      await interaction.editReply(catchupPanel(hours, transcript.count, summary.text));
     },
   };
 

@@ -3,10 +3,12 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
+  ContainerBuilder,
   MediaGalleryBuilder,
   MessageFlags,
   ModalBuilder,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   TextDisplayBuilder,
@@ -20,6 +22,8 @@ export const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xe
 export const PREVIEW_INTERVAL_MS = 1000;
 /** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
 export const V2_TEXT_LIMIT = 4000;
+/** Leave headroom for a footer/rows when a panel carries several text blocks. */
+const PANEL_TEXT_LIMIT = 3500;
 
 /**
  * Components V2 answer payload: a top-level TextDisplay (plain-message look) plus optional
@@ -65,6 +69,76 @@ export function v2Answer(content, rows = [], photos = [], options = {}) {
   payload.components.splice(1, 0, gallery);
   payload.files = files;
   return payload;
+}
+
+/** @param {string} text @param {number} [limit] */
+function clipPanelText(text, limit = PANEL_TEXT_LIMIT) {
+  const raw = String(text ?? '');
+  return raw.length > limit ? `${raw.slice(0, limit - 1)}…` : raw;
+}
+
+/**
+ * Components V2 command panel: a Container card with an accent color, a title, optional
+ * fields, footer and action rows. Answers stay bare TextDisplays; panels use this card.
+ * @param {{title?: string, description?: string, fields?: Array<{name?: string, value?: string}>, footer?: string, color?: number, rows?: any[], ephemeral?: boolean}} [options]
+ */
+export function v2Panel(options = {}) {
+  const container = new ContainerBuilder().setAccentColor(options.color ?? COLORS.info);
+  const title = String(options.title ?? '').trim();
+  if (title) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`### ${clipPanelText(title, 250)}`),
+    );
+  }
+  const description = String(options.description ?? '').trim();
+  if (description) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(clipPanelText(description)));
+  }
+  const fields = options.fields ?? [];
+  if (fields.length) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+    );
+    for (const field of fields.slice(0, 20)) {
+      const name = String(field?.name ?? '').trim();
+      const value = String(field?.value ?? '').trim() || '—';
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(clipPanelText(name ? `**${name}**\n${value}` : value)),
+      );
+    }
+  }
+  const footer = String(options.footer ?? '').trim();
+  if (footer) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setDivider(false).setSpacing(SeparatorSpacingSize.Small),
+    );
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(clipPanelText(`-# ${footer}`)),
+    );
+  }
+  return {
+    components: [container, ...(options.rows ?? [])],
+    flags: MessageFlags.IsComponentsV2 | (options.ephemeral ? MessageFlags.Ephemeral : 0),
+    allowedMentions: { parse: [] },
+  };
+}
+
+/**
+ * Simple title + body panel used by command output and pagers.
+ * @param {string} title
+ * @param {string} text
+ * @param {{footer?: string, rows?: any[], ephemeral?: boolean, color?: number}} [options]
+ */
+export function textPanel(title, text, options = {}) {
+  return v2Panel({ title, description: text, ...options });
+}
+
+/** @param {string} message */
+export function errorPanel(message) {
+  return v2Panel({
+    description: String(message ?? 'Something went wrong.'),
+    color: COLORS.error,
+  });
 }
 
 /**
@@ -129,11 +203,6 @@ export function streamPreview(text, limit = 3800) {
   }
 }
 
-/** @param {string} message */
-export function errorEmbed(message) {
-  return new EmbedBuilder().setColor(COLORS.error).setDescription(String(message ?? 'Something went wrong.'));
-}
-
 /**
  * Multi-line prompt form for `/ask`. Privacy/thread choices travel in the customId.
  * @param {boolean} priv
@@ -153,34 +222,17 @@ export function askModal(priv, inThread) {
 }
 
 /**
- * @param {Array<any>} commands
- * @param {string} note
- */
-export function helpEmbed(commands, note) {
-  const lines = commands
-    .filter((command) => command.type === 1)
-    .map((command) => `**/${command.name}** — ${command.description}`);
-  const menus = commands
-    .filter((command) => command.type === 3)
-    .map((command) => `**${command.name}** — message menu`);
-  return new EmbedBuilder()
-    .setColor(COLORS.info)
-    .setTitle('AI bot commands')
-    .setDescription([...lines, '', '*Message menus*', ...menus, '', note].join('\n'));
-}
-
-/**
  * @param {{model: any, mode: string, uptimeSec: number, messages: number, turns: number, contextFiles: number, ttlHours: number, ping: number, search: string, metrics: any}} data
  */
-export function statusEmbed(data) {
+export function statusPanel(data) {
   const snapshot = data.metrics?.snapshot?.() ?? {};
   const count = (name) => snapshot.counters?.[name] ?? 0;
   const llm = snapshot.latency?.['llm.latency'];
   const replies = snapshot.latency?.['agent.reply'];
-  return new EmbedBuilder()
-    .setColor(COLORS.info)
-    .setTitle('Bot status')
-    .addFields(
+  return v2Panel({
+    title: 'Bot status',
+    ephemeral: true,
+    fields: [
       { name: 'Model', value: `\`${data.model.alias}\` — ${data.model.label}\n\`${data.model.provider}/${data.model.model}\`` },
       { name: 'Transport', value: `${data.mode} · gateway ${data.ping}ms` },
       { name: 'Uptime', value: formatDuration(data.uptimeSec * 1000) },
@@ -191,7 +243,8 @@ export function statusEmbed(data) {
         value: `LLM p50 ${llm ? `${llm.p50}ms` : 'n/a'} · reply p50 ${replies ? `${replies.p50}ms` : 'n/a'}`,
       },
       { name: 'Traffic', value: `${count('messages.in')} received · ${count('messages.replied')} replies · ${count('messages.error')} errors` },
-    );
+    ],
+  });
 }
 
 /** @param {string} token */
@@ -315,27 +368,29 @@ export function photoPayload(group) {
 }
 
 /**
- * @param {string} title
- * @param {string} text
+ * Reminder list panel; the "Add reminder" row is passed by the command handler.
+ * @param {Array<{id: number, at: number, text: string}>} items
+ * @param {any[]} [rows]
  */
-export function textEmbed(title, text) {
-  const body = String(text ?? '').slice(0, 4000) || 'No results.';
-  return new EmbedBuilder().setColor(COLORS.info).setTitle(title).setDescription(body);
-}
-
-/** @param {Array<{id: number, at: number, text: string}>} items */
-export function reminderEmbed(items) {
+export function remindersPanel(items, rows = []) {
   if (!items.length) {
-    return new EmbedBuilder()
-      .setColor(COLORS.info)
-      .setTitle('Reminders')
-      .setDescription('No reminders in this channel yet. Use `/remind add`.');
+    return v2Panel({
+      title: 'Reminders',
+      description: 'No reminders in this channel yet. Use `/remind add`.',
+      rows,
+      ephemeral: true,
+    });
   }
   const lines = items
     .slice()
     .sort((a, b) => a.at - b.at)
     .map((item) => `**#${item.id}** — <t:${Math.floor(item.at / 1000)}:f> (<t:${Math.floor(item.at / 1000)}:R>)\n${item.text}`);
-  return new EmbedBuilder().setColor(COLORS.info).setTitle(`Reminders (${items.length})`).setDescription(lines.join('\n\n').slice(0, 4000));
+  return v2Panel({
+    title: `Reminders (${items.length})`,
+    description: lines.join('\n\n'),
+    rows,
+    ephemeral: true,
+  });
 }
 
 /** @type {Array<{value: string, label: string}>} */
@@ -359,13 +414,15 @@ export const REASONING_MODES = [
 ];
 
 /**
- * Channel settings summary. Reads the same `record.meta` fields the handlers write.
+ * Channel settings panel plus its select rows. Reads the same `record.meta` fields the
+ * handlers write.
  * @param {any} record
  * @param {any} config
  * @param {{alias: string, label: string}} currentModel
  * @param {{alias: string, label: string}|null} [visionModel]
+ * @param {any[]} [rows]
  */
-export function settingsEmbed(record, config, currentModel, visionModel = null) {
+export function settingsPanel(record, config, currentModel, visionModel = null, rows = []) {
   const meta = record?.meta ?? {};
   const tone = typeof meta.tone === 'string' && meta.tone ? meta.tone : `default (${config?.tone ?? 'friendly'})`;
   const reasoning =
@@ -375,18 +432,20 @@ export function settingsEmbed(record, config, currentModel, visionModel = null) 
   const vision = visionModel
     ? `${meta.visionModel ? '' : 'default '}(\`${visionModel.alias}\` — ${visionModel.label})`
     : 'not configured';
-  return new EmbedBuilder()
-    .setColor(COLORS.info)
-    .setTitle('Channel settings')
-    .addFields(
-      { name: 'Model', value: `\`${currentModel.alias}\` — ${currentModel.label}`, inline: true },
-      { name: 'Vision model', value: vision, inline: true },
-      { name: 'Tone', value: tone, inline: true },
-      { name: 'Think effort', value: reasoning, inline: true },
-      { name: 'Default privacy', value: meta.privateDefault ? 'private' : 'public', inline: true },
-      { name: 'Auto-thread', value: meta.autoThread ? 'on' : 'off', inline: true },
-    )
-    .setFooter({ text: 'Changes apply to this channel only.' });
+  return v2Panel({
+    title: 'Channel settings',
+    footer: 'Changes apply to this channel only.',
+    rows,
+    ephemeral: true,
+    fields: [
+      { name: 'Model', value: `\`${currentModel.alias}\` — ${currentModel.label}` },
+      { name: 'Vision model', value: vision },
+      { name: 'Tone', value: tone },
+      { name: 'Think effort', value: reasoning },
+      { name: 'Default privacy', value: meta.privateDefault ? 'private' : 'public' },
+      { name: 'Auto-thread', value: meta.autoThread ? 'on' : 'off' },
+    ],
+  });
 }
 
 /**
@@ -465,10 +524,11 @@ export function settingsRows(models, record, currentModel) {
  * @param {number} count
  * @param {string} text
  */
-export function catchupEmbed(hours, count, text) {
-  return new EmbedBuilder()
-    .setColor(COLORS.info)
-    .setTitle(`Catch-up — last ${hours} hour${hours === 1 ? '' : 's'}`)
-    .setDescription(String(text ?? '').slice(0, 4000) || 'Nothing to summarize.')
-    .setFooter({ text: `${count} message${count === 1 ? '' : 's'} summarized` });
+export function catchupPanel(hours, count, text) {
+  return v2Panel({
+    title: `Catch-up — last ${hours} hour${hours === 1 ? '' : 's'}`,
+    description: String(text ?? '').trim() || 'Nothing to summarize.',
+    footer: `${count} message${count === 1 ? '' : 's'} summarized`,
+    ephemeral: true,
+  });
 }

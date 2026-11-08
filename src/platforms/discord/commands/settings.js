@@ -1,5 +1,5 @@
-import { EmbedBuilder, MessageFlags } from 'discord.js';
-import { COLORS, errorEmbed, modelSelect, REASONING_MODES, settingsEmbed, settingsRows, textEmbed, TONES } from '../ui.js';
+import { MessageFlags } from 'discord.js';
+import { errorPanel, modelSelect, REASONING_MODES, settingsPanel, settingsRows, textPanel, TONES } from '../ui.js';
 
 /**
  * `/settings` and `/model`, plus the select menus and autocomplete that back them.
@@ -11,17 +11,20 @@ export function createSettingsHandlers(shared) {
   /** @param {any} record */
   function settingsPayload(record) {
     const current = chat.currentModel(record);
-    return {
-      embeds: [settingsEmbed(record, config, current, chat.currentVisionModel(record))],
-      components: settingsRows(chat.listModels(), record, current),
-    };
+    return settingsPanel(
+      record,
+      config,
+      current,
+      chat.currentVisionModel(record),
+      settingsRows(chat.listModels(), record, current),
+    );
   }
 
   /** @type {Record<string, (interaction: any) => Promise<unknown>>} */
   const handlers = {
     async settings(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can change channel settings.')] });
+        await replyEphemeral(interaction, errorPanel('Only server admins can change channel settings.'));
         return;
       }
       const chatId = String(interaction.channelId);
@@ -30,9 +33,10 @@ export function createSettingsHandlers(shared) {
       if (requested !== null && requested !== undefined && String(requested).trim()) {
         const saved = await chat.setVisionModel(chatId, requested, chatType);
         if (!saved.ok) {
-          await replyEphemeral(interaction, {
-            embeds: [errorEmbed(`"${requested}" is not a vision-capable model.`)],
-          });
+          await replyEphemeral(
+            interaction,
+            errorPanel(`"${requested}" is not a vision-capable model.`),
+          );
           return;
         }
         const clearing = ['default', '__default'].includes(String(requested).trim().toLowerCase());
@@ -49,7 +53,7 @@ export function createSettingsHandlers(shared) {
 
     async model(interaction) {
       if (!isAdmin(interaction)) {
-        await replyEphemeral(interaction, { embeds: [errorEmbed('Only server admins can change the model.')] });
+        await replyEphemeral(interaction, errorPanel('Only server admins can change the model.'));
         return;
       }
       const chatId = String(interaction.channelId);
@@ -57,20 +61,22 @@ export function createSettingsHandlers(shared) {
       const current = chat.currentModel(record);
       const name = interaction.options.getString('name');
       if (!name) {
-        await replyEphemeral(interaction, {
-          embeds: [new EmbedBuilder().setColor(COLORS.info).setTitle('Model').setDescription(`Current: **${current.label}** (\`${current.alias}\`)`)],
-          components: modelSelect(chat.listModels(), current.alias),
-        });
+        await replyEphemeral(
+          interaction,
+          textPanel('Model', `Current: **${current.label}** (\`${current.alias}\`)`, {
+            rows: modelSelect(chat.listModels(), current.alias),
+          }),
+        );
         return;
       }
       const picked = chat.findModel(name);
       if (!picked) {
-        await replyEphemeral(interaction, { embeds: [errorEmbed(`No model named "${name}".`)] });
+        await replyEphemeral(interaction, errorPanel(`No model named "${name}".`));
         return;
       }
       const saved = await chat.setModel(chatId, name, interaction.guildId ? 'GROUP' : 'PRIVATE');
       if (!saved.ok) {
-        await replyEphemeral(interaction, { embeds: [errorEmbed(`No model named "${name}".`)] });
+        await replyEphemeral(interaction, errorPanel(`No model named "${name}".`));
         return;
       }
       await replyEphemeral(interaction, { content: `Model is now **${saved.model.label}** (\`${saved.model.alias}\`).` });
@@ -120,7 +126,7 @@ export function createSettingsHandlers(shared) {
       const alias = interaction.values?.[0];
       const picked = alias ? chat.findModel(alias) : null;
       if (!picked) {
-        await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
+        await interaction.update(errorPanel('That model is no longer available.'));
         return;
       }
       const chatId = String(interaction.channelId);
@@ -128,7 +134,11 @@ export function createSettingsHandlers(shared) {
         chat.setModel(chatId, picked.alias, interaction.guildId ? 'GROUP' : 'PRIVATE'),
       );
       if (!outcome.ok) return;
-      await interaction.update({ embeds: [textEmbed('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`)], components: [] });
+      await interaction.update(
+        textPanel('Model changed', `Now using **${picked.label}** (\`${picked.alias}\`).`, {
+          ephemeral: true,
+        }),
+      );
       return;
     }
 
@@ -147,7 +157,7 @@ export function createSettingsHandlers(shared) {
       return;
     }
     if (field === 'model' && !chat.findModel(value)) {
-      await interaction.update({ embeds: [errorEmbed('That model is no longer available.')], components: [] });
+      await interaction.update(errorPanel('That model is no longer available.'));
       return;
     }
 
