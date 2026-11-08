@@ -3,6 +3,7 @@
   "version": "1.6.0",
   "private": true,
   "type": "module",
+  "main": "src/discord.js",
   "description": "Discord AI bot powered by NVIDIA NIM (Nemotron) + Firecrawl/Tavily web search",
   "engines": {
     "node": ">=20.6"
