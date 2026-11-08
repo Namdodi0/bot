@@ -39,7 +39,7 @@ export function parseDiscordConfig({ root, env }) {
       presence: {
         status: presenceStatus,
         type: presenceType,
-        text: asString(presenceSection.text, 'config.discord.presence.text', '/ask'),
+        text: asString(presenceSection.text, 'config.discord.presence.text', '🐋 dm zalo'),
         url: asString(presenceSection.url, 'config.discord.presence.url'),
       },
     },
