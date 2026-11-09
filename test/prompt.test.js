@@ -29,8 +29,14 @@ test('the old unhinged tone name resolves to the merged tone', () => {
   assert.match(text, /Grok unhinged comedian/);
 });
 
-test('the owner-priority rule names Nhật Nam and Namdodi', () => {
+test('the old shy tone name resolves to the cute tone', () => {
   const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'shy' });
+  const text = registry.render(registry.assemble({ text: 'hi' }));
+  assert.match(text, /CUTE OVERLOAD \+ CHEESY ROMANCE \+ THIRST/);
+});
+
+test('the owner-priority rule names Nhật Nam and Namdodi', () => {
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'cute' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
   assert.match(text, /OWNER PRIORITY/);
   assert.match(text, /Nhật Nam/);
@@ -41,13 +47,14 @@ test('the owner-priority rule names Nhật Nam and Namdodi', () => {
   assert.match(text, /newest instruction always wins/);
 });
 
-test('the shy tone is sến, cringe and emoji-heavy', () => {
-  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'shy' });
+test('the cute tone is cheesy, thirsty and emoji-heavy', () => {
+  const registry = createPrompt({ platform: makeDiscordPlatform(), chatType: 'GROUP', tone: 'cute' });
   const text = registry.render(registry.assemble({ text: 'hi' }));
-  assert.match(text, /EXTREME CUTE \+ SẾN/);
+  assert.match(text, /CUTE OVERLOAD \+ CHEESY ROMANCE \+ THIRST/);
   assert.match(text, /at least 6/);
-  assert.match(text, /SẾN ROMANCE/);
-  assert.match(text, /never sexual or explicit/);
+  assert.match(text, /CHEESY ROMANCE/);
+  assert.match(text, /THIRST MODE/);
+  assert.match(text, /never graphic or explicit/);
 });
 
 test('homework mode overlays tutor rules on the current tone', () => {

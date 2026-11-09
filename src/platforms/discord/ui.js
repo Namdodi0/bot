@@ -484,7 +484,7 @@ export function remindersPanel(items, rows = []) {
 export const TONES = [
   { value: '__default', label: 'Default' },
   { value: 'friendly', label: 'Friendly' },
-  { value: 'shy', label: 'Shy (sến mode)' },
+  { value: 'cute', label: 'Cute (cheesy + thirst)' },
   { value: 'grok', label: 'Grok (comedian)' },
   { value: 'roast', label: 'Roast' },
   { value: 'roast-hard', label: 'Roast hard' },
