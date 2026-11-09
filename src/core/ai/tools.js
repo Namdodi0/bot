@@ -16,8 +16,14 @@ const READ_URL_MAX_CHARS = 12_000;
 /** Wall-clock budget for one send_image call, even when responseTimeoutMs is 0. */
 const IMAGE_SEND_BUDGET_MS = 45_000;
 
+/** How long a fetched page stays usable for later turns. */
+const READ_URL_CACHE_TTL_MS = 10 * 60_000;
+
+/** Entries kept in memory; each result is already capped at READ_URL_MAX_CHARS. */
+const READ_URL_CACHE_SIZE = 100;
+
 /**
- * @param {{config: any, tavily: {search: (query: string, opts?: any) => Promise<any>}|null, platform: import('../../platforms/contract.js').Platform, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number, imageBudgetMs?: number}} options
+ * @param {{config: any, tavily: {search: (query: string, opts?: any) => Promise<any>}|null, platform: import('../../platforms/contract.js').Platform, validator: ReturnType<typeof import('../media/validate.js').createImageValidator>, reminders?: ReturnType<typeof import('./reminders.js').createReminderStore>, logger: import('../logger.js').Logger, metrics?: any, sendDelayMs?: number, imageBudgetMs?: number, readCacheTtlMs?: number, readCacheSize?: number, now?: () => number}} options
  */
 export function createToolRuntime(options) {
   const config = options.config;
@@ -30,6 +36,39 @@ export function createToolRuntime(options) {
   const metrics = options.metrics;
   const sendDelayMs = options.sendDelayMs ?? 0;
   const imageBudgetMs = options.imageBudgetMs ?? IMAGE_SEND_BUDGET_MS;
+  const readCacheTtlMs = options.readCacheTtlMs ?? READ_URL_CACHE_TTL_MS;
+  const readCacheSize = options.readCacheSize ?? READ_URL_CACHE_SIZE;
+  const now = options.now ?? Date.now;
+
+  /** @type {Map<string, {expires: number, result: {ok: boolean, text: string, data?: any}}>} */
+  const readCache = new Map();
+
+  /** @param {string} url */
+  function takeCachedPage(url) {
+    const hit = readCache.get(url);
+    if (!hit) return null;
+    if (hit.expires <= now()) {
+      readCache.delete(url);
+      return null;
+    }
+    // Refresh recency so a repeatedly shared link survives eviction.
+    readCache.delete(url);
+    readCache.set(url, hit);
+    return hit.result;
+  }
+
+  /**
+   * @param {string} url
+   * @param {{ok: boolean, text: string, data?: any}} result
+   */
+  function keepPage(url, result) {
+    readCache.set(url, { expires: now() + readCacheTtlMs, result });
+    while (readCache.size > readCacheSize) {
+      const oldest = readCache.keys().next().value;
+      if (oldest === undefined) break;
+      readCache.delete(oldest);
+    }
+  }
 
   function definitions() {
     /** @type {any[]} */
@@ -225,14 +264,22 @@ export function createToolRuntime(options) {
   async function readUrl(args, ctx) {
     const url = String(args?.url ?? '').trim();
     if (!url) return { ok: false, text: 'Missing the URL to read.' };
-    if (ctx.deadline && Date.now() > ctx.deadline) {
-      return { ok: false, text: 'Ran out of time before the page could be read.' };
-    }
     if (!/^https?:\/\//i.test(url)) {
       return { ok: false, text: 'Only public http(s) URLs can be read.' };
     }
+    const cached = takeCachedPage(url);
+    if (cached) {
+      metrics?.inc('tool.readUrl.cacheHit');
+      return cached;
+    }
+    if (ctx.deadline && Date.now() > ctx.deadline) {
+      return { ok: false, text: 'Ran out of time before the page could be read.' };
+    }
     const youtube = await readYouTube(url, ctx);
-    if (youtube) return youtube;
+    if (youtube) {
+      if (youtube.ok) keepPage(url, youtube);
+      return youtube;
+    }
     const result = await validator.readText(url);
     if (!result.ok) {
       logger.debug('read_url rejected', { url, reason: result.reason, icon: '🌐' });
@@ -249,11 +296,13 @@ export function createToolRuntime(options) {
     }
     const trimmed = text.slice(0, READ_URL_MAX_CHARS);
     const suffix = text.length > READ_URL_MAX_CHARS ? '\n\n[content truncated]' : '';
-    return {
+    const response = {
       ok: true,
       text: `${headerParts.join('\n')}\n\n${trimmed}${suffix}`,
       data: { url, finalUrl: result.finalUrl, title },
     };
+    keepPage(url, response);
+    return response;
   }
 
   /**

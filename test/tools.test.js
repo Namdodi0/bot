@@ -418,3 +418,45 @@ test('read_url truncates long pages and marks the cut', async () => {
   assert.match(result.text, /content truncated/);
   assert.ok(result.text.length < 12_400, `unexpected length ${result.text.length}`);
 });
+
+test('read_url caches page text until the TTL expires', async () => {
+  let reads = 0;
+  let clock = 1_000;
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: {
+      transport: { sendPhoto: async () => ({ ok: true }), sendSticker: async () => ({ ok: true }) },
+      capabilities: { uploadMedia: false },
+      tools: { run: async () => null },
+    },
+    validator: {
+      validate: async () => ({ ok: true }),
+      readText: async () => {
+        reads += 1;
+        return {
+          ok: true,
+          text: '<html><title>Docs</title><body><p>Cached page.</p></body></html>',
+          contentType: 'text/html',
+          finalUrl: 'https://example.com/cached',
+        };
+      },
+    },
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    readCacheTtlMs: 1000,
+    now: () => clock,
+  });
+
+  const first = await tools.run('read_url', { url: 'https://example.com/cached' }, { chatId: 'c1' });
+  clock += 999;
+  const second = await tools.run('read_url', { url: 'https://example.com/cached' }, { chatId: 'c1' });
+  assert.equal(first.ok, true);
+  assert.equal(second.text, first.text);
+  assert.equal(reads, 1, 'a cache hit must not refetch the page');
+
+  clock += 2;
+  const third = await tools.run('read_url', { url: 'https://example.com/cached' }, { chatId: 'c1' });
+  assert.equal(third.ok, true);
+  assert.equal(reads, 2, 'an expired entry must be refetched');
+});
