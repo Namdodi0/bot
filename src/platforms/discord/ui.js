@@ -21,7 +21,7 @@ import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
 
 const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
-const PREVIEW_INTERVAL_MS = 1000;
+const PREVIEW_INTERVAL_MS = 100;
 /** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
 const V2_TEXT_LIMIT = 4000;
 
@@ -241,38 +241,80 @@ export function errorPanel(message, title = 'Hold up') {
 }
 
 /**
- * Serialized, throttled message preview. Identical (often clamped) previews are skipped so a
- * long answer does not re-edit the message with the same text. A failed edit disables
- * previews for the rest of the turn; the final answer still replaces the message.
+ * Coalescing preview renderer: one edit in flight, at most one edit per interval, and no
+ * edit when the rendered text did not change. A failed edit disables previews for the rest
+ * of the turn; the final answer still replaces the message.
  * @param {(text: string) => Promise<unknown>} edit
  * @param {number} [intervalMs]
  */
 export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
-  let chain = Promise.resolve();
   let disabled = false;
   let lastAt = 0;
-  let lastText = '';
+  let latest = '';
+  let rendered = '';
+  /** @type {NodeJS.Timeout|null} */
+  let timer = null;
+  /** @type {Promise<void>|null} */
+  let running = null;
+
+  function clearTimer() {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = null;
+  }
+
+  function schedule(delay) {
+    if (disabled || timer || running) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void run();
+    }, Math.max(0, delay));
+    timer.unref?.();
+  }
+
+  /** @returns {Promise<void>} */
+  function run() {
+    if (disabled) return Promise.resolve();
+    if (running) return running;
+    if (!latest || latest === rendered) return Promise.resolve();
+    lastAt = Date.now();
+    const text = latest;
+    running = (async () => {
+      try {
+        await edit(text);
+        rendered = text;
+      } catch {
+        disabled = true;
+      } finally {
+        running = null;
+        if (!disabled && latest !== rendered) schedule(intervalMs - (Date.now() - lastAt));
+      }
+    })();
+    return running;
+  }
+
   return {
     /** @param {string} text */
     push(text) {
       if (disabled) return;
-      const now = Date.now();
-      if (lastAt && now - lastAt < intervalMs) return;
       const previewText = streamPreview(text);
-      if (!previewText || previewText === lastText) return;
-      lastAt = now;
-      lastText = previewText;
-      chain = chain
-        .then(async () => {
-          if (disabled) return;
-          await edit(previewText);
-        })
-        .catch(() => {
-          disabled = true;
-        });
+      if (!previewText || previewText === latest) return;
+      latest = previewText;
+      if (running) return;
+      const wait = lastAt ? intervalMs - (Date.now() - lastAt) : 0;
+      if (wait > 0) schedule(wait);
+      else void run();
     },
     async flush() {
-      await chain;
+      clearTimer();
+      for (;;) {
+        if (running) {
+          await running;
+          continue;
+        }
+        if (disabled || !latest || latest === rendered) break;
+        await run();
+      }
     },
   };
 }

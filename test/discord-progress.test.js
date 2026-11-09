@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createProgressFeed } from '../src/platforms/discord/progress.js';
+import { createPreviewer } from '../src/platforms/discord/ui.js';
 
 test('progress feed shows thinking, reasoning and tool status', () => {
   const feed = createProgressFeed();
@@ -25,4 +26,22 @@ test('progress feed shows thinking, reasoning and tool status', () => {
   const fresh = createProgressFeed();
   fresh.update({ type: 'finalizing' });
   assert.match(fresh.text(), /Writing the answer/);
+});
+
+test('the previewer coalesces bursts and skips unchanged text', async () => {
+  /** @type {string[]} */
+  const edits = [];
+  const previewer = createPreviewer(async (text) => {
+    edits.push(text);
+  }, 20);
+
+  previewer.push('a');
+  previewer.push('ab');
+  previewer.push('abc');
+  await previewer.flush();
+  assert.deepEqual(edits, ['a', 'abc']);
+
+  previewer.push('abc');
+  await previewer.flush();
+  assert.deepEqual(edits, ['a', 'abc'], 'unchanged text must not trigger an edit');
 });
