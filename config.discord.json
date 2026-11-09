@@ -27,7 +27,7 @@
     "visionTimeoutMs": 180000,
     "timeoutMs": 0,
     "topP": 1,
-    "topK": 40,
+    "topK": -1,
     "minP": null,
     "repetitionPenalty": null,
     "frequencyPenalty": 0,
