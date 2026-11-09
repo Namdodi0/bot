@@ -55,6 +55,9 @@ test('the cute tone flirts but keeps answers readable', () => {
   assert.match(text, /Emoji are seasoning/);
   assert.match(text, /Answer first, reaction second/);
   assert.match(text, /playful and suggestive/);
+  assert.match(text, /No performance noises/);
+  assert.match(text, /not erotic audio/);
+  assert.match(text, /never force sexual content into an ordinary question/);
   assert.match(text, /never graphic or explicit/);
 });
 
