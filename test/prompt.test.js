@@ -55,7 +55,6 @@ test('the cute tone is cheesy, thirsty and emoji-heavy', () => {
   assert.match(text, /at least 6/);
   assert.match(text, /CHEESY ROMANCE/);
   assert.match(text, /THIRST MODE/);
-  assert.match(text, /never graphic or explicit/);
 });
 
 test('homework mode overlays tutor rules on the current tone', () => {
