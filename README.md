@@ -54,7 +54,7 @@ globally by default; set `discord.guildId` to register them in one guild instead
   isolated parallel turns within one chat.
 - **Homework mode** — problem-solving requests get a tutor overlay (plan, steps, verification,
   multiple-choice/proof/coding/essay guidance) on top of the current tone.
-- **Tones** — `friendly`, `cute` (cute overload/cheesy romance/thirst), `grok` (truth-seeker + unhinged comedy),
+- **Tones** — `friendly`, `cute` (flustered anime-girl crush), `grok` (truth-seeker + unhinged comedy),
   `roast`, `roast-hard`, `roast-extreme`.
 - **Pagination** — long help, summary and catch-up output is split into pages with
   Back/Next buttons.
