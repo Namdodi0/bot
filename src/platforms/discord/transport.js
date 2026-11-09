@@ -55,11 +55,9 @@ export function createDiscordTransport(options) {
   /** @type {Map<string, NodeJS.Timeout>} */
   const typingTimers = new Map();
 
-  const channelIdOf = (chatId) => String(chatId ?? '');
-
   /** @param {string} chatId */
   async function channelOf(chatId) {
-    const id = channelIdOf(chatId);
+    const id = String(chatId ?? '');
     const cached = client.channels.cache.get(id);
     const channel = cached ?? (await client.channels.fetch(id));
     if (!channel || typeof channel.send !== 'function') throw new Error(`Discord channel not found: ${id}`);
@@ -100,35 +98,9 @@ export function createDiscordTransport(options) {
     });
   }
 
-  /** @param {string} chatId @param {string} stickerId */
-  async function sendSticker(chatId, stickerId) {
-    const channel = await channelOf(chatId);
-    return channel.send({ stickers: [String(stickerId)], allowedMentions: { parse: [] } });
-  }
-
-  /** @param {string} chatId @param {string} messageId @param {string} text */
-  async function editMessage(chatId, messageId, text) {
-    const channel = await channelOf(chatId);
-    const message = await channel.messages.fetch(String(messageId));
-    return message.edit({ content: String(text ?? '') });
-  }
-
-  /** @param {string} chatId @param {string} messageId @param {string} emoji */
-  async function react(chatId, messageId, emoji) {
-    const channel = await channelOf(chatId);
-    const message = await channel.messages.fetch(String(messageId));
-    return message.react(String(emoji));
-  }
-
-  /** @param {string} chatId @param {string} name */
-  async function createThread(chatId, name) {
-    const channel = await channelOf(chatId);
-    return channel.threads.create({ name: String(name ?? 'thread') });
-  }
-
   /** @param {string} chatId */
   function startTyping(chatId) {
-    const id = channelIdOf(chatId);
+    const id = String(chatId ?? '');
     let stopped = false;
     const ping = () => {
       if (stopped) return;
@@ -179,10 +151,6 @@ export function createDiscordTransport(options) {
     stop,
     sendMessage,
     sendPhoto,
-    sendSticker,
-    editMessage,
-    react,
-    createThread,
     startTyping,
     stopAllTyping,
     ping,

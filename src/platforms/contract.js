@@ -33,13 +33,9 @@
  * @property {() => Promise<void>} [stop] disconnect the transport
  * @property {(chatId: string, text: string, options?: {replyToMessageId?: string}) => Promise<any>} sendMessage
  * @property {(chatId: string, url: string, caption?: string, options?: {data?: Buffer, contentType?: string}) => Promise<any>} sendPhoto
- * @property {(chatId: string, stickerId: string) => Promise<any>} [sendSticker]
  * @property {(chatId: string) => (() => Promise<void>|void)} startTyping
  * @property {() => void} stopAllTyping
  * @property {(chatId?: string) => number|Promise<number>} ping
- * @property {(chatId: string, messageId: string, text: string) => Promise<any>} [editMessage]
- * @property {(chatId: string, messageId: string, emoji: string) => Promise<any>} [react]
- * @property {(chatId: string, name: string) => Promise<any>} [createThread]
  */
 
 /**
