@@ -225,3 +225,28 @@ test('/settings vision rejects text-only models', async () => {
   assert.match(JSON.stringify(i.replies.at(-1)), /not a vision-capable model/);
 });
 
+test('/reasoning shows the latest answer thinking only to the caller', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.record.messages.push(
+    { role: 'assistant', kind: 'turn', text: 'older', reasoning: 'older thinking' },
+    { role: 'user', kind: 'turn', text: 'next question' },
+    { role: 'assistant', kind: 'turn', text: 'latest', reasoning: 'latest thinking' },
+  );
+  const i = interaction('reasoning');
+  await commands.handleCommand(i);
+
+  assert.equal(i.deferred, true);
+  assert.equal(i.deferPayload?.flags, MessageFlags.Ephemeral);
+  assert.match(payloadText(i.edits.at(-1)), /latest thinking/);
+  assert.doesNotMatch(payloadText(i.edits.at(-1)), /older thinking/);
+});
+
+test('/reasoning says when the latest answer has no reasoning', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.record.messages.push({ role: 'assistant', kind: 'turn', text: 'latest' });
+  const i = interaction('reasoning');
+  await commands.handleCommand(i);
+
+  assert.match(payloadText(i.edits.at(-1)), /without any reasoning/);
+});
+

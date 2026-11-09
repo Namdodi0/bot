@@ -32,6 +32,12 @@ export const COMMANDS = [
   },
   {
     type: ApplicationCommandType.ChatInput,
+    name: 'reasoning',
+    description: 'Show the thinking behind my latest answer (only you see it)',
+    help: '`/reasoning` — show the thinking behind my latest answer',
+  },
+  {
+    type: ApplicationCommandType.ChatInput,
     name: 'ping',
     description: 'Check my reflexes',
     help: '`/ping` — check my reflexes',

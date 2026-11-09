@@ -151,6 +151,32 @@ export function createBasicHandlers(shared) {
       );
     },
 
+    async reasoning(interaction) {
+      await interaction.deferReply(ephemeral);
+      const record = await chat.getRecord(
+        String(interaction.channelId),
+        interaction.guildId ? 'GROUP' : 'PRIVATE',
+      );
+      const messages = record?.messages ?? [];
+      let latest = null;
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (message?.role === 'assistant' && (message.kind ?? 'turn') === 'turn') {
+          latest = message;
+          break;
+        }
+      }
+      const text = String(latest?.reasoning ?? '').trim();
+      if (!text) {
+        await interaction.editReply(
+          v2Message('My latest answer came without any reasoning attached. Nothing to show. 🫥'),
+        );
+        return;
+      }
+      const body = text.length > 3600 ? `${text.slice(0, 3600)}\n\n[truncated]` : text;
+      await interaction.editReply(v2Message(`🧠 **Reasoning behind my latest answer**\n\n${body}`));
+    },
+
     async ping(interaction) {
       const gateway = (await platform.transport.ping()) || 0;
       const roundtrip = Date.now() - Number(interaction.createdTimestamp);

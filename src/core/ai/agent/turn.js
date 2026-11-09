@@ -508,6 +508,7 @@ export function createTurnRunner(deps) {
         turnEntry({
           role: 'assistant',
           text: truncate(normalizeWhitespace(finalText), 4000),
+          reasoning: thinkingText.trim() ? truncate(thinkingText.trim(), 4000) : undefined,
           ts: Date.now(),
           private: event.private === true,
           ...(turnId ? { turnId } : {}),

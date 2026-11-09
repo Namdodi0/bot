@@ -27,7 +27,7 @@ globally by default; set `discord.guildId` to register them in one guild instead
 ## Features
 
 - **Slash-first commands** — `/ask` streams an answer into one message; `/help`, `/status`,
-  `/ping`, `/stop`, `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`,
+  `/reasoning`, `/ping`, `/stop`, `/model`, `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`,
   `/search`, `/image`, `/sticker`, `/remind`. Message context menus provide
   `Explain message` and `Summarize message`.
 - **Streaming with live progress** — thinking, a clipped reasoning excerpt, web-search/tool
@@ -66,6 +66,7 @@ globally by default; set `discord.guildId` to register them in one guild instead
 | `/ask` | Ask the AI (options: private, thread, image, form) |
 | `/help` | Show the command list |
 | `/status` | Model, context and latency |
+| `/reasoning` | The thinking behind the latest answer (ephemeral) |
 | `/ping` | Gateway and round-trip latency |
 | `/stop` | Cancel the current answer in this channel |
 | `/model` | Show or switch the model (admin) |
