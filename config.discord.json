@@ -1,5 +1,4 @@
 {
-  "platform": "discord",
   "dataDir": "./data/discord",
   "discord": {
     "guildId": "",
@@ -12,7 +11,7 @@
     "presence": {
       "status": "online",
       "type": "PLAYING",
-      "text": "🐋 dm zalo",
+      "text": "🐋 dm me",
       "url": ""
     }
   },

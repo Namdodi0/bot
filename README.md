@@ -97,7 +97,6 @@ Aliases are defined in `src/core/ai/models.js` and resolved against the provider
 
 | Key | Meaning |
 |---|---|
-| `platform` | Must be `discord` |
 | `dataDir` | Context, logs and rate-limit state directory |
 | `discord.guildId` | Optional guild id; empty registers global commands |
 | `discord.allowedChannelIds` | Allowed channels; empty allows all |

@@ -69,7 +69,6 @@ export function createBoot(input) {
     });
   }
   logger.info('starting bot', {
-    platform: config.platform,
     mode: config.mode,
     ...(config.dryRun ? { dryRun: true } : {}),
     icon: '🚀',
@@ -360,7 +359,7 @@ export async function createRuntime(input) {
     const opsServer = nodeHttp.createServer((req, res) => {
       if (req.url === '/healthz') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, platform: config.platform, uptimeSec: Math.round(process.uptime()) }));
+        res.end(JSON.stringify({ ok: true, platform: platform.name, uptimeSec: Math.round(process.uptime()) }));
         return;
       }
       if (req.url === '/metrics') {

@@ -161,3 +161,32 @@ test('createReminderStore: overlapping ticks deliver each reminder once', async 
   assert.deepEqual(sent.sort(), ['⏰ Reminder: a', '⏰ Reminder: b']);
 });
 
+test('createReminderStore strips the legacy discord: chat prefix on load', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'discord-rem-'));
+  const file = path.join(dir, 'reminders.json');
+  await fsp.writeFile(
+    file,
+    JSON.stringify({
+      items: [
+        {
+          id: 1,
+          chatId: 'discord:chan1',
+          text: 'old reminder',
+          at: NOW + 60_000,
+          createdAt: NOW,
+          createdBy: 'u1',
+          attempts: 0,
+        },
+      ],
+    }),
+  );
+  const store = createReminderStore({
+    file,
+    now: () => NOW,
+    send: async () => {},
+    logger: createSilentLogger(),
+  });
+  await store.load();
+  assert.deepEqual(store.list('chan1').map((item) => item.chatId), ['chan1']);
+});
+

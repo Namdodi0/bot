@@ -87,7 +87,7 @@ export function createDiscordStickerService({ config, client, logger, metrics })
 
   /** @param {string} chatId */
   async function channelOf(chatId) {
-    const id = String(chatId ?? '').replace(/^discord:/, '');
+    const id = String(chatId ?? '');
     const channel = client.channels.cache.get(id) ?? (await client.channels.fetch(id));
     if (!channel || typeof channel.send !== 'function') throw new Error(`Discord channel not found: ${id}`);
     return channel;

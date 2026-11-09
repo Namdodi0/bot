@@ -173,7 +173,8 @@ export function createReminderStore(options = {}) {
         )
         .map((item) => ({
           id: Number(item.id) || 0,
-          chatId: String(item.chatId),
+          // Older dual-platform builds stored Discord chats as `discord:<channelId>`.
+          chatId: String(item.chatId).replace(/^discord:/, ''),
           text: String(item.text),
           at: Number(item.at),
           createdAt: Number(item.createdAt) || 0,

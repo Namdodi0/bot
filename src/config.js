@@ -273,11 +273,6 @@ export function loadConfig(input = {}) {
   const searchSection = section(root, 'search');
   const imageSection = section(root, 'image');
 
-  const platform = asString(root.platform, 'config.platform', 'discord').toLowerCase();
-  if (platform !== 'discord') {
-    throw new ConfigError(`config.platform must be "discord" (got: "${platform}")`);
-  }
-
   const dataDirRaw = asString(root.dataDir, 'config.dataDir', './data') || './data';
   const dataDir = path.isAbsolute(dataDirRaw)
     ? path.normalize(dataDirRaw)
@@ -488,7 +483,6 @@ export function loadConfig(input = {}) {
   const config = {
     help: false,
     version: VERSION,
-    platform,
     configFile: input.config !== undefined ? null : configPath,
     configFileFound,
     ignoredEnvKeys: legacyEnvKeys,
@@ -645,7 +639,6 @@ export function describeConfig(config) {
     version: config.version,
     mode: config.mode,
     configFile: config.configFile ? path.basename(config.configFile) : 'inline/defaults',
-    platform: config.platform,
     model: `${config.model.defaultAlias} (${primaryModel})`,
     fallbackModel: fallback
       ? `${config.model.fallbackAlias} (${fallbackReady ? fallbackModel || 'off' : 'no key — skipped'})`

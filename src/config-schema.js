@@ -5,7 +5,6 @@
  */
 
 const TOP_LEVEL_KEYS = [
-  'platform',
   'dataDir',
   'tone',
   'typing',

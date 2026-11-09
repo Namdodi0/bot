@@ -18,9 +18,6 @@ async function main() {
     process.stdout.write(`${HELP_TEXT}\n`);
     return;
   }
-  if (config.platform !== 'discord') {
-    throw new ConfigError('This entry runs the Discord bot; config.platform must be "discord".');
-  }
 
   const boot = createBoot({ config, envReport });
   const { logger } = boot;

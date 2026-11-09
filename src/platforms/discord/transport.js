@@ -55,9 +55,7 @@ export function createDiscordTransport(options) {
   /** @type {Map<string, NodeJS.Timeout>} */
   const typingTimers = new Map();
 
-  /** Accept both raw channel ids and the legacy `discord:` prefix used by old reminders. */
-  const channelIdOf = (chatId) =>
-    String(chatId ?? '').startsWith('discord:') ? String(chatId).slice('discord:'.length) : String(chatId ?? '');
+  const channelIdOf = (chatId) => String(chatId ?? '');
 
   /** @param {string} chatId */
   async function channelOf(chatId) {
