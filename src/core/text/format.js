@@ -1,6 +1,31 @@
+// A high surrogate without its low half (or the reverse) cannot be encoded as UTF-8:
+// JSON providers reject it and one stored bad string poisons every later request.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * Strip unpaired UTF-16 surrogates, e.g. an emoji cut in half by a character limit.
+ * @param {unknown} text
+ */
+export function wellFormed(text) {
+  return String(text ?? '').replace(LONE_SURROGATE, '');
+}
+
+/**
+ * Move a cut position back by one when it splits a surrogate pair.
+ * @param {string} value
+ * @param {number} end
+ */
+function safeCut(value, end) {
+  if (end <= 0 || end >= value.length) return Math.max(0, Math.min(end, value.length));
+  const before = value.charCodeAt(end - 1);
+  const after = value.charCodeAt(end);
+  const splitsPair = before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+  return splitsPair ? end - 1 : end;
+}
+
 /** @param {string} text */
 export function normalizeWhitespace(text) {
-  return String(text ?? '')
+  return wellFormed(text)
     .replace(/\r\n?/g, '\n')
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[ \t]+\n/g, '\n')
@@ -19,6 +44,7 @@ function hardSplit(value, limit) {
   while (rest.length > limit) {
     let cut = rest.lastIndexOf(' ', limit);
     if (cut < Math.floor(limit * 0.6)) cut = limit;
+    cut = Math.max(1, safeCut(rest, cut));
     out.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
   }
@@ -169,10 +195,11 @@ export function chunkText(text, options = {}) {
  * @param {string} [suffix]
  */
 export function truncate(text, limit, suffix = '…') {
-  const value = String(text ?? '');
+  const value = wellFormed(text);
   if (value.length <= limit) return value;
-  if (limit <= suffix.length) return value.slice(0, limit);
-  return `${value.slice(0, limit - suffix.length).trimEnd()}${suffix}`;
+  if (limit <= suffix.length) return value.slice(0, safeCut(value, limit));
+  const cut = safeCut(value, limit - suffix.length);
+  return `${value.slice(0, cut).trimEnd()}${suffix}`;
 }
 
 /** @param {number} ms */

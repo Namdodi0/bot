@@ -1,4 +1,5 @@
 import { MESSAGE_KIND } from './record.js';
+import { truncate, wellFormed } from '../text/format.js';
 import { estimateMessageTokens, estimateTextTokens } from './token-meter.js';
 
 /**
@@ -16,9 +17,9 @@ const DEFAULT_MAX_MESSAGE_CHARS = 12_000;
  * @param {number} limit 0 = no clipping
  */
 function clip(text, limit) {
-  const value = String(text ?? '');
+  const value = wellFormed(text);
   if (!limit || limit <= 0 || value.length <= limit) return value;
-  return `${value.slice(0, limit - 1).trimEnd()}…`;
+  return truncate(value, limit);
 }
 
 /**
@@ -42,7 +43,7 @@ function toNimMessage(message, maxChars = DEFAULT_MAX_MESSAGE_CHARS) {
         type: 'function',
         function: {
           name: call.name,
-          arguments: call.rawArguments || JSON.stringify(call.arguments ?? {}),
+          arguments: wellFormed(call.rawArguments || JSON.stringify(call.arguments ?? {})),
         },
       })),
     };

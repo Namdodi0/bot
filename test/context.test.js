@@ -79,3 +79,17 @@ test('an incomplete tool call is dropped with its partial results, complete pair
   assert.equal(JSON.stringify(built.messages).includes('partial result'), false);
   assert.equal(built.keptMessages, 2);
 });
+
+test('assembled requests strip lone surrogates already stored in a record', () => {
+  const built = assemble([
+    { role: 'assistant', text: 'broken \ud83d', ts: 1 },
+    toolCallEntry({
+      toolCalls: [{ id: 'c1', name: 'send_image', arguments: {}, rawArguments: '{"query":"x\ud83d"}' }],
+      ts: 2,
+    }),
+    toolResultEntry({ toolCallId: 'c1', text: 'ok', ts: 3 }),
+  ]);
+  const wire = built.messages.slice(1);
+  assert.equal(wire[0].content, 'broken ');
+  assert.equal(wire[1].tool_calls[0].function.arguments, '{"query":"x"}');
+});
