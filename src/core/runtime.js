@@ -394,12 +394,13 @@ export async function createRuntime(input) {
 
   /**
    * Graceful restart: flush state, tear the client down, then exit so the supervisor
-   * (PM2/systemd/docker) starts a fresh process.
+   * (PM2/systemd/docker/panel) starts a fresh process. Exit code 1 marks it as a crash:
+   * panel hosts such as Wispbyte only auto-restart crashed exits, not clean stops.
    * @param {string} [reason]
    * @returns {Promise<never>}
    */
   function restart(reason = 'restart requested') {
-    return shutdown(reason).then(() => process.exit(0));
+    return shutdown(reason).then(() => process.exit(1));
   }
 
   return {
