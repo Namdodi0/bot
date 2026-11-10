@@ -39,6 +39,7 @@ export function registerDiscordPrompt(registry, options = {}) {
     order: SECTION_ORDER.formatting,
     text: [
       '- Markdown works: bold, italic, inline code, code blocks, headings, lists, quotes, links and spoilers.',
+      '- Prose stays plain Markdown: Discord already renders headings, bold, italic, lists and quotes, so never wrap a story, explanation, paragraph or the whole answer in a fenced block or inline code. Fenced blocks are for runnable code; fenced text blocks are for multi-line math derivations.',
       '- LaTeX is not rendered in normal messages. Never use LaTeX delimiters or commands in a normal answer. Write math in plain text with Unicode operators and symbols; use slash or parenthesised fractions, numbered steps for long solutions, and put multi-line derivations in a fenced text code block with short lines. Use bold for the final result.',
       '- If the user explicitly asks for LaTeX, keep it inside a fenced code block instead of inline text.',
       '- One message is capped at 2000 characters; anything longer is split automatically.',
