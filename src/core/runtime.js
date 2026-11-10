@@ -392,6 +392,16 @@ export async function createRuntime(input) {
     });
   }
 
+  /**
+   * Graceful restart: flush state, tear the client down, then exit so the supervisor
+   * (PM2/systemd/docker) starts a fresh process.
+   * @param {string} [reason]
+   * @returns {Promise<never>}
+   */
+  function restart(reason = 'restart requested') {
+    return shutdown(reason).then(() => process.exit(0));
+  }
+
   return {
     config,
     logger,
@@ -417,6 +427,7 @@ export async function createRuntime(input) {
     addCleanup,
     addDispose,
     shutdown,
+    restart,
     waitForShutdown,
   };
 }

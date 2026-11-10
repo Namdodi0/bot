@@ -250,3 +250,25 @@ test('/reasoning says when the latest answer has no reasoning', async () => {
   assert.match(payloadText(i.edits.at(-1)), /without any reasoning/);
 });
 
+test('/restart is admin-only and asks the runtime to restart', async () => {
+  const { commands, runtime } = makeCommands();
+  /** @type {string[]} */
+  const reasons = [];
+  runtime.restart = (reason) => {
+    reasons.push(reason);
+    return Promise.resolve();
+  };
+
+  const i = interaction('restart');
+  await commands.handleCommand(i);
+  assert.equal(i.deferred, true);
+  assert.equal(i.deferPayload?.flags, MessageFlags.Ephemeral);
+  assert.match(payloadText(i.edits.at(-1)), /Restarting/);
+  assert.deepEqual(reasons, ['slash /restart']);
+
+  const denied = interaction('restart', {}, { memberPermissions: { has: () => false } });
+  await commands.handleCommand(denied);
+  assert.deepEqual(reasons, ['slash /restart'], 'non-admins must not restart the process');
+  assert.match(JSON.stringify(denied.replies.at(-1)), /Only server admins/);
+});
+

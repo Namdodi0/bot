@@ -38,6 +38,13 @@ export const COMMANDS = [
   },
   {
     type: ApplicationCommandType.ChatInput,
+    name: 'restart',
+    description: 'Restart the bot process (admin)',
+    help: '`/restart` — restart the bot (admin)',
+    default_member_permissions: String(PermissionFlagsBits.ManageGuild),
+  },
+  {
+    type: ApplicationCommandType.ChatInput,
     name: 'ping',
     description: 'Check my reflexes',
     help: '`/ping` — check my reflexes',

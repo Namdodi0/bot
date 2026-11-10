@@ -102,7 +102,7 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
   at most `MAX_VISION_IMAGES` = 5), the vision alias from `config.model.visionAlias`, and
   `config.model.visionReasoning` (default `high`) for image turns. The durable record keeps a
   text note instead of image bytes.
-- **Discord is slash-first.** `/ask`, `/help`, `/status`, `/reasoning`, `/ping`, `/stop`, `/model`,
+- **Discord is slash-first.** `/ask`, `/help`, `/status`, `/reasoning`, `/restart`, `/ping`, `/stop`, `/model`,
   `/settings`, `/reset`, `/compact`, `/summary`, `/catchup`, `/search`, `/image`, `/sticker`,
   `/remind`; message context menus are `Explain message`/`Summarize message`. Native handlers
   own V2 panels, buttons, selects, modals and ephemeral replies.

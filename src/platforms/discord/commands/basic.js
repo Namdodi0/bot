@@ -177,6 +177,21 @@ export function createBasicHandlers(shared) {
       await interaction.editReply(v2Message(`🧠 **Reasoning behind my latest answer**\n\n${body}`));
     },
 
+    async restart(interaction) {
+      if (!isAdmin(interaction)) {
+        await replyEphemeral(interaction, errorPanel('Only server admins can restart me. 🔒'));
+        return;
+      }
+      await interaction.deferReply(ephemeral);
+      await interaction.editReply(v2Message('♻️ Restarting — back in a few seconds. 🐋'));
+      logger?.warn('restart requested from Discord', {
+        user: interaction.user?.id,
+        channelId: interaction.channelId,
+        icon: '♻️',
+      });
+      void runtime.restart?.('slash /restart');
+    },
+
     async ping(interaction) {
       const gateway = (await platform.transport.ping()) || 0;
       const roundtrip = Date.now() - Number(interaction.createdTimestamp);
