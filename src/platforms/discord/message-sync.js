@@ -77,16 +77,23 @@ export function createMessageSync(deps) {
   /** @param {any} message */
   async function remove(message) {
     try {
-      if (!message || message.author?.bot) return;
+      if (!message) return;
       const chatId = String(message.channelId ?? message.channel?.id ?? '');
+      const messageId = String(message.id ?? '');
+      if (!chatId || !messageId) return;
+      const ownBot = message.author?.bot === true && message.author?.id === client?.user?.id;
+      if (message.author?.bot && !ownBot) return;
       const result = await withChat(chatId, () =>
-        runtime.chatServices.deleteTurns(chatId, [String(message.id ?? '')]),
+        ownBot
+          ? runtime.chatServices.deleteAnswerMessages(chatId, [messageId])
+          : runtime.chatServices.deleteTurns(chatId, [messageId]),
       );
       if (result?.removed) {
         metrics?.inc('discord.messages.deleted');
         logger?.debug('discord message delete synced', {
           chatId,
-          messageId: String(message.id ?? ''),
+          messageId,
+          answer: ownBot,
           icon: '🗑️',
         });
       }
@@ -100,21 +107,32 @@ export function createMessageSync(deps) {
   /** @param {any} messages */
   async function removeBulk(messages) {
     try {
-      /** @type {Map<string, string[]>} */
+      /** @type {Map<string, {user: string[], answers: string[]}>} */
       const byChat = new Map();
       for (const message of messages?.values?.() ?? []) {
-        if (!message || message.author?.bot) continue;
+        if (!message) continue;
         const chatId = String(message.channelId ?? message.channel?.id ?? '');
-        if (!chatId) continue;
-        const ids = byChat.get(chatId) ?? [];
-        ids.push(String(message.id ?? ''));
-        byChat.set(chatId, ids);
+        const messageId = String(message.id ?? '');
+        if (!chatId || !messageId) continue;
+        const ownBot = message.author?.bot === true && message.author?.id === client?.user?.id;
+        if (message.author?.bot && !ownBot) continue;
+        const bucket = byChat.get(chatId) ?? { user: [], answers: [] };
+        (ownBot ? bucket.answers : bucket.user).push(messageId);
+        byChat.set(chatId, bucket);
       }
       for (const [chatId, ids] of byChat) {
-        const result = await withChat(chatId, () => runtime.chatServices.deleteTurns(chatId, ids));
-        if (result?.removed) {
-          metrics?.inc('discord.messages.deleted', result.removed);
-          logger?.debug('discord bulk delete synced', { chatId, removed: result.removed, icon: '🗑️' });
+        let removed = 0;
+        if (ids.user.length) {
+          const result = await withChat(chatId, () => runtime.chatServices.deleteTurns(chatId, ids.user));
+          removed += Number(result?.removed) || 0;
+        }
+        if (ids.answers.length) {
+          const result = await withChat(chatId, () => runtime.chatServices.deleteAnswerMessages(chatId, ids.answers));
+          removed += Number(result?.removed) || 0;
+        }
+        if (removed) {
+          metrics?.inc('discord.messages.deleted', removed);
+          logger?.debug('discord bulk delete synced', { chatId, removed, icon: '🗑️' });
         }
       }
     } catch (error) {

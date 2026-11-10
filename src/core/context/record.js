@@ -50,7 +50,7 @@ export function normalizeRecord(record) {
 }
 
 /**
- * @param {{role?: string, text: string, name?: string, ts?: number, messageId?: string, private?: boolean, turnId?: string, reasoning?: string}} input
+ * @param {{role?: string, text: string, name?: string, ts?: number, messageId?: string, private?: boolean, turnId?: string, reasoning?: string, messageIds?: string[]}} input
  */
 export function turnEntry(input) {
   return {
@@ -61,6 +61,7 @@ export function turnEntry(input) {
     ts: input.ts ?? Date.now(),
     ...(input.messageId ? { messageId: input.messageId } : {}),
     ...(input.reasoning ? { reasoning: input.reasoning } : {}),
+    ...(input.messageIds?.length ? { messageIds: input.messageIds } : {}),
     ...(input.private ? { private: true } : {}),
     ...(input.turnId ? { turnId: input.turnId } : {}),
   };

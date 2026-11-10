@@ -116,3 +116,47 @@ test('chat answers keep thinking and tool calls above the answer', async () => {
   assert.match(progress, /Web search done/);
   assert.equal(answer, 'the answer');
 });
+
+test('chat answers link their sent message ids to the context', async () => {
+  /** @type {any[]} */
+  const attached = [];
+  const runtime = {
+    agent: {
+      exclusive: async (_chatId, task) => task(),
+      stream: async () => ({ text: 'the answer', photos: [] }),
+    },
+    chatServices: {
+      getRecord: async () => ({ meta: { showThinking: false } }),
+      attachAnswerMessages: async (chatId, ids, options) => {
+        attached.push({ chatId, ids, options });
+      },
+    },
+  };
+  const transport = { startTyping: () => async () => {}, sendPhoto: async () => ({}) };
+  const client = { user: { id: 'bot-1', username: 'Bot' } };
+  const handler = createMessageHandler({
+    config: makeConfig({ typing: false }),
+    logger: silentLogger,
+    metrics: { inc() {} },
+    transport,
+    runtime,
+    client,
+  });
+
+  const message = {
+    id: 'm4',
+    content: '<@bot-1> hi',
+    createdTimestamp: Date.now(),
+    author: { id: 'u1', username: 'alice', bot: false },
+    member: { displayName: 'Alice' },
+    channel: { id: 'c1', isDMBased: () => false, send: async () => ({ id: 'b2' }) },
+    mentions: { users: new Map([['bot-1', {}]]) },
+    attachments: [],
+    async reply() {
+      return { id: 'b1', edit: async () => {}, delete: async () => {} };
+    },
+  };
+
+  await handler(message);
+  assert.deepEqual(attached, [{ chatId: 'c1', ids: ['b1'], options: { text: 'the answer' } }]);
+});

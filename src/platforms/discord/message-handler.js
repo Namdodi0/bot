@@ -92,12 +92,15 @@ export function createMessageHandler(deps) {
         const stopTyping = config.typing ? transport.startTyping(event.chatId) : async () => {};
         /** @type {any} */
         let placeholder = null;
+        /** @type {string[]} */
+        const answerIds = [];
         let streamed = '';
         const feed = createProgressFeed();
         const renderPreview = () => [feed.text(), streamed].filter(Boolean).join('\n\n');
         const previewer = createPreviewer(async (text) => {
           if (!placeholder) {
             placeholder = await message.reply(v2Message(text));
+            if (placeholder?.id) answerIds.push(String(placeholder.id));
             await stopTyping();
             return;
           }
@@ -179,18 +182,25 @@ export function createMessageHandler(deps) {
                 v2Message([progress, first].filter(Boolean).join('\n\n') || 'Fresh pixels, as requested. 🖼️'),
               );
             }
+            if (placeholder?.id) answerIds.push(String(placeholder.id));
           }
           for (const chunk of chunks) {
-            await message.channel.send(v2Message(chunk)).catch((error) => {
-              logger?.warn('discord chunk send failed', {
-                chatId: event.chatId,
-                error: String(/** @type {any} */ (error)?.message ?? error),
+            await message.channel
+              .send(v2Message(chunk))
+              .then((sent) => {
+                if (sent?.id) answerIds.push(String(sent.id));
+              })
+              .catch((error) => {
+                logger?.warn('discord chunk send failed', {
+                  chatId: event.chatId,
+                  error: String(/** @type {any} */ (error)?.message ?? error),
+                });
               });
-            });
           }
           for (const group of photosEmbedded ? [] : photoBatches(photos)) {
             try {
-              await message.channel.send({ ...photoPayload(group), allowedMentions: { parse: [] } });
+              const sent = await message.channel.send({ ...photoPayload(group), allowedMentions: { parse: [] } });
+              if (sent?.id) answerIds.push(String(sent.id));
             } catch (error) {
               logger?.warn('discord photo send failed', {
                 chatId: event.chatId,
@@ -201,12 +211,13 @@ export function createMessageHandler(deps) {
               // One bad attachment must not take the whole group down: retry each via the transport.
               for (const photo of group) {
                 try {
-                  await transport.sendPhoto(
+                  const sent = await transport.sendPhoto(
                     event.chatId,
                     photo.url,
                     photo.caption,
                     photo.data ? { data: photo.data, contentType: photo.contentType } : undefined,
                   );
+                  if (sent?.id) answerIds.push(String(sent.id));
                 } catch (fallbackError) {
                   logger?.error('discord photo fallback failed', {
                     chatId: event.chatId,
@@ -215,6 +226,16 @@ export function createMessageHandler(deps) {
                   });
                 }
               }
+            }
+          }
+          if (answerIds.length) {
+            try {
+              await runtime.chatServices?.attachAnswerMessages?.(event.chatId, answerIds, { text: result.text });
+            } catch (error) {
+              logger?.debug('answer message attach failed', {
+                chatId: event.chatId,
+                error: String(/** @type {any} */ (error)?.message ?? error),
+              });
             }
           }
         } catch (error) {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createMessageSync } from '../src/platforms/discord/message-sync.js';
 
 function makeSync() {
-  const calls = { edits: [], deletes: [] };
+  const calls = { edits: [], deletes: [], answerDeletes: [] };
   const runtime = {
     store: { exists: async () => true },
     agent: { exclusive: async (_chatId, task) => task() },
@@ -14,6 +14,10 @@ function makeSync() {
       },
       deleteTurns: async (chatId, ids) => {
         calls.deletes.push({ chatId, ids });
+        return { ok: true, removed: ids.length };
+      },
+      deleteAnswerMessages: async (chatId, ids) => {
+        calls.answerDeletes.push({ chatId, ids });
         return { ok: true, removed: ids.length };
       },
     },
@@ -65,4 +69,15 @@ test('bot edits are ignored so streaming previews never touch the context', asyn
     },
   );
   assert.deepEqual(calls.edits, []);
+});
+
+test('deleting the bot answer drops its stored turn', async () => {
+  const { sync, calls } = makeSync();
+  await sync.remove({ id: 'b1', channelId: 'c1', author: { bot: true, id: 'bot-1' } });
+  assert.deepEqual(calls.answerDeletes, [{ chatId: 'c1', ids: ['b1'] }]);
+  assert.deepEqual(calls.deletes, []);
+
+  await sync.remove({ id: 'b2', channelId: 'c1', author: { bot: true, id: 'other-bot' } });
+  assert.equal(calls.answerDeletes.length, 1);
+  assert.equal(calls.deletes.length, 0);
 });

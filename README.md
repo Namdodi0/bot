@@ -50,7 +50,8 @@ globally by default; set `discord.guildId` to register them in one guild instead
 - **Search** — Firecrawl is primary and Tavily is the failover; both web and image lookups
   use the same router. Results are cached.
 - **Context management** — per-channel store with atomic writes, dedupe by message id,
-  compaction, edit/delete sync, private turns excluded from shared context, and snapshot-
+  compaction, edit/delete sync (user messages and the bot's own answers), private turns
+  excluded from shared context, and snapshot-
   isolated parallel turns within one chat.
 - **Homework mode** — problem-solving requests get a tutor overlay (plan, steps, verification,
   multiple-choice/proof/coding/essay guidance) on top of the current tone.

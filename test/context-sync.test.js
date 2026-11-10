@@ -51,3 +51,20 @@ test('deleting messages removes only matching user turns', async () => {
   await store.flush();
   await fsp.rm(dir, { recursive: true, force: true });
 });
+
+test('deleting an answer message removes its assistant turn', async () => {
+  const { dir, store, chat, record } = await makeHarness();
+  const attached = await chat.attachAnswerMessages('c1', ['b1', 'b2'], { text: 'answer' });
+  assert.deepEqual(attached, { ok: true });
+  assert.deepEqual(record.messages.at(-1).messageIds, ['b1', 'b2']);
+
+  const result = await chat.deleteAnswerMessages('c1', ['b2']);
+  assert.deepEqual(result, { ok: true, removed: 1 });
+  assert.deepEqual(
+    record.messages.map((message) => message.text),
+    ['Alice: [Replying to Bob: hi]\nhello', 'Bob: yo'],
+  );
+  assert.deepEqual(await chat.deleteAnswerMessages('c1', ['unknown']), { ok: false, removed: 0 });
+  await store.flush();
+  await fsp.rm(dir, { recursive: true, force: true });
+});

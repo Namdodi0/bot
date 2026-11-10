@@ -130,8 +130,9 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 - **Per-chat parallelism is snapshot-isolated.** Up to `maxConcurrentPerChat` turns may run
   at once in one chat; a turn that overlaps another works on a cloned record and merges only
   its own `turnId` entries. Exclusive context maintenance (`reset`/`compact`, edit/delete
-  sync) stays on the per-chat FIFO chain. Queue depth, concurrency caps and shutdown drain
-  apply to all turns; never mutate the shared record outside the queue.
+  sync for user messages and the bot's own answers) stays on the per-chat FIFO chain. Queue
+  depth, concurrency caps and shutdown drain apply to all turns; never mutate the shared
+  record outside the queue.
 - **HTTP retries** honor and cap `Retry-After`; attempt timeouts stay retryable and are not
   reported as caller aborts. The circuit breaker learns stream outcomes after the body
   finishes.

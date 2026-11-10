@@ -241,6 +241,61 @@ export function createChatServices({ config, store, models, compaction }) {
     return { ok: removed > 0, removed };
   }
 
+  /**
+   * Link the platform messages that carry an answer to its assistant turn so deleting one
+   * of them can drop the answer from the context. The caller must serialize this with turns.
+   * @param {string} chatId
+   * @param {string[]} messageIds
+   * @param {{text?: string}} [options] answer text, used to pick the right turn under parallelism
+   */
+  async function attachAnswerMessages(chatId, messageIds, options = {}) {
+    const ids = [...new Set((messageIds ?? []).map(String).filter(Boolean))];
+    if (!ids.length) return { ok: false, reason: 'invalid' };
+    if (typeof store.exists === 'function' && !(await store.exists(chatId))) {
+      return { ok: false, reason: 'missing' };
+    }
+    const record = await store.get(chatId);
+    const normalize = (value) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const wanted = normalize(options.text);
+    const messages = record.messages ?? [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== 'assistant' || (message.kind ?? 'turn') !== 'turn') continue;
+      if (message.messageIds?.length) continue;
+      if (wanted && normalize(message.text) !== wanted) continue;
+      message.messageIds = ids;
+      store.touch?.(chatId);
+      return { ok: true };
+    }
+    return { ok: false, reason: 'missing' };
+  }
+
+  /**
+   * Remove assistant turns whose answer messages were deleted.
+   * @param {string} chatId
+   * @param {string[]} messageIds
+   */
+  async function deleteAnswerMessages(chatId, messageIds) {
+    const ids = new Set((messageIds ?? []).map(String).filter(Boolean));
+    if (!ids.size) return { ok: false, reason: 'invalid', removed: 0 };
+    if (typeof store.exists === 'function' && !(await store.exists(chatId))) {
+      return { ok: false, reason: 'missing', removed: 0 };
+    }
+    const record = await store.get(chatId);
+    const before = record.messages?.length ?? 0;
+    record.messages = (record.messages ?? []).filter(
+      (message) =>
+        !(
+          message.role === 'assistant' &&
+          (message.kind ?? 'turn') === 'turn' &&
+          (message.messageIds ?? []).some((id) => ids.has(String(id)))
+        ),
+    );
+    const removed = before - record.messages.length;
+    if (removed) store.touch?.(chatId);
+    return { ok: removed > 0, removed };
+  }
+
   return {
     getRecord,
     currentModel,
@@ -256,5 +311,7 @@ export function createChatServices({ config, store, models, compaction }) {
     summarizeText,
     editTurn,
     deleteTurns,
+    attachAnswerMessages,
+    deleteAnswerMessages,
   };
 }

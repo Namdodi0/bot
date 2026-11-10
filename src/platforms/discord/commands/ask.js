@@ -109,6 +109,24 @@ export function createAskHandlers(shared) {
     };
   }
 
+  /**
+   * Link the sent answer messages to its assistant turn so deleting one drops the context.
+   * @param {string} chatId
+   * @param {string[]} ids
+   * @param {string} text
+   */
+  async function attachAnswer(chatId, ids, text) {
+    if (!ids?.length) return;
+    try {
+      await runtime.chatServices?.attachAnswerMessages?.(chatId, ids, { text });
+    } catch (error) {
+      logger?.debug('answer message attach failed', {
+        chatId,
+        error: String(/** @type {any} */ (error)?.message ?? error),
+      });
+    }
+  }
+
   /** @param {any} interaction */
   async function thinkingEnabled(interaction) {
     try {
@@ -173,7 +191,8 @@ export function createAskHandlers(shared) {
         await preview.stop();
         return;
       }
-      await sendChannelAnswer(thread, result, placeholder, showThinking ? preview.summary() : '');
+      const answerIds = await sendChannelAnswer(thread, result, placeholder, showThinking ? preview.summary() : '');
+      await attachAnswer(String(thread.id), answerIds, result.text);
       await interaction.editReply({ content: `All yours in ${thread}. 🧵`, allowedMentions: { parse: [] } });
       return;
     }
@@ -190,7 +209,8 @@ export function createAskHandlers(shared) {
       await preview.stop();
       return;
     }
-    await sendInteractionAnswer(interaction, result, priv, showThinking ? preview.summary() : '');
+    const answerIds = await sendInteractionAnswer(interaction, result, priv, showThinking ? preview.summary() : '');
+    if (!priv) await attachAnswer(String(interaction.channelId), answerIds, result.text);
     if (wantsThread) {
       await interaction.followUp({
         content: 'Private answers skip threads — your secret stays right here. 🤫',

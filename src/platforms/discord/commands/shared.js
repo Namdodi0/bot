@@ -157,25 +157,35 @@ export function createShared(deps) {
   async function sendInteractionAnswer(interaction, result, priv, progress = '') {
     const { chunks, first } = splitAnswer(result, progress.length);
     const photos = result.photos ?? [];
+    /** @type {string[]} */
+    const ids = [];
+    const add = (sent) => {
+      if (sent?.id) ids.push(String(sent.id));
+    };
     try {
-      await interaction.editReply(v2ProgressAnswer(progress, first, photos));
+      add(await interaction.editReply(v2ProgressAnswer(progress, first, photos)));
     } catch (error) {
       logger?.warn('combined photo answer failed, sending photos separately', {
         error: String(/** @type {any} */ (error)?.message ?? error),
       });
-      await interaction.editReply(v2ProgressAnswer(progress, first));
-      await sendPhotos(interaction, photos, priv);
+      add(await interaction.editReply(v2ProgressAnswer(progress, first)));
+      for (const id of await sendPhotos(interaction, photos, priv)) ids.push(id);
     }
     for (const chunk of chunks) {
-      await interaction.followUp(v2Message(chunk, [], { ephemeral: priv }));
+      add(await interaction.followUp(v2Message(chunk, [], { ephemeral: priv })));
     }
+    return ids;
   }
 
   /** @param {any} interaction @param {any[]} photos @param {boolean} priv */
   async function sendPhotos(interaction, photos, priv) {
+    /** @type {string[]} */
+    const ids = [];
     for (const group of photoBatches(photos)) {
-      await interaction.followUp({ ...photoPayload(group), ...(priv ? ephemeral : {}) });
+      const sent = await interaction.followUp({ ...photoPayload(group), ...(priv ? ephemeral : {}) });
+      if (sent?.id) ids.push(String(sent.id));
     }
+    return ids;
   }
 
   /**
@@ -183,15 +193,22 @@ export function createShared(deps) {
    * @param {{text: string, photos: any[]}} result
    * @param {any} [existing] a preview message to edit instead of sending the first chunk
    * @param {string} [progress] thinking/tool block kept above the answer
+   * @returns {Promise<string[]>} ids of the messages that carry the answer
    */
   async function sendChannelAnswer(channel, result, existing = null, progress = '') {
     const { chunks, first } = splitAnswer(result, progress.length);
     const photos = result.photos ?? [];
     let attached = false;
+    /** @type {string[]} */
+    const ids = [];
+    const add = (sent) => {
+      if (sent?.id) ids.push(String(sent.id));
+    };
+    if (existing?.id) ids.push(String(existing.id));
     try {
       const payload = v2ProgressAnswer(progress, first, photos);
       if (existing?.edit) await existing.edit(payload);
-      else await channel.send(payload);
+      else add(await channel.send(payload));
       attached = photos.length > 0;
     } catch (error) {
       logger?.warn('combined photo answer failed, sending photos separately', {
@@ -199,14 +216,15 @@ export function createShared(deps) {
       });
       const payload = v2ProgressAnswer(progress, first);
       if (existing?.edit) await existing.edit(payload);
-      else await channel.send(payload);
+      else add(await channel.send(payload));
     }
-    for (const chunk of chunks) await channel.send(v2Message(chunk));
+    for (const chunk of chunks) add(await channel.send(v2Message(chunk)));
     if (!attached) {
       for (const group of photoBatches(photos)) {
-        await channel.send({ ...photoPayload(group), allowedMentions: noMentions() });
+        add(await channel.send({ ...photoPayload(group), allowedMentions: noMentions() }));
       }
     }
+    return ids;
   }
 
   /**
