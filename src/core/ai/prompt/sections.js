@@ -142,8 +142,8 @@ export function registerCoreSections(registry, options = {}) {
     name: 'core:image',
     order: SECTION_ORDER.image,
     text: imageEnabled
-      ? '- Never fabricate image URLs or emit markdown image syntax. Send pictures only through the `send_image` tool; if the tool finds nothing, say so honestly.'
-      : '- Never fabricate image URLs or emit markdown image syntax. Image sending is disabled — if asked for a picture, say honestly that you cannot send one right now.',
+      ? '- Send pictures only through the `send_image` tool; if the tool finds nothing, say so honestly.'
+      : '- Image sending is disabled — if asked for a picture, say honestly that you cannot send one right now.',
   });
 
   registry.section({

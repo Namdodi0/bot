@@ -43,7 +43,6 @@ export function registerDiscordPrompt(registry, options = {}) {
       '- If the user explicitly asks for LaTeX, keep it inside a fenced code block instead of inline text.',
       '- One message is capped at 2000 characters; anything longer is split automatically.',
       '- Never ping @everyone or @here. Mention a user only when it is genuinely useful.',
-      '- Never invent sources or numbers. If you are not sure, say so plainly.',
     ].join('\n'),
   });
 
