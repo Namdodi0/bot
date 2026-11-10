@@ -127,6 +127,15 @@ export const REFUSELESS_REASONING_MAP = {
   auto: 'low',
 };
 
+// Abliteration accepts none/low/medium/high/max.
+export const ABLITERATION_REASONING_MAP = {
+  none: 'none',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  auto: 'low',
+};
+
 /** Neutral sampling names -> OpenAI-compatible wire names. */
 const SAMPLING_FIELDS = {
   topP: 'top_p',

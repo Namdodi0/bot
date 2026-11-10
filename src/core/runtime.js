@@ -2,6 +2,7 @@ import nodeHttp from 'node:http';
 import path from 'node:path';
 import { createAgent } from './ai/agent.js';
 import {
+  ABLITERATION_REASONING_MAP,
   DEEPSEEK_REASONING_MAP,
   NIM_REASONING_MAP,
   REFUSELESS_REASONING_MAP,
@@ -153,6 +154,21 @@ export async function createRuntime(input) {
         metrics,
         defaultTemperature: config.refuseless.temperature,
         reasoningMap: REFUSELESS_REASONING_MAP,
+      }),
+    );
+  }
+  if (config.abliteration?.apiKey) {
+    adapters.push(
+      createOpenAiCompatAdapter({
+        provider: 'abliteration',
+        apiKey: config.abliteration.apiKey,
+        baseUrl: config.abliteration.baseUrl,
+        model: config.abliteration.model,
+        http: httpClient,
+        logger,
+        metrics,
+        defaultTemperature: config.abliteration.temperature,
+        reasoningMap: ABLITERATION_REASONING_MAP,
       }),
     );
   }

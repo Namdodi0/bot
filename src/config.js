@@ -136,6 +136,7 @@ export function collectSecrets(config) {
     config.nim.apiKey,
     config.deepseek.apiKey,
     config.refuseless?.apiKey,
+    config.abliteration?.apiKey,
     config.search.apiKey,
     config.search.firecrawlApiKey,
     config.discord?.token,
@@ -210,7 +211,7 @@ Flags:
   --help             Print this help
 
 Secrets: DISCORD_BOT_TOKEN, NIM_API_KEY, DEEPSEEK_API_KEY, REFUSELESS_API_KEY,
-FIRECRAWL_API_KEY, TAVILY_API_KEY (see .env.example).
+ABLITERATION_API_KEY, FIRECRAWL_API_KEY, TAVILY_API_KEY (see .env.example).
 Settings: see config.discord.example.json.`;
 
 /**
@@ -267,6 +268,7 @@ export function loadConfig(input = {}) {
   const nimSection = section(root, 'nim');
   const deepseekSection = section(root, 'deepseek');
   const refuselessSection = section(root, 'refuseless');
+  const abliterationSection = section(root, 'abliteration');
   const modelSection = section(root, 'model');
   const aiSection = section(root, 'ai');
   const contextSection = section(root, 'context');
@@ -282,6 +284,7 @@ export function loadConfig(input = {}) {
   const nimKey = asString(env.NIM_API_KEY, 'NIM_API_KEY');
   const deepseekKey = asString(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY');
   const refuselessKey = asString(env.REFUSELESS_API_KEY, 'REFUSELESS_API_KEY');
+  const abliterationKey = asString(env.ABLITERATION_API_KEY, 'ABLITERATION_API_KEY');
   const tavilyKey = asString(env.TAVILY_API_KEY, 'TAVILY_API_KEY');
   const firecrawlKey = asString(env.FIRECRAWL_API_KEY, 'FIRECRAWL_API_KEY');
   if (!discord.token) {
@@ -370,6 +373,9 @@ export function loadConfig(input = {}) {
   }
   if (primaryProvider === 'refuseless' && !refuselessKey) {
     throw new ConfigError('Missing REFUSELESS_API_KEY (used as the primary model)');
+  }
+  if (primaryProvider === 'abliteration' && !abliterationKey) {
+    throw new ConfigError('Missing ABLITERATION_API_KEY (used as the primary model)');
   }
 
   const searchEnabled = cli['no-search'] ? false : asBool(searchSection.enabled, 'config.search.enabled', true);
@@ -465,6 +471,23 @@ export function loadConfig(input = {}) {
     asOptionalNumber(refuselessSection.presencePenalty, 'config.refuseless.presencePenalty', { min: -2, max: 2 }) ?? 0;
   const refuselessSeed = asOptionalInt(refuselessSection.seed, 'config.refuseless.seed', { min: 0 });
 
+  const abliterationTopP =
+    asOptionalNumber(abliterationSection.topP, 'config.abliteration.topP', { min: 0, max: 1 }) ?? 0.9;
+  if (abliterationTopP !== null && abliterationTopP <= 0) {
+    throw new ConfigError('config.abliteration.topP must be within (0, 1]');
+  }
+  const abliterationFrequencyPenalty = asOptionalNumber(
+    abliterationSection.frequencyPenalty,
+    'config.abliteration.frequencyPenalty',
+    { min: -2, max: 2 },
+  );
+  const abliterationPresencePenalty = asOptionalNumber(
+    abliterationSection.presencePenalty,
+    'config.abliteration.presencePenalty',
+    { min: -2, max: 2 },
+  );
+  const abliterationSeed = asOptionalInt(abliterationSection.seed, 'config.abliteration.seed', { min: 0 });
+
   const unknownConfigKeys = collectUnknownConfigKeys(root);
 
   /** @type {Record<string, number>} */
@@ -543,6 +566,30 @@ export function loadConfig(input = {}) {
       frequencyPenalty: refuselessFrequencyPenalty,
       presencePenalty: refuselessPresencePenalty,
       seed: refuselessSeed,
+    },
+    abliteration: {
+      apiKey: abliterationKey,
+      baseUrl: asString(
+        abliterationSection.baseUrl,
+        'config.abliteration.baseUrl',
+        'https://api.abliteration.ai/v1',
+      ).replace(/\/+$/, ''),
+      model: asString(
+        abliterationSection.model,
+        'config.abliteration.model',
+        'abliterated-model-large-flash',
+      ),
+      temperature: asNumber(abliterationSection.temperature, 'config.abliteration.temperature', 0.7, {
+        min: 0,
+        max: 2,
+      }),
+      timeoutMs: /** @type {number} */ (
+        asInt(abliterationSection.timeoutMs, 'config.abliteration.timeoutMs', 0, { min: 0 })
+      ),
+      topP: abliterationTopP,
+      frequencyPenalty: abliterationFrequencyPenalty,
+      presencePenalty: abliterationPresencePenalty,
+      seed: abliterationSeed,
     },
     model: {
       defaultAlias,
@@ -662,6 +709,7 @@ export function describeConfig(config) {
     nimKey: maskSecret(config.nim.apiKey),
     deepseekKey: maskSecret(config.deepseek.apiKey),
     refuselessKey: maskSecret(config.refuseless.apiKey),
+    abliterationKey: maskSecret(config.abliteration.apiKey),
     tavilyKey: maskSecret(config.search.apiKey),
     firecrawlKey: maskSecret(config.search.firecrawlApiKey),
     dryRun: config.dryRun,

@@ -52,6 +52,16 @@
     "presencePenalty": 0.3,
     "seed": null
   },
+  "abliteration": {
+    "baseUrl": "https://api.abliteration.ai/v1",
+    "model": "abliterated-model-large-flash",
+    "temperature": 0.5,
+    "timeoutMs": 0,
+    "topP": 0.9,
+    "frequencyPenalty": null,
+    "presencePenalty": null,
+    "seed": null
+  },
   "model": {
     "defaultAlias": "deepseek",
     "fallbackAlias": "nim-light",

@@ -67,6 +67,16 @@ const SECTION_KEYS = {
     'presencePenalty',
     'seed',
   ],
+  abliteration: [
+    'baseUrl',
+    'model',
+    'temperature',
+    'timeoutMs',
+    'topP',
+    'frequencyPenalty',
+    'presencePenalty',
+    'seed',
+  ],
   model: ['defaultAlias', 'fallbackAlias', 'visionAlias', 'visionReasoning'],
   ai: ['reasoning', 'maxTokens', 'maxToolRounds'],
   context: [

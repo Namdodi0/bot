@@ -45,6 +45,12 @@ export const MODEL_ALIASES = {
     modelKey: 'model',
     label: 'DeepSeek V4.1 Flash Abliterated FREE',
   },
+  abliterated: {
+    provider: 'abliteration',
+    modelKey: 'model',
+    label: 'Abliterated Large Flash',
+    vision: true,
+  },
 };
 
 /** Default alias (DeepSeek flash 4.1, reasoning off). */

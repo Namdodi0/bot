@@ -12,7 +12,7 @@ used for typechecking only (`checkJs`), with no build step.
 - A Discord bot token (`DISCORD_BOT_TOKEN`)
 - At least one chat provider key: `NIM_API_KEY` (NVIDIA NIM) or `DEEPSEEK_API_KEY`
 - A search key: `FIRECRAWL_API_KEY` (primary) and/or `TAVILY_API_KEY` (fallback)
-- Optional: `REFUSELESS_API_KEY`
+- Optional: `REFUSELESS_API_KEY` or `ABLITERATION_API_KEY`
 
 ## Setup
 
@@ -93,6 +93,7 @@ Aliases are defined in `src/core/ai/models.js` and resolved against the provider
 - `glm` — GLM 5.3 Flash
 - `deepseek` / `pro` — DeepSeek API aliases
 - `ds-abl-free` — Refuseless alias
+- `abliterated` — Abliterated Large Flash (abliteration.ai, vision-capable)
 
 ## Configuration
 
@@ -106,7 +107,7 @@ Aliases are defined in `src/core/ai/models.js` and resolved against the provider
 | `discord.respondToAllChannelIds` | Channels where every message is answered |
 | `discord.stickers` | Server sticker command/tool settings |
 | `discord.presence` | Bot activity on startup |
-| `nim` / `deepseek` / `refuseless` | Provider endpoints, model ids and sampling |
+| `nim` / `deepseek` / `refuseless` / `abliteration` | Provider endpoints, model ids and sampling |
 | `model.defaultAlias` / `fallbackAlias` / `visionAlias` | Text, fallback and image models |
 | `ai.reasoning` / `ai.maxTokens` / `ai.maxToolRounds` | Generation controls |
 | `context` | TTL, trimming, compaction and summary settings |

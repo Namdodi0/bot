@@ -50,6 +50,9 @@ test('sampling defaults keep the tail tight to limit language drift', () => {
   assert.equal(config.deepseek.topP, 0.9);
   assert.equal(config.refuseless.temperature, 0.7);
   assert.equal(config.refuseless.topP, 0.9);
+  assert.equal(config.abliteration.model, 'abliterated-model-large-flash');
+  assert.equal(config.abliteration.temperature, 0.7);
+  assert.equal(config.abliteration.topP, 0.9);
 });
 
 test('FIRECRAWL_API_KEY enables search without a Tavily key', () => {
@@ -67,6 +70,7 @@ test('visionAlias must point at a vision-capable model', () => {
   assert.throws(() => load({ model: { visionAlias: 'ultra' } }), /vision-capable/);
   assert.equal(load({ model: { visionAlias: 'nim' } }).model.visionAlias, 'nim');
   assert.equal(load({ model: { visionAlias: 'mistral-large' } }).model.visionAlias, 'mistral-large');
+  assert.equal(load({ model: { visionAlias: 'abliterated' } }).model.visionAlias, 'abliterated');
 });
 
 test('vision reasoning defaults to high and rejects unknown modes', () => {

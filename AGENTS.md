@@ -182,7 +182,8 @@ Run `npm test` and `npm run typecheck` before reporting work as complete. Do not
 ## Configuration and security notes
 
 - **`.env` contains API keys/tokens only**: `DISCORD_BOT_TOKEN`, `NIM_API_KEY`,
-  `DEEPSEEK_API_KEY`, `REFUSELESS_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY`. Search
+  `DEEPSEEK_API_KEY`, `REFUSELESS_API_KEY`, `ABLITERATION_API_KEY`, `FIRECRAWL_API_KEY`,
+  `TAVILY_API_KEY`. Search
   needs at least one of Firecrawl/Tavily while `search.enabled` is true. Variables already in
   `process.env` win unless empty or whitespace-only.
 - **`config.discord.json` contains non-secret settings and is tracked** (see
