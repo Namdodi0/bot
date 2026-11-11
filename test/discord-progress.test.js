@@ -77,10 +77,37 @@ test('the previewer coalesces bursts and skips unchanged text', async () => {
   previewer.push('a');
   previewer.push('ab');
   previewer.push('abc');
-  await previewer.flush();
+  await new Promise((resolve) => setTimeout(resolve, 60));
   assert.deepEqual(edits, ['a', 'abc']);
 
   previewer.push('abc');
-  await previewer.flush();
+  await new Promise((resolve) => setTimeout(resolve, 40));
   assert.deepEqual(edits, ['a', 'abc'], 'unchanged text must not trigger an edit');
+  await previewer.cancel();
+});
+
+test('cancel drops the pending preview and awaits the in-flight edit', async () => {
+  /** @type {string[]} */
+  const edits = [];
+  /** @type {() => void} */
+  let release = () => {};
+  const gate = new Promise((resolve) => {
+    release = /** @type {() => void} */ (resolve);
+  });
+  const previewer = createPreviewer(async (text) => {
+    edits.push(text);
+    if (text === 'a') await gate;
+  }, 20);
+
+  previewer.push('a');
+  previewer.push('ab');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const cancelled = previewer.cancel();
+  release();
+  await cancelled;
+  assert.deepEqual(edits, ['a'], 'the pending preview must not edit after cancel');
+
+  previewer.push('abc');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.deepEqual(edits, ['a'], 'cancel disables further previews');
 });

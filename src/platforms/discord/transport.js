@@ -52,10 +52,10 @@ export function createDiscordTransport(options) {
       partials: [Partials.Channel, Partials.Message, Partials.User],
     });
 
-  // One entry per active turn, not per chat: parallel turns in one chat must not
-  // overwrite each other's timer.
-  /** @type {Set<NodeJS.Timeout>} */
-  const typingTimers = new Set();
+  // One refcounted typing loop per channel: Discord shows a single indicator anyway, so
+  // parallel turns in one chat share it instead of burning duplicate REST pings.
+  /** @type {Map<string, {timer: NodeJS.Timeout, refs: number}>} */
+  const typingLoops = new Map();
 
   /** @param {string} chatId */
   async function channelOf(chatId) {
@@ -103,32 +103,39 @@ export function createDiscordTransport(options) {
   /** @param {string} chatId */
   function startTyping(chatId) {
     const id = String(chatId ?? '');
-    let stopped = false;
-    const ping = () => {
-      if (stopped) return;
-      const channel = /** @type {any} */ (client.channels.cache.get(id));
-      channel?.sendTyping?.().catch((error) => {
-        logger?.debug('discord typing indicator failed', {
-          chatId,
-          error: String(/** @type {any} */ (error)?.message ?? error),
+    let loop = typingLoops.get(id);
+    if (!loop) {
+      const ping = () => {
+        const channel = /** @type {any} */ (client.channels.cache.get(id));
+        channel?.sendTyping?.().catch((error) => {
+          logger?.debug('discord typing indicator failed', {
+            chatId,
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
         });
-      });
-    };
-    ping();
-    const timer = setInterval(ping, TYPING_REFRESH_MS);
-    timer.unref?.();
-    typingTimers.add(timer);
+      };
+      ping();
+      const timer = setInterval(ping, TYPING_REFRESH_MS);
+      timer.unref?.();
+      loop = { timer, refs: 0 };
+      typingLoops.set(id, loop);
+    }
+    loop.refs += 1;
+    let stopped = false;
     return async () => {
       if (stopped) return;
       stopped = true;
-      clearInterval(timer);
-      typingTimers.delete(timer);
+      loop.refs -= 1;
+      if (loop.refs <= 0 && typingLoops.get(id) === loop) {
+        clearInterval(loop.timer);
+        typingLoops.delete(id);
+      }
     };
   }
 
   function stopAllTyping() {
-    for (const timer of typingTimers.values()) clearInterval(timer);
-    typingTimers.clear();
+    for (const loop of typingLoops.values()) clearInterval(loop.timer);
+    typingLoops.clear();
   }
 
   /** @param {string} [chatId] */

@@ -306,16 +306,15 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
       if (wait > 0) schedule(wait);
       else void run();
     },
-    async flush() {
+    /**
+     * Stop previewing and drop the pending text, but await any in-flight edit so the
+     * caller's final edit cannot be overwritten by a late preview. Use right before the
+     * final answer replaces the preview — flushing one last preview there wastes an edit.
+     */
+    async cancel() {
+      disabled = true;
       clearTimer();
-      for (;;) {
-        if (running) {
-          await running;
-          continue;
-        }
-        if (disabled || !latest || latest === rendered) break;
-        await run();
-      }
+      if (running) await running;
     },
   };
 }

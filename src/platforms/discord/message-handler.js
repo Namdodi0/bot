@@ -132,7 +132,7 @@ export function createMessageHandler(deps) {
               previewer.push(renderPreview());
             },
           });
-          await previewer.flush();
+          await previewer.cancel();
           if (result.stopped) {
             if (placeholder) {
               await placeholder.edit(v2Message('⏹️ Stopped. The answer hit the brakes.')).catch((error) => {

@@ -95,15 +95,16 @@ export function createAskHandlers(shared) {
         feed.update(event);
         previewer.push(render());
       },
-      flush() {
+      finish() {
         clearInterval(ticker);
-        return previewer.flush();
+        return previewer.cancel();
       },
       summary() {
         return feed.summary();
       },
       async stop() {
         clearInterval(ticker);
+        await previewer.cancel();
         try {
           await edit('⏹️ Stopped. The answer hit the brakes.');
         } catch {
@@ -194,7 +195,7 @@ export function createAskHandlers(shared) {
           onProgress: preview.onProgress,
         });
       } finally {
-        await preview.flush();
+        await preview.finish();
       }
       if (result.stopped) {
         await preview.stop();
@@ -217,7 +218,7 @@ export function createAskHandlers(shared) {
         onProgress: preview.onProgress,
       });
     } finally {
-      await preview.flush();
+      await preview.finish();
     }
     if (result.stopped) {
       await preview.stop();
@@ -255,7 +256,7 @@ export function createAskHandlers(shared) {
         onProgress: preview.onProgress,
       });
     } finally {
-      await preview.flush();
+      await preview.finish();
     }
     if (result.stopped) {
       await preview.stop();
