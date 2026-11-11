@@ -486,7 +486,9 @@ export function createTurnRunner(deps) {
     if (!signal?.aborted) {
       progress({ type: 'finalizing' });
       ({ finalText, llmMs, completionMs, completionTokens, answeredBy } = await forceFinalAnswer({
-        config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages, deadline,
+        config, logger, llm, chatId: event.chatId, record, target, messages, noToolsMessages,
+        ...(useImage ? { visionMessages: noToolsVisionMessages } : {}),
+        deadline,
         finalText, aborted, llmMs: attempts.llmMs() + fallbackLlmMs, completionMs, completionTokens, answeredBy,
         signal,
       }));

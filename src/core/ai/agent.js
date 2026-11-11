@@ -156,6 +156,11 @@ export function createAgent(deps) {
         // turn is already active in this chat does it work on an isolated snapshot.
         const forked = controllers.size > 1;
         const fork = forked ? structuredClone(record) : record;
+        if (forked) {
+          // In-flight private entries belong to their own turn only; a parallel turn
+          // must never send another turn's private content to the model.
+          fork.messages = (fork.messages ?? []).filter((message) => !message.private);
+        }
         try {
           await conversation(
             event,

@@ -7,6 +7,10 @@ const SUBJECT =
 const MATH_EXPRESSION =
   /(?:\d\s*[+\-*/=<>]\s*\d|[a-z]\s*\^\s*\d|\b(?:sin|cos|tan|log|ln|sqrt)\s*\(|\b[a-z]\s*=\s*[-+]?\d)/;
 
+// Two-digit day/month shapes (05/11, 25-12, 05/11/2026) are dates, not division;
+// single-digit shapes like 1/2 stay math.
+const DATE_SHAPE = /\b\d{2}[/-](?:0?[1-9]|1[0-2])(?:[/-]\d{2,4})?\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g;
+
 const CHOICE = /(?:^|\n)\s*[a-d][.)]\s+\S/gi;
 
 /**
@@ -17,7 +21,7 @@ const CHOICE = /(?:^|\n)\s*[a-d][.)]\s+\S/gi;
 export function isHomeworkRequest(text) {
   const source = String(text ?? '').toLowerCase();
   if (!source.trim()) return false;
-  if (MATH_EXPRESSION.test(source)) return true;
+  if (MATH_EXPRESSION.test(source.replace(DATE_SHAPE, ' '))) return true;
   if (TASK.test(source)) return true;
   if ((source.match(CHOICE) ?? []).length >= 2) return true;
   return (

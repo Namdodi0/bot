@@ -390,6 +390,8 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
 
   /**
    * Serialize arbitrary record-mutating work (slash turns, reset/compact) with turns.
+   * Must NOT be called from inside a parallel task: the exclusive task waits for running
+   * turns, so it would wait for that very task (itself) and deadlock the chat.
    * @param {string} chatId
    * @param {() => Promise<any>} task
    */

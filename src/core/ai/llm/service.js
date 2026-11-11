@@ -70,11 +70,6 @@ export function createLlmService(options = {}) {
     }
   }
 
-  /** @param {any} request */
-  function stream(request) {
-    return chat({ ...request, stream: true });
-  }
-
   /**
    * @param {string} provider
    * @param {{model?: string, timeoutMs?: number}} [warmupOptions]
@@ -87,5 +82,5 @@ export function createLlmService(options = {}) {
     return adapter.warmup(warmupOptions);
   }
 
-  return { register, chat, stream, warmup, providers, has, routes };
+  return { register, chat, warmup, providers, has, routes };
 }

@@ -255,6 +255,26 @@ test('private turns are never kept in the shared record', async () => {
   assert.deepEqual(record.seen, ['private-1']);
 });
 
+test("a parallel turn never sees another turn's in-flight private entries", async () => {
+  const { agent, nimCalls } = await setup({
+    delayMs: 200,
+    configOverrides: { userRateLimitPerMinute: 0 },
+  });
+  const privateTurn = agent.enqueue(textEvent('secret question', { private: true, messageId: 'priv-1' }));
+  // Let the private turn store its user entry before the public turn forks the record.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const publicTurn = agent.enqueue(textEvent('public question', { messageId: 'pub-1' }));
+  await Promise.all([privateTurn, publicTurn]);
+  const publicCall = nimCalls.find((call) =>
+    call.messages.some((message) => String(message.content ?? '').includes('public question')),
+  );
+  assert.ok(publicCall, 'the public turn must reach the model');
+  for (const message of publicCall.messages) {
+    const text = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
+    assert.doesNotMatch(text, /secret question/);
+  }
+});
+
 test('dedupes by message_id', async () => {
   const { agent, sent } = await setup();
   const event = textEvent('hi', { messageId: 'same-id' });
@@ -527,6 +547,32 @@ test('after MAX_TOOL_ROUNDS a final no-tools call answers from the tool results'
   assert.equal(nimCalls.length, 4);
   assert.equal(nimCalls.at(-1).tools, undefined);
   assert.match(sent.at(-1).text, /Final synthesis/);
+});
+
+test('the forced final answer on a vision turn still sees the image', async () => {
+  const tavily = {
+    search: async () => ({ results: [{ title: 'Gold', url: 'https://x', content: 'price' }], images: [] }),
+  };
+  const toolRound = {
+    content: '',
+    toolCalls: [{ id: 'call_1', name: 'web_search', arguments: { query: 'gold' }, rawArguments: '{"query":"gold"}' }],
+  };
+  const { agent, nimCalls } = await setup({
+    tavily,
+    replies: [toolRound],
+    finalContent: 'Final synthesis from the image and search',
+  });
+  await agent.handle(
+    textEvent('what is in this image?', {
+      imageData: { data: Buffer.from('img'), contentType: 'image/png' },
+    }),
+  );
+  const final = nimCalls.at(-1);
+  assert.equal(final.tools, undefined);
+  const seesImage = final.messages.some(
+    (message) => Array.isArray(message.content) && message.content.some((part) => part.type === 'image_url'),
+  );
+  assert.ok(seesImage, 'the forced final call must keep the image blocks');
 });
 
 test('the sender rate limit is scoped per chat', async () => {

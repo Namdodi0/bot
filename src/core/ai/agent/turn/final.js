@@ -14,6 +14,7 @@ import { planAttemptBudget, providerTimeout, samplingFor } from '../helpers.js';
  *   target: {model: string, alias: string, provider: string},
  *   messages: any[],
  *   noToolsMessages: () => any[],
+ *   visionMessages?: (() => any[]) | null,
  *   deadline: number,
  *   finalText: string,
  *   aborted: boolean,
@@ -40,6 +41,7 @@ export async function forceFinalAnswer({
   target,
   messages,
   noToolsMessages,
+  visionMessages = null,
   deadline,
   finalText,
   aborted,
@@ -70,7 +72,8 @@ export async function forceFinalAnswer({
       record,
       alias: target.alias,
       messages: [
-        ...noToolsMessages(),
+        // A vision turn keeps its image blocks: the forced answer must still see the image.
+        ...(visionMessages ? visionMessages() : noToolsMessages()),
         { role: 'user', content: 'Answer the user now using the tool results above. Do not call any tools.' },
       ],
       reasoning: 'none',

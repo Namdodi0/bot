@@ -13,3 +13,11 @@ test('homework detection covers problems but not casual chat', () => {
   assert.equal(isHomeworkRequest('Messi hay Ronaldo?'), false);
   assert.equal(isHomeworkRequest('hello'), false);
 });
+
+test('date-shaped numbers do not trigger homework mode', () => {
+  assert.equal(isHomeworkRequest('remind me at 9:30 05/11'), false);
+  assert.equal(isHomeworkRequest('nhắc tôi lúc 20:00 ngày 05-11'), false);
+  assert.equal(isHomeworkRequest('25/12 là ngày gì'), false);
+  assert.equal(isHomeworkRequest('tính 1/2 + 3/4'), true);
+  assert.equal(isHomeworkRequest('2 + 2 = ?'), true);
+});
