@@ -92,8 +92,8 @@ export function createAskHandlers(shared) {
         feed.update(event);
         previewer.push(render());
       },
-      flush() {
-        return previewer.flush();
+      cancel() {
+        return previewer.cancel();
       },
       summary() {
         return feed.summary();
@@ -185,7 +185,7 @@ export function createAskHandlers(shared) {
         onDelta: preview.onDelta,
         onProgress: preview.onProgress,
       });
-      await preview.flush();
+      await preview.cancel();
       if (result.stopped) {
         await preview.stop();
         return;
@@ -203,7 +203,7 @@ export function createAskHandlers(shared) {
       onDelta: preview.onDelta,
       onProgress: preview.onProgress,
     });
-    await preview.flush();
+    await preview.cancel();
     if (result.stopped) {
       await preview.stop();
       return;
@@ -236,7 +236,7 @@ export function createAskHandlers(shared) {
       onDelta: preview.onDelta,
       onProgress: preview.onProgress,
     });
-    await preview.flush();
+    await preview.cancel();
     if (result.stopped) {
       await preview.stop();
       return;

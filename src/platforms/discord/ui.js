@@ -21,7 +21,10 @@ import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
 
 const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
-const PREVIEW_INTERVAL_MS = 100;
+// Discord allows only a few edits per message every few seconds; 1.3s stays inside the
+// bucket while still painting new text about once a sentence. Fast edits tighten it.
+const PREVIEW_INTERVAL_MS = 1300;
+const PREVIEW_MIN_GROWTH = 16;
 /** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
 const V2_TEXT_LIMIT = 4000;
 
@@ -239,18 +242,31 @@ export function errorPanel(message, title = 'Hold up') {
   });
 }
 
+/** Characters that end a thought: worth a paint even when the delta is small. */
+const PREVIEW_BOUNDARY = /[\n.!?…:;]\s*$/;
+
 /**
- * Coalescing preview renderer: one edit in flight, at most one edit per interval, and no
- * edit when the rendered text did not change. A failed edit disables previews for the rest
- * of the turn; the final answer still replaces the message.
+ * Coalescing preview renderer for streaming answers. One edit in flight, one edit per
+ * pace, and only when the new text is meaningfully different:
+ * - Discord allows only a handful of edits per message every few seconds; editing on every
+ *   delta gets 429s, which stall the REST queue for seconds and feel worse than a slower
+ *   cadence.
+ * - Small deltas (mid-word) wait; sentence/newline endings and progress-block changes paint
+ *   immediately so the message still feels live.
+ * - A slow edit (the REST layer had to wait, usually a 429) widens the pace; fast edits
+ *   tighten it again, so the cadence self-tunes instead of guessing one number.
+ * A failed edit disables previews for the rest of the turn; the final answer still replaces
+ * the message.
  * @param {(text: string) => Promise<unknown>} edit
  * @param {number} [intervalMs]
  */
 export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
   let disabled = false;
+  let cancelled = false;
   let lastAt = 0;
   let latest = '';
   let rendered = '';
+  let pace = intervalMs;
   /** @type {NodeJS.Timeout|null} */
   let timer = null;
   /** @type {Promise<void>|null} */
@@ -262,8 +278,24 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
     timer = null;
   }
 
+  /**
+   * A repaint is worth spending from the edit budget when the text grew enough, reshaped
+   * (progress block / truncation) or ended a thought.
+   * @param {string} text
+   */
+  function worthRendering(text) {
+    if (!rendered) return true;
+    if (text === rendered) return false;
+    if (text.length <= rendered.length) return true;
+    const grown = text.length - rendered.length;
+    if (grown >= PREVIEW_MIN_GROWTH) return true;
+    const head = Math.min(rendered.length, 80);
+    if (rendered.slice(0, head) !== text.slice(0, head)) return true;
+    return grown >= 4 && PREVIEW_BOUNDARY.test(text);
+  }
+
   function schedule(delay) {
-    if (disabled || timer || running) return;
+    if (disabled || cancelled || timer || running) return;
     timer = setTimeout(() => {
       timer = null;
       void run();
@@ -273,20 +305,27 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
 
   /** @returns {Promise<void>} */
   function run() {
-    if (disabled) return Promise.resolve();
+    if (disabled || cancelled) return Promise.resolve();
     if (running) return running;
     if (!latest || latest === rendered) return Promise.resolve();
-    lastAt = Date.now();
     const text = latest;
+    const startedAt = Date.now();
+    lastAt = startedAt;
     running = (async () => {
       try {
         await edit(text);
         rendered = text;
+        const spent = Date.now() - startedAt;
+        if (spent > Math.max(1000, pace)) pace = Math.min(Math.round(pace * 1.5), intervalMs * 3);
+        else if (spent < 400) pace = Math.max(intervalMs, Math.round(pace * 0.8));
       } catch {
         disabled = true;
       } finally {
         running = null;
-        if (!disabled && latest !== rendered) schedule(intervalMs - (Date.now() - lastAt));
+        if (!disabled && !cancelled && latest !== rendered) {
+          const since = Date.now() - lastAt;
+          schedule(since > pace ? pace : pace - since);
+        }
       }
     })();
     return running;
@@ -295,12 +334,13 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
   return {
     /** @param {string} text */
     push(text) {
-      if (disabled) return;
+      if (disabled || cancelled) return;
       const previewText = streamPreview(text);
       if (!previewText || previewText === latest) return;
       latest = previewText;
+      if (!worthRendering(latest)) return;
       if (running) return;
-      const wait = lastAt ? intervalMs - (Date.now() - lastAt) : 0;
+      const wait = lastAt ? pace - (Date.now() - lastAt) : 0;
       if (wait > 0) schedule(wait);
       else void run();
     },
@@ -314,6 +354,16 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
         if (disabled || !latest || latest === rendered) break;
         await run();
       }
+    },
+    /**
+     * Stop without another paint. The caller is about to replace the preview with the
+     * final answer, so rendering the last partial text would only burn the edit budget and
+     * risk a 429 on the important edit.
+     */
+    async cancel() {
+      cancelled = true;
+      clearTimer();
+      if (running) await running.catch(() => {});
     },
   };
 }

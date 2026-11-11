@@ -120,7 +120,9 @@ export function createMessageHandler(deps) {
               previewer.push(renderPreview());
             },
           });
-          await previewer.flush();
+          // The final answer replaces this message right below: never paint the last
+          // partial text first (that edit competes with the important one for the bucket).
+          await previewer.cancel();
           if (result.stopped) {
             if (placeholder) {
               await placeholder.edit(v2Message('⏹️ Stopped. The answer hit the brakes.')).catch((error) => {

@@ -45,3 +45,18 @@ test('the previewer coalesces bursts and skips unchanged text', async () => {
   await previewer.flush();
   assert.deepEqual(edits, ['a', 'abc'], 'unchanged text must not trigger an edit');
 });
+
+test('cancel drops the pending preview so the final answer keeps the edit budget', async () => {
+  /** @type {string[]} */
+  const edits = [];
+  const previewer = createPreviewer(async (text) => {
+    edits.push(text);
+  }, 20);
+
+  previewer.push('a');
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  previewer.push('abcdefghijklmnopqrst');
+  await previewer.cancel();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.deepEqual(edits, ['a']);
+});
