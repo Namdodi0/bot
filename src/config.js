@@ -514,6 +514,11 @@ export function loadConfig(input = {}) {
         nimSection.samplingDefaultsModels,
         'config.nim.samplingDefaultsModels',
       ),
+      // Docs-profile thinking budget for the models above (hosted NIM: -1..32768).
+      reasoningBudget: asOptionalInt(nimSection.reasoningBudget, 'config.nim.reasoningBudget', {
+        min: -1,
+        max: 32768,
+      }),
     },
     deepseek: {
       apiKey: deepseekKey,

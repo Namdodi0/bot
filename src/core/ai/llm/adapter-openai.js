@@ -102,6 +102,25 @@ function reasoningEffort(mode, map) {
   return map[key] ?? map.none ?? 'none';
 }
 
+/**
+ * NVIDIA docs recipe for thinking: the request carries `chat_template_kwargs` instead of
+ * `reasoning_effort`, and tool calls must request `force_nonempty_content` so the parser
+ * can split reasoning from the tool block.
+ * @param {string} mode
+ * @param {boolean} withTools
+ */
+function docsTemplateKwargs(mode, withTools) {
+  /** @type {Record<string, boolean>} */
+  const kwargs =
+    mode === 'none'
+      ? { enable_thinking: false }
+      : mode === 'medium'
+        ? { enable_thinking: true, medium_effort: true }
+        : { enable_thinking: true };
+  if (withTools) kwargs.force_nonempty_content = true;
+  return kwargs;
+}
+
 export const NIM_REASONING_MAP = {
   none: 'none',
   low: 'low',
@@ -150,7 +169,7 @@ const SAMPLING_FIELDS = {
 /**
  * OpenAI-compatible adapter (NVIDIA NIM, DeepSeek, ...).
  * The wire format lives entirely here; the service only knows the neutral vocabulary.
- * @param {{provider?: string, apiKey: string, baseUrl: string, model: string, http: ReturnType<typeof import('../../http.js').createHttp>, logger: import('../../logger.js').Logger, metrics?: any, defaultTemperature?: number, reasoningMap?: Record<string,string>, samplingDefaultsFor?: string[]}} options
+ * @param {{provider?: string, apiKey: string, baseUrl: string, model: string, http: ReturnType<typeof import('../../http.js').createHttp>, logger: import('../../logger.js').Logger, metrics?: any, defaultTemperature?: number, reasoningMap?: Record<string,string>, samplingDefaultsFor?: string[], reasoningBudget?: number|null}} options
  */
 export function createOpenAiCompatAdapter(options) {
   const provider = options.provider ?? 'nim';
@@ -162,8 +181,10 @@ export function createOpenAiCompatAdapter(options) {
   const metrics = options.metrics;
   const defaultTemperature = options.defaultTemperature ?? 1.0;
   const reasoningMap = options.reasoningMap ?? NIM_REASONING_MAP;
-  // These models get `reasoning_effort` only; their own defaults beat anything we send.
+  // Documented docs-profile models: no sampling knobs, no `reasoning_effort`; thinking is
+  // controlled the way the provider docs show it, through chat_template_kwargs.
   const samplingDefaultsFor = new Set(options.samplingDefaultsFor ?? []);
+  const reasoningBudget = Number.isFinite(options.reasoningBudget) ? Number(options.reasoningBudget) : null;
 
   const endpoint = `${baseUrl}/chat/completions`;
 
@@ -215,12 +236,16 @@ export function createOpenAiCompatAdapter(options) {
     const modelId = input.model ?? model;
     const providerDefaults = samplingDefaultsFor.has(String(modelId));
     /** @type {any} */
-    const payload = {
-      model: modelId,
-      messages: input.messages,
-      reasoning_effort: reasoningEffort(input.reasoning ?? 'none', reasoningMap),
-    };
-    if (!providerDefaults) {
+    const payload = { model: modelId, messages: input.messages };
+    if (providerDefaults) {
+      // Documented profile: only the provider's own defaults plus the thinking controls.
+      payload.chat_template_kwargs = docsTemplateKwargs(
+        input.reasoning ?? 'none',
+        Boolean(input.tools?.length),
+      );
+      if (reasoningBudget !== null) payload.reasoning_budget = reasoningBudget;
+    } else {
+      payload.reasoning_effort = reasoningEffort(input.reasoning ?? 'none', reasoningMap);
       payload.temperature = input.temperature ?? defaultTemperature;
       for (const [key, apiKey] of Object.entries(SAMPLING_FIELDS)) {
         const value = input.sampling?.[key];

@@ -33,7 +33,8 @@
     "frequencyPenalty": 0,
     "presencePenalty": 0,
     "seed": null,
-    "samplingDefaultsModels": ["nvidia/nemotron-3-ultra-550b-a55b"]
+    "samplingDefaultsModels": ["nvidia/nemotron-3-ultra-550b-a55b"],
+    "reasoningBudget": 16384
   },
   "deepseek": {
     "baseUrl": "https://api.deepseek.com",

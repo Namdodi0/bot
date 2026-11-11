@@ -46,6 +46,7 @@ const SECTION_KEYS = {
     'presencePenalty',
     'seed',
     'samplingDefaultsModels',
+    'reasoningBudget',
   ],
   deepseek: [
     'baseUrl',

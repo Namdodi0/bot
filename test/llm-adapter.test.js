@@ -76,24 +76,54 @@ test('DeepSeek maps medium to high, none stays none', async () => {
   assert.equal(http.calls[1].payload.model, 'deepseek-flash');
 });
 
-test('a model listed for provider defaults receives only reasoning_effort', async () => {
+test('a docs-profile model sends chat_template_kwargs instead of sampling or reasoning_effort', async () => {
   const http = fakeHttp([], standardResponse);
   const client = makeClient(http, {
     samplingDefaultsFor: ['nvidia/nemotron-3-ultra-550b-a55b'],
+    reasoningBudget: 16384,
   });
+  const tools = [{ type: 'function', function: { name: 'web_search', parameters: { type: 'object' } } }];
   await client.chat({
     model: 'nvidia/nemotron-3-ultra-550b-a55b',
     messages: [{ role: 'user', content: 'x' }],
     reasoning: 'high',
     temperature: 0.3,
     sampling: { topP: 0.85, topK: 40, frequencyPenalty: 0, presencePenalty: 0 },
+    tools,
   });
   const payload = http.calls[0].payload;
-  assert.equal(payload.reasoning_effort, 'high');
-  for (const key of ['temperature', 'top_p', 'top_k', 'frequency_penalty', 'presence_penalty']) {
+  assert.deepEqual(payload.chat_template_kwargs, {
+    enable_thinking: true,
+    force_nonempty_content: true,
+  });
+  assert.equal(payload.reasoning_budget, 16384);
+  for (const key of [
+    'reasoning_effort',
+    'temperature',
+    'top_p',
+    'top_k',
+    'frequency_penalty',
+    'presence_penalty',
+  ]) {
     assert.equal(payload[key], undefined, `${key} must stay at the provider default`);
   }
-  assert.equal(payload.messages[0].content, 'x');
+
+  await client.chat({
+    model: 'nvidia/nemotron-3-ultra-550b-a55b',
+    messages: [{ role: 'user', content: 'x' }],
+    reasoning: 'none',
+  });
+  assert.deepEqual(http.calls[1].payload.chat_template_kwargs, { enable_thinking: false });
+
+  await client.chat({
+    model: 'nvidia/nemotron-3-ultra-550b-a55b',
+    messages: [{ role: 'user', content: 'x' }],
+    reasoning: 'medium',
+  });
+  assert.deepEqual(http.calls[2].payload.chat_template_kwargs, {
+    enable_thinking: true,
+    medium_effort: true,
+  });
 });
 
 test('reads cached prompt tokens from OpenAI and DeepSeek usage shapes', async () => {
