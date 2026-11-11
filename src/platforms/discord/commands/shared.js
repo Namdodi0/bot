@@ -108,11 +108,15 @@ export function createShared(deps) {
   }
 
   async function busyReply(interaction) {
-    const payload = {
-      content: "I'm juggling too many messages right now. Give me a few seconds and try again. 🤹",
-    };
-    if (interaction.deferred || interaction.replied) await interaction.editReply(payload);
-    else await replyEphemeral(interaction, payload);
+    const text = "I'm juggling too many messages right now. Give me a few seconds and try again. 🤹";
+    const payload = { content: text };
+    if (interaction.deferred || interaction.replied) {
+      // A component panel is a Components V2 message: editing it with plain content is
+      // rejected, so keep the same payload shape as the panel.
+      await interaction.editReply(interaction.message ? v2Message(text) : payload);
+    } else {
+      await replyEphemeral(interaction, payload);
+    }
   }
 
   /**
