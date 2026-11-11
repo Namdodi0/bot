@@ -180,18 +180,20 @@ function collectUnknownConfigKeys(root) {
  * tight to limit language drift; null leaves the provider default untouched.
  * @param {Record<string, any>} providerSection
  * @param {string} name
+ * @param {{penalties?: boolean}} [options] `penalties: false` leaves the provider's own
+ *   frequency/presence defaults in place (sends no field instead of an explicit 0).
  */
-function commonSampling(providerSection, name) {
+function commonSampling(providerSection, name, options = {}) {
   const topP = asOptionalNumber(providerSection.topP, `config.${name}.topP`, { min: 0, max: 1 }) ?? 0.9;
   if (topP !== null && topP <= 0) {
     throw new ConfigError(`config.${name}.topP must be within (0, 1]`);
   }
+  const penalty = (key) =>
+    asOptionalNumber(providerSection[key], `config.${name}.${key}`, { min: -2, max: 2 });
   return {
     topP,
-    frequencyPenalty:
-      asOptionalNumber(providerSection.frequencyPenalty, `config.${name}.frequencyPenalty`, { min: -2, max: 2 }) ?? 0,
-    presencePenalty:
-      asOptionalNumber(providerSection.presencePenalty, `config.${name}.presencePenalty`, { min: -2, max: 2 }) ?? 0,
+    frequencyPenalty: options.penalties === false ? penalty('frequencyPenalty') : (penalty('frequencyPenalty') ?? 0),
+    presencePenalty: options.penalties === false ? penalty('presencePenalty') : (penalty('presencePenalty') ?? 0),
     seed: asOptionalInt(providerSection.seed, `config.${name}.seed`, { min: 0 }),
   };
 }
@@ -549,7 +551,8 @@ export function loadConfig(input = {}) {
       timeoutMs: /** @type {number} */ (
         asInt(abliterationSection.timeoutMs, 'config.abliteration.timeoutMs', 0, { min: 0 })
       ),
-      ...commonSampling(abliterationSection, 'abliteration'),
+      // Left at provider defaults on request: no explicit penalty fields.
+      ...commonSampling(abliterationSection, 'abliteration', { penalties: false }),
     },
     model: {
       defaultAlias,
