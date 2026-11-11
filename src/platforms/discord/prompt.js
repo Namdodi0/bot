@@ -52,7 +52,7 @@ export function registerDiscordPrompt(registry, options = {}) {
     order: SECTION_ORDER.commands,
     text: [
       '',
-      'SLASH COMMANDS: /ask, /help, /status, /reasoning, /ping, /stop, /model, /settings, /reset, /compact, /summary, /catchup, /search, /image, /sticker, /remind.',
+      'SLASH COMMANDS: /ask, /help, /status, /reasoning, /ping, /stop, /restart, /model, /settings, /reset, /compact, /summary, /catchup, /search, /image, /sticker, /remind.',
       'Message menus: Explain message, Summarize message.',
       'Never fabricate command output. Do not tell someone to run a command unless it is genuinely useful.',
     ].join('\n'),
