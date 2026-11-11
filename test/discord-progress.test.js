@@ -42,7 +42,7 @@ test('the waiting ticker shows elapsed time and animates', () => {
   assert.match(feed.text(), /actual thought/, 'real content replaces the ticker');
 });
 
-test('reasoning keeps line breaks, tails by lines live, and hides behind a spoiler in the final block', () => {
+test('reasoning keeps line breaks and tails by lines; the final block stays visible', () => {
   const feed = createProgressFeed();
   feed.update({ type: 'reasoning', text: 'line one\nline two\nline three\nline four\nline five' });
   const live = feed.text();
@@ -50,12 +50,12 @@ test('reasoning keeps line breaks, tails by lines live, and hides behind a spoil
   assert.doesNotMatch(live, /line one/, 'the live view shows only the newest lines');
   assert.match(live, /…/, 'a cut excerpt signals the truncation');
   const final = feed.summary();
-  assert.match(final, /^🧠 \|\|/, 'the final excerpt opens a spoiler');
-  assert.match(final, /\|\|$/, 'the spoiler must stay closed');
+  assert.match(final, /^> 🧠 /, 'the final excerpt is a visible quote, not a hidden spoiler');
+  assert.doesNotMatch(final, /\|\|/);
   assert.match(final, /line one/, 'the final block keeps more context than the live view');
 });
 
-test('the final block never cuts inside the spoiler when tool lines fill the budget', () => {
+test('the final block stays within the cap when tool lines fill the budget', () => {
   const feed = createProgressFeed();
   feed.update({ type: 'reasoning', text: 'r'.repeat(3000) });
   for (let i = 0; i < 6; i += 1) {
@@ -64,8 +64,7 @@ test('the final block never cuts inside the spoiler when tool lines fill the bud
   }
   const final = feed.summary();
   assert.ok(final.length <= 1400);
-  const opens = (final.match(/\|\|/g) ?? []).length;
-  assert.equal(opens % 2, 0, 'spoiler markers must stay paired');
+  assert.match(final, /^> 🧠 /);
 });
 
 test('the previewer coalesces bursts and skips unchanged text', async () => {

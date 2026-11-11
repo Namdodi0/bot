@@ -69,7 +69,7 @@ function reasoningTail(text, maxChars, maxLines) {
 
 /**
  * Live status shown above the streaming answer. The same block is kept above the final
- * answer: a spoiler-wrapped reasoning excerpt plus every tool call and its outcome.
+ * answer: a quoted reasoning excerpt plus every tool call and its outcome.
  * While no content has arrived yet, a ticker shows elapsed time so the wait is visible.
  * @param {{now?: () => number}} [options]
  */
@@ -121,15 +121,15 @@ export function createProgressFeed(options = {}) {
 
   function summary() {
     const tools = toolBlock();
-    // Budget the excerpt against the tool lines and the spoiler wrapper so the joined
-    // block never exceeds the cap — a cut inside the spoiler would leave an unclosed ||.
+    // Budget the excerpt against the tool lines and the quote prefixes so the joined
+    // block stays within the cap. No spoiler: hidden reasoning reads as "gone" in chat.
     const budget = Math.min(
       MAX_REASONING_CHARS,
-      MAX_SUMMARY_CHARS - tools.length - (tools ? 1 : 0) - 8,
+      MAX_SUMMARY_CHARS - tools.length - (tools ? 1 : 0) - 27,
     );
     const excerpt = reasoningTail(reasoning, budget, SUMMARY_REASONING_LINES);
     const parts = [];
-    if (excerpt) parts.push(`🧠 ||${excerpt}||`);
+    if (excerpt) parts.push(`> 🧠 ${excerpt.split('\n').join('\n> ')}`);
     if (tools) parts.push(tools);
     return parts.join('\n');
   }
