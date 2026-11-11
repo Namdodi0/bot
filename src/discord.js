@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { ConfigError, HELP_TEXT, loadConfig } from './config.js';
 import { describeEnvHints, loadEnvFiles, PROJECT_ROOT } from './core/env.js';
+import { acquireInstanceLock } from './core/instance-lock.js';
 import { printBanner } from './core/logger.js';
 import { createBoot, createRuntime } from './core/runtime.js';
 import { VERSION } from './core/version.js';
@@ -21,9 +22,13 @@ async function main() {
 
   const boot = createBoot({ config, envReport });
   const { logger } = boot;
+  // Refuse to answer twice: a second process sharing this data dir would double every
+  // reply and race the same context files.
+  const instanceLock = await acquireInstanceLock({ dir: config.dataDir });
   const platform = createDiscordPlatform({ config, boot });
   const runtime = await createRuntime({ config, platform, boot });
   const { primary, fallback, contextFiles, shutdown, addDispose, waitForShutdown } = runtime;
+  addDispose(() => instanceLock.release());
 
   if (config.dryRun) {
     logger.info('dry-run: Discord transport not started');
