@@ -85,6 +85,23 @@ test('circuit breaker opens after 5 server failures', async () => {
   assert.equal(http.stateOf('breaker').open, true);
 });
 
+test('a 200 with an unparseable body counts as a breaker failure', async () => {
+  const http = createHttp({
+    sleep: noSleep,
+    fetchImpl: async () => response('<html>not json</html>'),
+  });
+  for (let i = 0; i < 5; i += 1) {
+    await assert.rejects(
+      () => http.requestJson('https://example.com', { service: 'bad-json', retries: 0 }),
+      (error) => error instanceof HttpError && error.retryable === false,
+    );
+  }
+  await assert.rejects(
+    () => http.requestJson('https://example.com', { service: 'bad-json', retries: 0 }),
+    (error) => error instanceof CircuitOpenError,
+  );
+});
+
 test('client errors (4xx) do not trip the circuit breaker', async () => {
   let calls = 0;
   const http = createHttp({

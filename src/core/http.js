@@ -279,6 +279,8 @@ export function createHttp(options = {}) {
         return { status: response.status, data, latencyMs: latency, headers: response.headers };
       } catch (error) {
         if (error instanceof SyntaxError) {
+          // A 200 whose body cannot be parsed is a failed call, not a success.
+          recordFailure(service);
           throw new HttpError(`${service} returned invalid JSON`, {
             service,
             url,
