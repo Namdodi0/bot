@@ -21,9 +21,7 @@ import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
 
 const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
-// 2 edits/s per streaming message: fast enough to feel live, slow enough to stay inside
-// Discord's edit buckets even with several parallel turns in one channel.
-const PREVIEW_INTERVAL_MS = 500;
+const PREVIEW_INTERVAL_MS = 100;
 /** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
 const V2_TEXT_LIMIT = 4000;
 
@@ -306,15 +304,16 @@ export function createPreviewer(edit, intervalMs = PREVIEW_INTERVAL_MS) {
       if (wait > 0) schedule(wait);
       else void run();
     },
-    /**
-     * Stop previewing and drop the pending text, but await any in-flight edit so the
-     * caller's final edit cannot be overwritten by a late preview. Use right before the
-     * final answer replaces the preview — flushing one last preview there wastes an edit.
-     */
-    async cancel() {
-      disabled = true;
+    async flush() {
       clearTimer();
-      if (running) await running;
+      for (;;) {
+        if (running) {
+          await running;
+          continue;
+        }
+        if (disabled || !latest || latest === rendered) break;
+        await run();
+      }
     },
   };
 }

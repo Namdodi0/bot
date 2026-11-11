@@ -265,7 +265,7 @@ export function createBasicHandlers(shared) {
       );
       if (!outcome.ok) return;
       const result = outcome.value;
-      await previewer.cancel();
+      await previewer.flush();
       if (!result.ok) {
         await interaction.editReply({
           content:

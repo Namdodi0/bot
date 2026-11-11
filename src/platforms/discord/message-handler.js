@@ -115,10 +115,6 @@ export function createMessageHandler(deps) {
           }
           await placeholder.edit(v2Message(text));
         });
-        // Keep the waiting ticker alive even when no deltas arrive; the previewer skips
-        // unchanged text, so this edits at most once per second while waiting.
-        const ticker = setInterval(() => previewer.push(renderPreview()), 1000);
-        ticker.unref?.();
 
         try {
           const result = await runtime.agent.stream(event, {
@@ -132,7 +128,7 @@ export function createMessageHandler(deps) {
               previewer.push(renderPreview());
             },
           });
-          await previewer.cancel();
+          await previewer.flush();
           if (result.stopped) {
             if (placeholder) {
               await placeholder.edit(v2Message('⏹️ Stopped. The answer hit the brakes.')).catch((error) => {
@@ -255,7 +251,6 @@ export function createMessageHandler(deps) {
         } catch (error) {
           logger?.error('discord streaming reply failed', { error: String(/** @type {any} */ (error)?.message ?? error) });
         } finally {
-          clearInterval(ticker);
           await stopTyping();
         }
       });

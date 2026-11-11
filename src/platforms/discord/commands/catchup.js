@@ -108,7 +108,7 @@ export function createCatchupHandlers(shared) {
       );
       if (!outcome.ok) return;
       const summary = outcome.value;
-      await previewer.cancel();
+      await previewer.flush();
       if (!summary.ok) {
         await interaction.editReply({
           content: "I couldn't summarize that. The thoughts slipped away. 🫠",

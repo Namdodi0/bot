@@ -83,9 +83,6 @@ export function createAskHandlers(shared) {
     let streamed = '';
     const render = () => [feed.text(), streamed].filter(Boolean).join('\n\n');
     const previewer = createPreviewer((text) => edit(text));
-    // Waiting ticker: keeps the elapsed-time status fresh even without deltas (1 edit/s).
-    const ticker = setInterval(() => previewer.push(render()), 1000);
-    ticker.unref?.();
     return {
       onDelta(delta) {
         streamed += delta;
@@ -95,16 +92,13 @@ export function createAskHandlers(shared) {
         feed.update(event);
         previewer.push(render());
       },
-      finish() {
-        clearInterval(ticker);
-        return previewer.cancel();
+      flush() {
+        return previewer.flush();
       },
       summary() {
         return feed.summary();
       },
       async stop() {
-        clearInterval(ticker);
-        await previewer.cancel();
         try {
           await edit('⏹️ Stopped. The answer hit the brakes.');
         } catch {
@@ -185,18 +179,13 @@ export function createAskHandlers(shared) {
       const thread = await channel.threads.create({ name, autoArchiveDuration: 1440, reason: `AI answer for ${interaction.user.username}` });
       const placeholder = await thread.send(v2Message('…'));
       const preview = createStreamPreview((text) => placeholder.edit(v2Message(text)));
-      /** @type {{text: string, photos: any[], stopped?: boolean}} */
-      let result;
-      try {
-        result = await streamAsk(interaction, prompt, {
-          chatId: thread.id,
-          imageData,
-          onDelta: preview.onDelta,
-          onProgress: preview.onProgress,
-        });
-      } finally {
-        await preview.finish();
-      }
+      const result = await streamAsk(interaction, prompt, {
+        chatId: thread.id,
+        imageData,
+        onDelta: preview.onDelta,
+        onProgress: preview.onProgress,
+      });
+      await preview.flush();
       if (result.stopped) {
         await preview.stop();
         return;
@@ -208,18 +197,13 @@ export function createAskHandlers(shared) {
     }
 
     const preview = createStreamPreview((text) => interaction.editReply(v2Message(text)));
-    /** @type {{text: string, photos: any[], stopped?: boolean}} */
-    let result;
-    try {
-      result = await streamAsk(interaction, prompt, {
-        imageData,
-        private: priv,
-        onDelta: preview.onDelta,
-        onProgress: preview.onProgress,
-      });
-    } finally {
-      await preview.finish();
-    }
+    const result = await streamAsk(interaction, prompt, {
+      imageData,
+      private: priv,
+      onDelta: preview.onDelta,
+      onProgress: preview.onProgress,
+    });
+    await preview.flush();
     if (result.stopped) {
       await preview.stop();
       return;
@@ -248,16 +232,11 @@ export function createAskHandlers(shared) {
     const showThinking = await thinkingEnabled(interaction);
     const prompt = `${prefix}\n\n${content}`;
     const preview = createStreamPreview((text) => interaction.editReply(v2Message(text)));
-    /** @type {{text: string, photos: any[], stopped?: boolean}} */
-    let result;
-    try {
-      result = await runtime.agent.stream(askEvent(interaction, prompt, { private: true }), {
-        onDelta: preview.onDelta,
-        onProgress: preview.onProgress,
-      });
-    } finally {
-      await preview.finish();
-    }
+    const result = await runtime.agent.stream(askEvent(interaction, prompt, { private: true }), {
+      onDelta: preview.onDelta,
+      onProgress: preview.onProgress,
+    });
+    await preview.flush();
     if (result.stopped) {
       await preview.stop();
       return;

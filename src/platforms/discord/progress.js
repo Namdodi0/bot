@@ -33,49 +33,14 @@ function toolResultLine(event) {
 }
 
 const MAX_REASONING_CHARS = 800;
-const LIVE_REASONING_CHARS = 300;
-const LIVE_REASONING_LINES = 3;
-const SUMMARY_REASONING_LINES = 12;
 const MAX_TOOL_LINES = 6;
 const MAX_SUMMARY_CHARS = 1400;
-const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
-/**
- * Newest lines of the reasoning, keeping line breaks so the excerpt stays scannable.
- * A leading … marks a cut (by lines or by characters).
- * @param {string} text
- * @param {number} maxChars
- * @param {number} maxLines
- */
-function reasoningTail(text, maxChars, maxLines) {
-  const clean = String(text ?? '')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  if (!clean || maxChars <= 0) return '';
-  let lines = clean.split('\n');
-  let truncated = false;
-  if (lines.length > maxLines) {
-    lines = lines.slice(-maxLines);
-    truncated = true;
-  }
-  let out = lines.join('\n');
-  if (out.length > maxChars) {
-    out = out.slice(-maxChars);
-    truncated = true;
-  }
-  return truncated ? `…${out}` : out;
-}
 
 /**
  * Live status shown above the streaming answer. The same block is kept above the final
- * answer: a quoted reasoning excerpt plus every tool call and its outcome.
- * While no content has arrived yet, a ticker shows elapsed time so the wait is visible.
- * @param {{now?: () => number}} [options]
+ * answer: reasoning excerpt plus every tool call and its outcome.
  */
-export function createProgressFeed(options = {}) {
-  const now = options.now ?? (() => Date.now());
-  const startedAt = now();
+export function createProgressFeed() {
   let mode = 'idle';
   let reasoning = '';
   /** @type {string[]} */
@@ -97,7 +62,7 @@ export function createProgressFeed(options = {}) {
         break;
       case 'reasoning':
         mode = 'reasoning';
-        reasoning = `${reasoning}${String(event.text ?? '')}`.slice(-8000);
+        reasoning = `${reasoning}${String(event.text ?? '')}`.replace(/\s+/g, ' ').slice(-8000);
         break;
       case 'tool':
         mode = 'tool';
@@ -115,37 +80,19 @@ export function createProgressFeed(options = {}) {
     }
   }
 
-  function toolBlock() {
-    return toolLines.map((line) => `> ${line}`).join('\n');
-  }
-
   function summary() {
-    const tools = toolBlock();
-    // Budget the excerpt against the tool lines and the quote prefixes so the joined
-    // block stays within the cap. No spoiler: hidden reasoning reads as "gone" in chat.
-    const budget = Math.min(
-      MAX_REASONING_CHARS,
-      MAX_SUMMARY_CHARS - tools.length - (tools ? 1 : 0) - 27,
-    );
-    const excerpt = reasoningTail(reasoning, budget, SUMMARY_REASONING_LINES);
-    const parts = [];
-    if (excerpt) parts.push(`> 🧠 ${excerpt.split('\n').join('\n> ')}`);
-    if (tools) parts.push(tools);
-    return parts.join('\n');
+    /** @type {string[]} */
+    const lines = [];
+    if (reasoning) lines.push(`> 🧠 ${reasoning.slice(-MAX_REASONING_CHARS)}`);
+    for (const line of toolLines) lines.push(`> ${line}`);
+    return lines.join('\n').slice(0, MAX_SUMMARY_CHARS);
   }
 
   function text() {
-    const tools = toolBlock();
-    const excerpt = reasoningTail(reasoning, LIVE_REASONING_CHARS, LIVE_REASONING_LINES);
-    const live = excerpt ? `> 🧠 ${excerpt.split('\n').join('\n> ')}` : '';
-    const base = [live, tools].filter(Boolean).join('\n');
+    const base = summary();
     if (base) return base;
-    const elapsedMs = Math.max(0, now() - startedAt);
-    const seconds = Math.floor(elapsedMs / 1000);
-    // Rotate once per second so the ticker text changes at most 1/s (one edit/s).
-    const frame = SPINNER[seconds % SPINNER.length];
-    if (mode === 'thinking') return `> 🧠 Thinking… ${seconds}s ${frame}`;
-    if (mode === 'finalizing') return `> ✍️ Writing the answer… ${seconds}s ${frame}`;
+    if (mode === 'thinking') return '> 🧠 Thinking…';
+    if (mode === 'finalizing') return '> ✍️ Writing the answer…';
     return '';
   }
 
