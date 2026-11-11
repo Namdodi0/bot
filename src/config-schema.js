@@ -45,6 +45,7 @@ const SECTION_KEYS = {
     'frequencyPenalty',
     'presencePenalty',
     'seed',
+    'samplingDefaultsModels',
   ],
   deepseek: [
     'baseUrl',

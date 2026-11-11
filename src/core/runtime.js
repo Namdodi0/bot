@@ -139,6 +139,7 @@ export async function createRuntime(input) {
         metrics,
         defaultTemperature: config.nim.temperature,
         reasoningMap: NIM_REASONING_MAP,
+        samplingDefaultsFor: config.nim.samplingDefaultsModels ?? [],
       }),
     );
   }

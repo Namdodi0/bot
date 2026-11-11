@@ -32,7 +32,8 @@
     "repetitionPenalty": null,
     "frequencyPenalty": 0,
     "presencePenalty": 0,
-    "seed": null
+    "seed": null,
+    "samplingDefaultsModels": ["nvidia/nemotron-3-ultra-550b-a55b"]
   },
   "deepseek": {
     "baseUrl": "https://api.deepseek.com",
@@ -61,8 +62,8 @@
     "timeoutMs": 0
   },
   "model": {
-    "defaultAlias": "ultra",
-    "fallbackAlias": "nim-light",
+    "defaultAlias": "glm",
+    "fallbackAlias": "glm",
     "visionAlias": "mistral-large",
     "visionReasoning": "high"
   },

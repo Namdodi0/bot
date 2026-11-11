@@ -150,7 +150,7 @@ const SAMPLING_FIELDS = {
 /**
  * OpenAI-compatible adapter (NVIDIA NIM, DeepSeek, ...).
  * The wire format lives entirely here; the service only knows the neutral vocabulary.
- * @param {{provider?: string, apiKey: string, baseUrl: string, model: string, http: ReturnType<typeof import('../../http.js').createHttp>, logger: import('../../logger.js').Logger, metrics?: any, defaultTemperature?: number, reasoningMap?: Record<string,string>}} options
+ * @param {{provider?: string, apiKey: string, baseUrl: string, model: string, http: ReturnType<typeof import('../../http.js').createHttp>, logger: import('../../logger.js').Logger, metrics?: any, defaultTemperature?: number, reasoningMap?: Record<string,string>, samplingDefaultsFor?: string[]}} options
  */
 export function createOpenAiCompatAdapter(options) {
   const provider = options.provider ?? 'nim';
@@ -162,6 +162,8 @@ export function createOpenAiCompatAdapter(options) {
   const metrics = options.metrics;
   const defaultTemperature = options.defaultTemperature ?? 1.0;
   const reasoningMap = options.reasoningMap ?? NIM_REASONING_MAP;
+  // These models get `reasoning_effort` only; their own defaults beat anything we send.
+  const samplingDefaultsFor = new Set(options.samplingDefaultsFor ?? []);
 
   const endpoint = `${baseUrl}/chat/completions`;
 
@@ -210,16 +212,20 @@ export function createOpenAiCompatAdapter(options) {
    * @param {{messages: any[], tools?: any[], toolChoice?: any, model?: string, reasoning?: 'none'|'low'|'medium'|'high'|'auto', temperature?: number, maxTokens?: number|null, sampling?: Record<string, number>, signal?: AbortSignal|null, timeoutMs?: number, ttftMs?: number, stream?: boolean, onDelta?: (text: string) => void|Promise<void>, onReasoning?: (text: string) => void|Promise<void>}} input
    */
   async function chat(input) {
+    const modelId = input.model ?? model;
+    const providerDefaults = samplingDefaultsFor.has(String(modelId));
     /** @type {any} */
     const payload = {
-      model: input.model ?? model,
+      model: modelId,
       messages: input.messages,
-      temperature: input.temperature ?? defaultTemperature,
       reasoning_effort: reasoningEffort(input.reasoning ?? 'none', reasoningMap),
     };
-    for (const [key, apiKey] of Object.entries(SAMPLING_FIELDS)) {
-      const value = input.sampling?.[key];
-      if (value !== undefined && value !== null) payload[apiKey] = value;
+    if (!providerDefaults) {
+      payload.temperature = input.temperature ?? defaultTemperature;
+      for (const [key, apiKey] of Object.entries(SAMPLING_FIELDS)) {
+        const value = input.sampling?.[key];
+        if (value !== undefined && value !== null) payload[apiKey] = value;
+      }
     }
     if (input.tools?.length) {
       payload.tools = input.tools;

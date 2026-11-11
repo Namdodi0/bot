@@ -76,6 +76,26 @@ test('DeepSeek maps medium to high, none stays none', async () => {
   assert.equal(http.calls[1].payload.model, 'deepseek-flash');
 });
 
+test('a model listed for provider defaults receives only reasoning_effort', async () => {
+  const http = fakeHttp([], standardResponse);
+  const client = makeClient(http, {
+    samplingDefaultsFor: ['nvidia/nemotron-3-ultra-550b-a55b'],
+  });
+  await client.chat({
+    model: 'nvidia/nemotron-3-ultra-550b-a55b',
+    messages: [{ role: 'user', content: 'x' }],
+    reasoning: 'high',
+    temperature: 0.3,
+    sampling: { topP: 0.85, topK: 40, frequencyPenalty: 0, presencePenalty: 0 },
+  });
+  const payload = http.calls[0].payload;
+  assert.equal(payload.reasoning_effort, 'high');
+  for (const key of ['temperature', 'top_p', 'top_k', 'frequency_penalty', 'presence_penalty']) {
+    assert.equal(payload[key], undefined, `${key} must stay at the provider default`);
+  }
+  assert.equal(payload.messages[0].content, 'x');
+});
+
 test('reads cached prompt tokens from OpenAI and DeepSeek usage shapes', async () => {
   /** @type {Record<string, number>} */
   const counters = {};

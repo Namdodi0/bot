@@ -11,6 +11,7 @@ import {
   asOptionalInt,
   asOptionalNumber,
   asString,
+  asStringList,
   section,
 } from './core/config-helpers.js';
 import { KNOWN_NESTED_SECTION_KEYS, KNOWN_SECTION_KEYS, KNOWN_TOP_LEVEL_KEYS } from './config-schema.js';
@@ -507,6 +508,12 @@ export function loadConfig(input = {}) {
       topK: nimTopK,
       minP: nimMinP,
       repetitionPenalty: nimRepetitionPenalty,
+      // Models listed here get only `reasoning_effort`; every sampling knob stays at the
+      // provider default (used for models whose sampler mangles an explicit config).
+      samplingDefaultsModels: asStringList(
+        nimSection.samplingDefaultsModels,
+        'config.nim.samplingDefaultsModels',
+      ),
     },
     deepseek: {
       apiKey: deepseekKey,
