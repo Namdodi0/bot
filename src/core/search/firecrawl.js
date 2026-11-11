@@ -1,3 +1,5 @@
+import { createTtlCache } from '../cache.js';
+
 /**
  * Firecrawl v2 search client. Same normalized shape as the Tavily client so the tool
  * runtime can swap providers without branching.
@@ -9,32 +11,11 @@ export function createFirecrawlClient(options) {
   const http = options.http;
   const logger = options.logger;
   const metrics = options.metrics;
-  const ttlMs = options.cacheTtlMs ?? 10 * 60_000;
-  const cacheSize = options.cacheSize ?? 100;
-  const now = options.now ?? (() => Date.now());
-
-  /** @type {Map<string, {expires: number, data: any}>} */
-  const cache = new Map();
-
-  /** @param {string} key */
-  function readCache(key) {
-    const hit = cache.get(key);
-    if (!hit) return null;
-    if (hit.expires <= now()) {
-      cache.delete(key);
-      return null;
-    }
-    return hit.data;
-  }
-
-  /** @param {string} key @param {any} data */
-  function writeCache(key, data) {
-    cache.set(key, { expires: now() + ttlMs, data });
-    if (cache.size > cacheSize) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
-    }
-  }
+  const cache = createTtlCache({
+    ttlMs: options.cacheTtlMs,
+    size: options.cacheSize,
+    now: options.now,
+  });
 
   /**
    * @param {string} query
@@ -51,7 +32,7 @@ export function createFirecrawlClient(options) {
       safe: false,
     };
     const key = JSON.stringify(body);
-    const cached = readCache(key);
+    const cached = cache.get(key);
     if (cached) {
       metrics?.inc('firecrawl.cacheHit');
       return cached;
@@ -97,7 +78,7 @@ export function createFirecrawlClient(options) {
       ms: response.latencyMs,
       icon: '🔎',
     });
-    writeCache(key, normalized);
+    cache.set(key, normalized);
     return normalized;
   }
 
@@ -106,6 +87,6 @@ export function createFirecrawlClient(options) {
     // Firecrawl has no depth/country knobs; the router surfaces that instead of pretending.
     capabilities: { searchDepth: false, country: false },
     search,
-    cacheSize: () => cache.size,
+    cacheSize: () => cache.size(),
   };
 }

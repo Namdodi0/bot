@@ -175,6 +175,27 @@ function collectUnknownConfigKeys(root) {
   return unknown.sort();
 }
 
+/**
+ * Sampling knobs every OpenAI-compatible provider section shares. Defaults keep the tail
+ * tight to limit language drift; null leaves the provider default untouched.
+ * @param {Record<string, any>} providerSection
+ * @param {string} name
+ */
+function commonSampling(providerSection, name) {
+  const topP = asOptionalNumber(providerSection.topP, `config.${name}.topP`, { min: 0, max: 1 }) ?? 0.9;
+  if (topP !== null && topP <= 0) {
+    throw new ConfigError(`config.${name}.topP must be within (0, 1]`);
+  }
+  return {
+    topP,
+    frequencyPenalty:
+      asOptionalNumber(providerSection.frequencyPenalty, `config.${name}.frequencyPenalty`, { min: -2, max: 2 }) ?? 0,
+    presencePenalty:
+      asOptionalNumber(providerSection.presencePenalty, `config.${name}.presencePenalty`, { min: -2, max: 2 }) ?? 0,
+    seed: asOptionalInt(providerSection.seed, `config.${name}.seed`, { min: 0 }),
+  };
+}
+
 /** @type {import('node:util').ParseArgsOptionsConfig} */
 const CLI_OPTIONS = {
   config: { type: 'string' },
@@ -419,10 +440,6 @@ export function loadConfig(input = {}) {
     throw new ConfigError(`config.tone must be friendly, cute, grok, roast, roast-hard or roast-extreme (got: "${toneRaw}")`);
   }
 
-  const nimTopP = asOptionalNumber(nimSection.topP, 'config.nim.topP', { min: 0, max: 1 }) ?? 0.9;
-  if (nimTopP !== null && nimTopP <= 0) {
-    throw new ConfigError('config.nim.topP must be within (0, 1]');
-  }
   // NVIDIA recommends 0.6 for image/video input and 1.0 for text.
   const nimVisionTemperature =
     asOptionalNumber(nimSection.visionTemperature, 'config.nim.visionTemperature', { min: 0, max: 2 }) ?? 0.6;
@@ -442,51 +459,6 @@ export function loadConfig(input = {}) {
   if (nimRepetitionPenalty !== null && nimRepetitionPenalty <= 0) {
     throw new ConfigError('config.nim.repetitionPenalty must be within (0, 2]');
   }
-  const nimFrequencyPenalty =
-    asOptionalNumber(nimSection.frequencyPenalty, 'config.nim.frequencyPenalty', { min: -2, max: 2 }) ?? 0;
-  const nimPresencePenalty =
-    asOptionalNumber(nimSection.presencePenalty, 'config.nim.presencePenalty', { min: -2, max: 2 }) ?? 0;
-  const nimSeed = asOptionalInt(nimSection.seed, 'config.nim.seed', { min: 0 });
-
-  const deepseekTopP =
-    asOptionalNumber(deepseekSection.topP, 'config.deepseek.topP', { min: 0, max: 1 }) ?? 0.9;
-  if (deepseekTopP !== null && deepseekTopP <= 0) {
-    throw new ConfigError('config.deepseek.topP must be within (0, 1]');
-  }
-  const deepseekFrequencyPenalty =
-    asOptionalNumber(deepseekSection.frequencyPenalty, 'config.deepseek.frequencyPenalty', { min: -2, max: 2 }) ?? 0;
-  const deepseekPresencePenalty =
-    asOptionalNumber(deepseekSection.presencePenalty, 'config.deepseek.presencePenalty', { min: -2, max: 2 }) ?? 0;
-  const deepseekSeed = asOptionalInt(deepseekSection.seed, 'config.deepseek.seed', { min: 0 });
-
-  const refuselessTopP =
-    asOptionalNumber(refuselessSection.topP, 'config.refuseless.topP', { min: 0, max: 1 }) ?? 0.9;
-  if (refuselessTopP !== null && refuselessTopP <= 0) {
-    throw new ConfigError('config.refuseless.topP must be within (0, 1]');
-  }
-  const refuselessFrequencyPenalty =
-    asOptionalNumber(refuselessSection.frequencyPenalty, 'config.refuseless.frequencyPenalty', { min: -2, max: 2 }) ??
-    0;
-  const refuselessPresencePenalty =
-    asOptionalNumber(refuselessSection.presencePenalty, 'config.refuseless.presencePenalty', { min: -2, max: 2 }) ?? 0;
-  const refuselessSeed = asOptionalInt(refuselessSection.seed, 'config.refuseless.seed', { min: 0 });
-
-  const abliterationTopP =
-    asOptionalNumber(abliterationSection.topP, 'config.abliteration.topP', { min: 0, max: 1 }) ?? 0.9;
-  if (abliterationTopP !== null && abliterationTopP <= 0) {
-    throw new ConfigError('config.abliteration.topP must be within (0, 1]');
-  }
-  const abliterationFrequencyPenalty = asOptionalNumber(
-    abliterationSection.frequencyPenalty,
-    'config.abliteration.frequencyPenalty',
-    { min: -2, max: 2 },
-  );
-  const abliterationPresencePenalty = asOptionalNumber(
-    abliterationSection.presencePenalty,
-    'config.abliteration.presencePenalty',
-    { min: -2, max: 2 },
-  );
-  const abliterationSeed = asOptionalInt(abliterationSection.seed, 'config.abliteration.seed', { min: 0 });
 
   const unknownConfigKeys = collectUnknownConfigKeys(root);
 
@@ -529,13 +501,10 @@ export function loadConfig(input = {}) {
       visionTimeoutMs: nimVisionTimeoutMs,
       // 0 = no request timeout (wait for the provider as long as it needs).
       timeoutMs: /** @type {number} */ (asInt(nimSection.timeoutMs, 'config.nim.timeoutMs', 0, { min: 0 })),
-      topP: nimTopP,
+      ...commonSampling(nimSection, 'nim'),
       topK: nimTopK,
       minP: nimMinP,
       repetitionPenalty: nimRepetitionPenalty,
-      frequencyPenalty: nimFrequencyPenalty,
-      presencePenalty: nimPresencePenalty,
-      seed: nimSeed,
     },
     deepseek: {
       apiKey: deepseekKey,
@@ -544,10 +513,7 @@ export function loadConfig(input = {}) {
       proModel: asString(deepseekSection.proModel, 'config.deepseek.proModel', 'deepseek-v4-pro'),
       temperature: asNumber(deepseekSection.temperature, 'config.deepseek.temperature', 0.7, { min: 0, max: 2 }),
       timeoutMs: /** @type {number} */ (asInt(deepseekSection.timeoutMs, 'config.deepseek.timeoutMs', 0, { min: 0 })),
-      topP: deepseekTopP,
-      frequencyPenalty: deepseekFrequencyPenalty,
-      presencePenalty: deepseekPresencePenalty,
-      seed: deepseekSeed,
+      ...commonSampling(deepseekSection, 'deepseek'),
     },
     refuseless: {
       apiKey: refuselessKey,
@@ -562,10 +528,7 @@ export function loadConfig(input = {}) {
       ),
       temperature: asNumber(refuselessSection.temperature, 'config.refuseless.temperature', 0.7, { min: 0, max: 2 }),
       timeoutMs: /** @type {number} */ (asInt(refuselessSection.timeoutMs, 'config.refuseless.timeoutMs', 0, { min: 0 })),
-      topP: refuselessTopP,
-      frequencyPenalty: refuselessFrequencyPenalty,
-      presencePenalty: refuselessPresencePenalty,
-      seed: refuselessSeed,
+      ...commonSampling(refuselessSection, 'refuseless'),
     },
     abliteration: {
       apiKey: abliterationKey,
@@ -586,10 +549,7 @@ export function loadConfig(input = {}) {
       timeoutMs: /** @type {number} */ (
         asInt(abliterationSection.timeoutMs, 'config.abliteration.timeoutMs', 0, { min: 0 })
       ),
-      topP: abliterationTopP,
-      frequencyPenalty: abliterationFrequencyPenalty,
-      presencePenalty: abliterationPresencePenalty,
-      seed: abliterationSeed,
+      ...commonSampling(abliterationSection, 'abliteration'),
     },
     model: {
       defaultAlias,
@@ -649,7 +609,7 @@ export function loadConfig(input = {}) {
     // 0 = unlimited messages per reply
     maxMessagesPerReply: /** @type {number} */ (asInt(root.maxMessagesPerReply, 'config.maxMessagesPerReply', 0, { min: 0 })),
     maxQueueDepth: /** @type {number} */ (asInt(root.maxQueueDepth, 'config.maxQueueDepth', 50, { min: 1, max: 1000 })),
-    // How many different chats may run a turn at the same time; one chat stays serialized.
+    // How many different chats may run a turn at the same time.
     maxConcurrentChats: /** @type {number} */ (
       asInt(root.maxConcurrentChats, 'config.maxConcurrentChats', 8, { min: 1, max: 64 })
     ),
@@ -669,7 +629,6 @@ export function loadConfig(input = {}) {
     dataDir,
     opsPort: asInt(root.opsPort, 'config.opsPort', null, { min: 1, max: 65535 }),
     dryRun: Boolean(cli['dry-run']),
-    once: Boolean(cli.once),
   };
 
   return config;

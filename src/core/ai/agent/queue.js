@@ -174,6 +174,17 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
   const chatActive = new Map();
   /** @type {Map<string, Array<() => void>>} */
   const chatWaiters = new Map();
+  // Reader/writer coordination per chat: turns are readers, exclusive maintenance is a
+  // writer. Maintenance blocks new turns at admission and waits for running ones, so
+  // reset/compact/edit-sync can never interleave with a turn on the live record.
+  /** @type {Map<string, number>} */
+  const maintenancePending = new Map();
+  /** @type {Map<string, Array<() => void>>} */
+  const maintenanceWaiters = new Map();
+  /** @type {Map<string, number>} */
+  const chatRunning = new Map();
+  /** @type {Map<string, Array<() => void>>} */
+  const turnWaiters = new Map();
   /** @type {Array<{resolve: () => void, timer: NodeJS.Timeout}>} */
   const drainWaiters = [];
 
@@ -183,12 +194,15 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
   const waiters = [];
 
   async function acquire() {
-    if (active < maxConcurrentChats) {
-      active += 1;
-      return;
+    // Re-check after every wake-up: a fresh admission may have taken the freed slot
+    // between release() and this waiter's continuation.
+    for (;;) {
+      if (active < maxConcurrentChats) {
+        active += 1;
+        return;
+      }
+      await new Promise((resolve) => waiters.push(/** @type {any} */ (resolve)));
     }
-    await new Promise((resolve) => waiters.push(/** @type {any} */ (resolve)));
-    active += 1;
   }
 
   function release() {
@@ -227,9 +241,54 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     }
   }
 
+  /** @param {string} chatId */
+  function waitWhileMaintenance(chatId) {
+    if (!(maintenancePending.get(chatId) > 0)) return Promise.resolve();
+    return new Promise((resolve) => {
+      const list = maintenanceWaiters.get(chatId) ?? [];
+      list.push(/** @type {any} */ (resolve));
+      maintenanceWaiters.set(chatId, list);
+    });
+  }
+
+  /** @param {string} chatId */
+  function endMaintenance(chatId) {
+    const left = Math.max(0, (maintenancePending.get(chatId) ?? 1) - 1);
+    if (left) maintenancePending.set(chatId, left);
+    else maintenancePending.delete(chatId);
+    if (!left) {
+      for (const wake of maintenanceWaiters.get(chatId)?.splice(0) ?? []) wake();
+      maintenanceWaiters.delete(chatId);
+    }
+  }
+
+  /** @param {string} chatId */
+  async function waitForRunningTurns(chatId) {
+    while ((chatRunning.get(chatId) ?? 0) > 0) {
+      await new Promise((resolve) => {
+        const list = turnWaiters.get(chatId) ?? [];
+        list.push(/** @type {any} */ (resolve));
+        turnWaiters.set(chatId, list);
+      });
+    }
+  }
+
+  /** @param {string} chatId */
+  function endRunningTurn(chatId) {
+    const left = Math.max(0, (chatRunning.get(chatId) ?? 1) - 1);
+    if (left) chatRunning.set(chatId, left);
+    else chatRunning.delete(chatId);
+    if (!left) {
+      for (const wake of turnWaiters.get(chatId)?.splice(0) ?? []) wake();
+      turnWaiters.delete(chatId);
+    }
+  }
+
   /**
    * Run a turn without the per-chat FIFO chain, but under a per-chat concurrency slot.
-   * Record isolation is handled by the turn snapshot/merge in the agent.
+   * Record isolation is handled by the turn snapshot/merge in the agent. New turns wait
+   * while exclusive maintenance holds the chat; the wait happens before the global slot
+   * is taken so maintenance can always acquire one.
    * @param {string} chatId
    * @param {() => Promise<any>} task
    */
@@ -239,9 +298,15 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     return (async () => {
       await acquireChatSlot(chatId);
       try {
+        await waitWhileMaintenance(chatId);
         await acquire();
         try {
-          return await task();
+          chatRunning.set(chatId, (chatRunning.get(chatId) ?? 0) + 1);
+          try {
+            return await task();
+          } finally {
+            endRunningTurn(chatId);
+          }
         } finally {
           release();
         }
@@ -267,6 +332,8 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
 
   /**
    * Run a task in the chat's FIFO chain and under the global concurrency limit.
+   * The chat is closed to new turns for the whole wait, and the task only starts once
+   * every turn admitted before it has finished.
    * @param {string} chatId
    * @param {() => Promise<any>} task
    */
@@ -274,13 +341,16 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     // Admission is part of the queue's contract: callers cannot bypass maxQueueDepth.
     if (isFull()) return Promise.reject(new QueueFullError());
     queueDepth += 1;
+    maintenancePending.set(chatId, (maintenancePending.get(chatId) ?? 0) + 1);
     let acquired = false;
     return chain(chatId, async () => {
       await acquire();
       acquired = true;
       try {
+        await waitForRunningTurns(chatId);
         return await task();
       } finally {
+        endMaintenance(chatId);
         queueDepth = Math.max(0, queueDepth - 1);
         if (acquired) release();
         notifyDrainWaiters();

@@ -200,6 +200,9 @@ export function createOpenAiCompatAdapter(options) {
       timeoutMs: opts.timeoutMs ?? 28_000,
       retries: 0,
       signal: opts.signal ?? undefined,
+      // A 200 is not a healthy completion until the protocol check below passes; the
+      // adapter records the outcome so empty completions accumulate in the breaker.
+      deferOutcome: true,
     });
   }
 
@@ -235,10 +238,10 @@ export function createOpenAiCompatAdapter(options) {
       const choice = data?.choices?.[0];
       const parsed = parseChoice(choice);
       if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
-        // The transport saw a 200 and marked the route healthy; the protocol did not.
         http.recordStreamFailure?.(routeKey(payload.model));
         throw emptyCompletionError(routeKey(payload.model), payload.model);
       }
+      http.recordStreamSuccess?.(routeKey(payload.model));
       const usage = data?.usage ?? null;
       const cachedTokens = cachedPromptTokens(usage);
       metrics?.inc('llm.calls');
@@ -346,6 +349,50 @@ export function createOpenAiCompatAdapter(options) {
       const reader = body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+
+      /** @param {string} line */
+      async function handleLine(line) {
+        if (!line.startsWith('data:')) return;
+        const raw = line.slice(5).trim();
+        if (raw === '[DONE]') sawDone = true;
+        if (!raw || raw === '[DONE]') return;
+        let chunk;
+        try {
+          chunk = JSON.parse(raw);
+        } catch {
+          chunk = null;
+        }
+        if (!chunk) return;
+        if (chunk.usage) usage = chunk.usage;
+        const choice = chunk.choices?.[0];
+        if (!choice) return;
+        const delta = choice.delta ?? {};
+        if (choice.finish_reason) finishReason = String(choice.finish_reason);
+        if (typeof delta.content === 'string' && delta.content) {
+          // A real token arrived: the first-token guard is satisfied.
+          clearTimeout(ttftTimer);
+          content += delta.content;
+          if (!firstDeltaAt) firstDeltaAt = Date.now();
+          if (input.onDelta) await input.onDelta(delta.content);
+        }
+        if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+          clearTimeout(ttftTimer);
+          reasoning += delta.reasoning_content;
+          if (input.onReasoning) await input.onReasoning(delta.reasoning_content);
+        }
+        if (Array.isArray(delta.tool_calls)) {
+          clearTimeout(ttftTimer);
+          for (const part of delta.tool_calls) {
+            const index = Number(part.index ?? 0);
+            const current = callMap.get(index) ?? { id: '', name: '', args: '' };
+            if (part.id) current.id = String(part.id);
+            if (part.function?.name) current.name += String(part.function.name);
+            if (part.function?.arguments) current.args += String(part.function.arguments);
+            callMap.set(index, current);
+          }
+        }
+      }
+
       try {
         for (;;) {
           const { done, value } = await reader.read();
@@ -355,52 +402,15 @@ export function createOpenAiCompatAdapter(options) {
           while (newline >= 0) {
             const line = buffer.slice(0, newline).replace(/\r$/, '').trim();
             buffer = buffer.slice(newline + 1);
-            if (line.startsWith('data:')) {
-              const raw = line.slice(5).trim();
-              if (raw === '[DONE]') sawDone = true;
-              if (raw && raw !== '[DONE]') {
-                let chunk;
-                try {
-                  chunk = JSON.parse(raw);
-                } catch {
-                  chunk = null;
-                }
-                if (chunk) {
-                  if (chunk.usage) usage = chunk.usage;
-                  const choice = chunk.choices?.[0];
-                  if (choice) {
-                    const delta = choice.delta ?? {};
-                    if (choice.finish_reason) finishReason = String(choice.finish_reason);
-                    if (typeof delta.content === 'string' && delta.content) {
-                      // A real token arrived: the first-token guard is satisfied.
-                      clearTimeout(ttftTimer);
-                      content += delta.content;
-                      if (!firstDeltaAt) firstDeltaAt = Date.now();
-                      if (input.onDelta) await input.onDelta(delta.content);
-                    }
-                    if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
-                      clearTimeout(ttftTimer);
-                      reasoning += delta.reasoning_content;
-                      if (input.onReasoning) await input.onReasoning(delta.reasoning_content);
-                    }
-                    if (Array.isArray(delta.tool_calls)) {
-                      clearTimeout(ttftTimer);
-                      for (const part of delta.tool_calls) {
-                        const index = Number(part.index ?? 0);
-                        const current = callMap.get(index) ?? { id: '', name: '', args: '' };
-                        if (part.id) current.id = String(part.id);
-                        if (part.function?.name) current.name += String(part.function.name);
-                        if (part.function?.arguments) current.args += String(part.function.arguments);
-                        callMap.set(index, current);
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            await handleLine(line);
             newline = buffer.indexOf('\n');
           }
         }
+        // A final event without a trailing newline is still complete at EOF; dropping it
+        // would lose finish_reason/[DONE] and discard assembled tool calls.
+        buffer += decoder.decode();
+        const tail = buffer.replace(/\r$/, '').trim();
+        if (tail) await handleLine(tail);
       } catch (error) {
         streamError = error;
       } finally {

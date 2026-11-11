@@ -11,7 +11,7 @@ const SUMMARY_TIMEOUT_MS = 15_000;
  * @param {string[]} lines
  * @param {number} maxChars
  */
-function tailTranscript(lines, maxChars) {
+export function tailTranscript(lines, maxChars) {
   const kept = [];
   let total = 0;
   for (let index = lines.length - 1; index >= 0; index -= 1) {

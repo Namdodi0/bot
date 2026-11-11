@@ -64,7 +64,7 @@ export function createAgent(deps) {
 
   /**
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{collector?: ReturnType<typeof import('./agent/sending.js').createCollectorSink>, skipCommands?: boolean}} [options]
+   * @param {{collector?: ReturnType<typeof import('./agent/sending.js').createCollectorSink>}} [options]
    */
   async function handle(event, options = {}) {
     if (!event) return;
@@ -154,12 +154,13 @@ export function createAgent(deps) {
         const turnId = crypto.randomUUID();
         // A lone turn keeps the live record (so compaction persists); only when another
         // turn is already active in this chat does it work on an isolated snapshot.
-        const fork = controllers.size > 1 ? structuredClone(record) : record;
+        const forked = controllers.size > 1;
+        const fork = forked ? structuredClone(record) : record;
         try {
           await conversation(
             event,
             fork,
-            { ...turnOptions, signal: controller.signal, turnId },
+            { ...turnOptions, signal: controller.signal, turnId, forked },
             stopTyping,
             collector,
           );
@@ -253,13 +254,13 @@ export function createAgent(deps) {
 
   /**
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean, scheduled?: boolean}} options
+   * @param {{scheduled?: boolean}} options
    * @param {ReturnType<typeof import('./agent/sending.js').createCollectorSink>} collector
    */
   function runCollected(event, options, collector) {
     const chatId = String(event?.chatId ?? '');
     const run = async () => {
-      await handle(event, { collector, skipCommands: options.skipCommands !== false });
+      await handle(event, { collector });
       return collector.result();
     };
     // Native callers that already hold the chat slot must not schedule it again.
@@ -276,7 +277,7 @@ export function createAgent(deps) {
    * Run one turn and collect its output instead of sending it (native slash commands).
    * Turns are serialized per chat so they cannot interleave writes to the same record.
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean, scheduled?: boolean}} [options] `scheduled` = caller already holds the chat slot
+   * @param {{scheduled?: boolean}} [options] `scheduled` = caller already holds the chat slot
    * @returns {Promise<{text: string, photos: any[]}>}
    */
   function collect(event, options = {}) {
@@ -286,7 +287,7 @@ export function createAgent(deps) {
   /**
    * Same as `collect`, but streams content deltas to `onDelta` for live message edits.
    * @param {import('../../platforms/contract.js').BotEvent} event
-   * @param {{skipCommands?: boolean, onDelta?: (delta: string) => void, onProgress?: (event: any) => void, scheduled?: boolean}} [options]
+   * @param {{onDelta?: (delta: string) => void, onProgress?: (event: any) => void, scheduled?: boolean}} [options]
    * @returns {Promise<{text: string, photos: any[]}>}
    */
   function stream(event, options = {}) {

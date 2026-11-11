@@ -16,15 +16,18 @@ const ENTITIES = {
 
 /** @param {string} value */
 function decodeEntities(value) {
+  // Surrogate code points are not valid characters: decoding one would poison every
+  // later provider request with an unpaired surrogate.
+  const valid = (code) => Number.isInteger(code) && code >= 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
   return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, entity) => {
     const key = String(entity).toLowerCase();
     if (key.startsWith('#x')) {
       const code = Number.parseInt(key.slice(2), 16);
-      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+      return valid(code) ? String.fromCodePoint(code) : match;
     }
     if (key.startsWith('#')) {
       const code = Number.parseInt(key.slice(1), 10);
-      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+      return valid(code) ? String.fromCodePoint(code) : match;
     }
     return ENTITIES[/** @type {keyof typeof ENTITIES} */ (key)] ?? match;
   });

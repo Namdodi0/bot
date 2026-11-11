@@ -82,6 +82,7 @@ export function createAttemptRunner({
     };
     return retryExecutor.execute(callOnce, {
       deadline,
+      signal,
       onRetry: (error, nextAttempt) => {
         metrics.inc('llm.retries');
         logger.warn('llm call failed, retrying', {

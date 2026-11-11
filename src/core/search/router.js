@@ -34,9 +34,12 @@ export function createSearchRouter({ primary, fallback, logger, metrics }) {
 
   /** @param {string} query @param {Record<string, any>} [opts] */
   async function search(query, opts = {}) {
+    // An already-expired deadline is the caller's budget, not a primary failure: check it
+    // before the try so it is never logged or counted as a failover.
+    const budgeted = withRemainingBudget(opts);
     if (primary) {
       try {
-        return await askProvider(primary, query, withRemainingBudget(opts));
+        return await askProvider(primary, query, budgeted);
       } catch (error) {
         const status = Number(/** @type {any} */ (error)?.status);
         logger?.warn('primary search failed, falling back', {

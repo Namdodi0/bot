@@ -29,7 +29,7 @@ export function createTurnRunner(deps) {
   /**
    * @param {import('../../../platforms/contract.js').BotEvent} event
    * @param {any} record
-   * @param {{forceSearch?: string, signal?: AbortSignal|null, turnId?: string}} [options]
+   * @param {{forceSearch?: string, signal?: AbortSignal|null, turnId?: string, forked?: boolean}} [options]
    * @param {() => Promise<void>|void} [stopTyping]
    * @param {{enqueue: (text: string) => Promise<void>, wait: () => Promise<void>, sent: () => number, sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>, live?: boolean, onDelta?: (delta: string) => void, onProgress?: (event: any) => void}} [sink]
    */
@@ -199,25 +199,29 @@ export function createTurnRunner(deps) {
 
     let built = buildAll();
 
-    try {
-      const measure = () => {
-        const current = buildAll();
-        return { pressure: current.pressure, tokens: current.estimatedTokens };
-      };
-      const result = await compaction.compactIfNeeded({
-        record,
-        trigger: built.needsSummary ? 'dropped' : 'pressure',
-        deadline,
-        measure,
-      });
-      if (result?.changed) {
-        built = buildAll();
-        metrics.inc('context.summarized');
+    // A forked snapshot's summary would be discarded at merge, so only the live record
+    // compacts proactively; overflow recovery below still applies to the snapshot.
+    if (!options.forked) {
+      try {
+        const measure = () => {
+          const current = buildAll();
+          return { pressure: current.pressure, tokens: current.estimatedTokens };
+        };
+        const result = await compaction.compactIfNeeded({
+          record,
+          trigger: built.needsSummary ? 'dropped' : 'pressure',
+          deadline,
+          measure,
+        });
+        if (result?.changed) {
+          built = buildAll();
+          metrics.inc('context.summarized');
+        }
+      } catch (error) {
+        logger.warn('compaction failed, fallback to trimming', {
+          error: String(/** @type {any} */ (error)?.message ?? error),
+        });
       }
-    } catch (error) {
-      logger.warn('compaction failed, fallback to trimming', {
-        error: String(/** @type {any} */ (error)?.message ?? error),
-      });
     }
 
     const messages = built.messages;

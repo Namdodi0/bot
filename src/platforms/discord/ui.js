@@ -44,21 +44,15 @@ export function v2Message(content, rows = [], options = {}) {
 }
 
 /**
- * V2 answer that also carries images in a MediaGallery, so text and pictures share one
- * message. Attachment names are unique because `photoFilename` returns the same name for
- * every photo of a format.
- * @param {string} content
- * @param {any[]} [rows]
- * @param {any[]} [photos]
- * @param {{ephemeral?: boolean}} [options]
+ * MediaGallery plus its attachment files. Names are unique because `photoFilename`
+ * returns the same name for every photo of a format.
+ * @param {any[]} photos
  */
-export function v2Answer(content, rows = [], photos = [], options = {}) {
-  const payload = v2Message(content, rows, options);
-  const list = (photos ?? []).slice(0, 10);
-  if (!list.length) return payload;
+function photoGallery(photos) {
   const gallery = new MediaGalleryBuilder();
+  /** @type {any[]} */
   const files = [];
-  list.forEach((photo, index) => {
+  (photos ?? []).slice(0, 10).forEach((photo, index) => {
     const extension = photoFilename(photo?.url ?? '', photo?.contentType).split('.').pop() || 'png';
     const name = `image-${index + 1}.${extension}`;
     files.push(
@@ -66,6 +60,21 @@ export function v2Answer(content, rows = [], photos = [], options = {}) {
     );
     gallery.addItems({ media: { url: `attachment://${name}` } });
   });
+  return { gallery, files };
+}
+
+/**
+ * V2 answer that also carries images in a MediaGallery, so text and pictures share one
+ * message.
+ * @param {string} content
+ * @param {any[]} [rows]
+ * @param {any[]} [photos]
+ * @param {{ephemeral?: boolean}} [options]
+ */
+export function v2Answer(content, rows = [], photos = [], options = {}) {
+  const payload = v2Message(content, rows, options);
+  if (!(photos ?? []).length) return payload;
+  const { gallery, files } = photoGallery(photos);
   payload.components.splice(1, 0, gallery);
   payload.files = files;
   return payload;
@@ -114,18 +123,8 @@ export function v2ProgressAnswer(progress, content, photos = [], options = {}) {
     flags: MessageFlags.IsComponentsV2 | (options.ephemeral ? MessageFlags.Ephemeral : 0),
     allowedMentions: { parse: [] },
   };
-  const list = (photos ?? []).slice(0, 10);
-  if (!list.length) return payload;
-  const gallery = new MediaGalleryBuilder();
-  const files = [];
-  list.forEach((photo, index) => {
-    const extension = photoFilename(photo?.url ?? '', photo?.contentType).split('.').pop() || 'png';
-    const name = `image-${index + 1}.${extension}`;
-    files.push(
-      new AttachmentBuilder(photo?.data ? Buffer.from(photo.data) : String(photo?.url ?? ''), { name }),
-    );
-    gallery.addItems({ media: { url: `attachment://${name}` } });
-  });
+  if (!(photos ?? []).length) return payload;
+  const { gallery, files } = photoGallery(photos);
   payload.components.push(gallery);
   payload.files = files;
   return payload;

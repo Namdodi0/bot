@@ -81,3 +81,48 @@ test('deleting the bot answer drops its stored turn', async () => {
   assert.equal(calls.answerDeletes.length, 1);
   assert.equal(calls.deletes.length, 0);
 });
+
+test('an uncached delete with no author tries both user turns and bot answers', async () => {
+  const calls = { deletes: [], answerDeletes: [] };
+  const sync = createMessageSync({
+    config: { discord: {} },
+    logger: { debug() {}, warn() {}, info() {}, error() {} },
+    metrics: { inc() {} },
+    runtime: {
+      store: { exists: async () => true },
+      agent: { exclusive: async (_chatId, task) => task() },
+      chatServices: {
+        deleteTurns: async (chatId, ids) => {
+          calls.deletes.push({ chatId, ids });
+          return { ok: false, removed: 0 };
+        },
+        deleteAnswerMessages: async (chatId, ids) => {
+          calls.answerDeletes.push({ chatId, ids });
+          return { ok: true, removed: 1 };
+        },
+      },
+    },
+    client: { user: { id: 'bot-1' } },
+  });
+  await sync.remove({ id: 'x1', channelId: 'c1', partial: true });
+  assert.deepEqual(calls.deletes, [{ chatId: 'c1', ids: ['x1'] }]);
+  assert.deepEqual(calls.answerDeletes, [{ chatId: 'c1', ids: ['x1'] }]);
+});
+
+test('an edit that clears the content drops the stored turn', async () => {
+  const { sync, calls } = makeSync();
+  await sync.update(
+    { content: 'old text' },
+    {
+      id: 'm1',
+      content: '',
+      author: { bot: false, username: 'alice' },
+      channelId: 'c1',
+      guildId: 'g1',
+      channel: { id: 'c1', isDMBased: () => false },
+      partial: false,
+    },
+  );
+  assert.deepEqual(calls.edits, []);
+  assert.deepEqual(calls.deletes, [{ chatId: 'c1', ids: ['m1'] }]);
+});

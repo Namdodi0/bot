@@ -42,7 +42,7 @@ export function registerDiscordPrompt(registry, options = {}) {
       '- Prose stays plain Markdown: Discord already renders headings, bold, italic, lists and quotes, so never wrap a story, explanation, paragraph or the whole answer in a fenced block or inline code. Fenced blocks are for runnable code; fenced text blocks are for multi-line math derivations.',
       '- LaTeX is not rendered in normal messages. Never use LaTeX delimiters or commands in a normal answer. Write math in plain text with Unicode operators and symbols; use slash or parenthesised fractions, numbered steps for long solutions, and put multi-line derivations in a fenced text code block with short lines. Use bold for the final result.',
       '- If the user explicitly asks for LaTeX, keep it inside a fenced code block instead of inline text.',
-      '- One message is capped at 2000 characters; anything longer is split automatically.',
+      '- One message is capped at 4000 characters; anything longer is split automatically.',
       '- Never ping @everyone or @here. Mention a user only when it is genuinely useful.',
     ].join('\n'),
   });
@@ -52,7 +52,7 @@ export function registerDiscordPrompt(registry, options = {}) {
     order: SECTION_ORDER.commands,
     text: [
       '',
-      'SLASH COMMANDS: /ask, /help, /status, /ping, /stop, /model, /reset, /compact, /summary, /search, /image, /remind.',
+      'SLASH COMMANDS: /ask, /help, /status, /reasoning, /ping, /stop, /model, /settings, /reset, /compact, /summary, /catchup, /search, /image, /sticker, /remind.',
       'Message menus: Explain message, Summarize message.',
       'Never fabricate command output. Do not tell someone to run a command unless it is genuinely useful.',
     ].join('\n'),

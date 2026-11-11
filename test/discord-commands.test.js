@@ -178,6 +178,21 @@ test('every model-text payload from /ask disables mention parsing', async () => 
   }
 });
 
+test('image-only /ask keeps the attachment instead of opening the modal', async () => {
+  const { commands, runtime } = makeCommands();
+  let seen = null;
+  runtime.agent.stream = async (event) => {
+    seen = event;
+    return { text: 'nice cat', photos: [] };
+  };
+  const i = interaction('ask', {
+    image: { url: 'https://cdn.test/cat.png', contentType: 'image/png', size: 1000 },
+  });
+  await commands.handleCommand(i);
+  assert.equal(i.modal, undefined, 'the modal cannot carry attachments');
+  assert.ok(seen?.imageData?.data, 'the image bytes must reach the turn');
+});
+
 test('/help returns an ephemeral V2 Container panel', async () => {
   const { commands } = makeCommands();
   const i = interaction('help');
@@ -194,6 +209,7 @@ test('/settings toggles thinking-after-answer for the channel', async () => {
   const { commands, runtime } = makeCommands();
   const click = interaction('', {}, { customId: 'settings:thinking' });
   await commands.handleButton(click);
+  assert.equal(click.deferredUpdate, true, 'the component must be acked before queueing');
   assert.equal(runtime.record.meta.showThinking, false);
   assert.match(JSON.stringify(click.edits.at(-1)), /Thinking above answer/);
 

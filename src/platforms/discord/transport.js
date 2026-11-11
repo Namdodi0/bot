@@ -52,8 +52,10 @@ export function createDiscordTransport(options) {
       partials: [Partials.Channel, Partials.Message, Partials.User],
     });
 
-  /** @type {Map<string, NodeJS.Timeout>} */
-  const typingTimers = new Map();
+  // One entry per active turn, not per chat: parallel turns in one chat must not
+  // overwrite each other's timer.
+  /** @type {Set<NodeJS.Timeout>} */
+  const typingTimers = new Set();
 
   /** @param {string} chatId */
   async function channelOf(chatId) {
@@ -115,12 +117,12 @@ export function createDiscordTransport(options) {
     ping();
     const timer = setInterval(ping, TYPING_REFRESH_MS);
     timer.unref?.();
-    typingTimers.set(id, timer);
+    typingTimers.add(timer);
     return async () => {
       if (stopped) return;
       stopped = true;
       clearInterval(timer);
-      typingTimers.delete(id);
+      typingTimers.delete(timer);
     };
   }
 

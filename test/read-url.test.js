@@ -17,6 +17,12 @@ test('htmlToText extracts title, text, lists and entities', () => {
   assert.doesNotMatch(text, /alert|no|\.x/);
 });
 
+test('entity decoding refuses surrogate code points', () => {
+  const { text } = htmlToText('<p>&#xD800; &#55296; ok</p>', 'text/html');
+  assert.match(text, /ok/);
+  assert.doesNotMatch(text, /[\uD800-\uDFFF]/);
+});
+
 test('htmlToText drops an unclosed block and everything after it', () => {
   for (const tag of ['script', 'style', 'noscript', 'svg', 'template', 'iframe', 'object']) {
     const { text } = htmlToText(`<html><body><p>visible before</p><${tag} class="x">LEAKED ${tag} payload`, 'text/html');

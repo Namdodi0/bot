@@ -80,6 +80,17 @@ export function createDiscordBot(deps) {
     client.on('error', (error) =>
       logger?.error('discord client error', { error: String(/** @type {any} */ (error)?.message ?? error) }),
     );
+    // 429s are handled transparently by @discordjs/rest; surface them so slow sends are diagnosable.
+    client.rest.on('rateLimited', (info) => {
+      metrics?.inc('discord.rateLimited');
+      logger?.warn('discord REST rate limited', {
+        route: info?.route,
+        method: info?.method,
+        timeoutMs: info?.timeout,
+        global: Boolean(info?.global),
+        icon: '🚦',
+      });
+    });
     client.on('shardDisconnect', (event, shardId) =>
       logger?.warn('discord gateway disconnected', { shardId, code: event?.code, reason: event?.reason }),
     );

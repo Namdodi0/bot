@@ -1,3 +1,5 @@
+import { createTtlCache } from '../cache.js';
+
 /**
  * @param {any[]} results
  * @param {{maxChars?: number, maxItems?: number}} [options]
@@ -29,29 +31,7 @@ export function createTavilyClient(options) {
   const ttlMs = options.cacheTtlMs ?? 10 * 60_000;
   const cacheSize = options.cacheSize ?? 100;
   const now = options.now ?? (() => Date.now());
-
-  /** @type {Map<string, {expires: number, data: any}>} */
-  const cache = new Map();
-
-  /** @param {string} key */
-  function readCache(key) {
-    const hit = cache.get(key);
-    if (!hit) return null;
-    if (hit.expires <= now()) {
-      cache.delete(key);
-      return null;
-    }
-    return hit.data;
-  }
-
-  /** @param {string} key @param {any} data */
-  function writeCache(key, data) {
-    cache.set(key, { expires: now() + ttlMs, data });
-    if (cache.size > cacheSize) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
-    }
-  }
+  const cache = createTtlCache({ ttlMs, size: cacheSize, now });
 
   /**
    * @param {string} query
@@ -79,7 +59,7 @@ export function createTavilyClient(options) {
       body.country = country;
     }
     const key = JSON.stringify(body);
-    const cached = readCache(key);
+    const cached = cache.get(key);
     if (cached) {
       metrics?.inc('tavily.cacheHit');
       return cached;
@@ -116,7 +96,7 @@ export function createTavilyClient(options) {
       ms: response.latencyMs,
       icon: '🔍',
     });
-    writeCache(key, normalized);
+    cache.set(key, normalized);
     return normalized;
   }
 
@@ -124,6 +104,6 @@ export function createTavilyClient(options) {
     id: 'tavily',
     capabilities: { searchDepth: true, country: true },
     search,
-    cacheSize: () => cache.size,
+    cacheSize: () => cache.size(),
   };
 }

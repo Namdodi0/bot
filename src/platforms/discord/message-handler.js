@@ -99,7 +99,8 @@ export function createMessageHandler(deps) {
         const renderPreview = () => [feed.text(), streamed].filter(Boolean).join('\n\n');
         const previewer = createPreviewer(async (text) => {
           if (!placeholder) {
-            placeholder = await message.reply(v2Message(text));
+            // The trigger may be deleted while the turn runs; the answer must still land.
+            placeholder = await message.reply({ ...v2Message(text), failIfNotExists: false });
             if (placeholder?.id) answerIds.push(String(placeholder.id));
             await stopTyping();
             return;
@@ -110,7 +111,6 @@ export function createMessageHandler(deps) {
         try {
           const result = await runtime.agent.stream(event, {
             scheduled: true,
-            skipCommands: true,
             onDelta: (delta) => {
               streamed += delta;
               previewer.push(renderPreview());
@@ -169,18 +169,20 @@ export function createMessageHandler(deps) {
             }
           } else if (first || photos.length) {
             try {
-              placeholder = await message.reply(
-                v2ProgressAnswer(progress, first || 'Fresh pixels, as requested. 🖼️', photos),
-              );
+              placeholder = await message.reply({
+                ...v2ProgressAnswer(progress, first || 'Fresh pixels, as requested. 🖼️', photos),
+                failIfNotExists: false,
+              });
               photosEmbedded = photos.length > 0;
             } catch (error) {
               logger?.warn('discord combined photo reply failed', {
                 chatId: event.chatId,
                 error: String(/** @type {any} */ (error)?.message ?? error),
               });
-              placeholder = await message.reply(
-                v2Message([progress, first].filter(Boolean).join('\n\n') || 'Fresh pixels, as requested. 🖼️'),
-              );
+              placeholder = await message.reply({
+                ...v2Message([progress, first].filter(Boolean).join('\n\n') || 'Fresh pixels, as requested. 🖼️'),
+                failIfNotExists: false,
+              });
             }
             if (placeholder?.id) answerIds.push(String(placeholder.id));
           }
@@ -246,7 +248,7 @@ export function createMessageHandler(deps) {
       });
     } catch (error) {
       if (/** @type {any} */ (error)?.name === 'QueueFullError') {
-        await message.reply(v2Message(QUEUE_BUSY_TEXT)).catch((replyError) => {
+        await message.reply({ ...v2Message(QUEUE_BUSY_TEXT), failIfNotExists: false }).catch((replyError) => {
           logger?.debug('discord busy notice failed', {
             chatId,
             error: String(/** @type {any} */ (replyError)?.message ?? replyError),

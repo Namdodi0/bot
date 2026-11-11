@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEEPSEEK_REASONING_MAP, createOpenAiCompatAdapter } from '../src/core/ai/llm/adapter-openai.js';
-import { HttpError } from '../src/core/http.js';
+import { CircuitOpenError, HttpError, createHttp } from '../src/core/http.js';
 import { createSilentLogger } from '../src/core/logger.js';
 
 const logger = createSilentLogger();
@@ -151,6 +151,67 @@ test('an empty 200 completion is reported to the breaker as a protocol failure',
     /empty completion/,
   );
   assert.deepEqual(failures, ['failure']);
+});
+
+test('persistent empty 200 completions trip the breaker through the real HTTP layer', async () => {
+  const http = createHttp({
+    logger,
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: '' }, finish_reason: 'stop' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+  });
+  const client = makeClient(http);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await assert.rejects(
+      () => client.chat({ messages: [{ role: 'user', content: 'x' }], reasoning: 'none' }),
+      /empty completion/,
+    );
+  }
+  await assert.rejects(
+    () => client.chat({ messages: [{ role: 'user', content: 'x' }], reasoning: 'none' }),
+    (error) => error instanceof CircuitOpenError,
+  );
+});
+
+test('a valid completion resets the breaker failure count', async () => {
+  let empty = true;
+  const http = createHttp({
+    logger,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify(
+          empty
+            ? { choices: [{ message: { content: '' }, finish_reason: 'stop' }] }
+            : standardResponse,
+        ),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+  });
+  const client = makeClient(http);
+  const call = () => client.chat({ messages: [{ role: 'user', content: 'x' }], reasoning: 'none' });
+  for (let attempt = 0; attempt < 4; attempt += 1) await assert.rejects(call, /empty completion/);
+  empty = false;
+  await call();
+  empty = true;
+  for (let attempt = 0; attempt < 4; attempt += 1) await assert.rejects(call, /empty completion/);
+  const state = http.stateOf('nim:nvidia/nemotron-3.5-super-vl-120b-a12b');
+  assert.equal(state.failures, 4);
+  assert.equal(state.open, false);
+});
+
+test('stream: a final event without a trailing newline is still processed', async () => {
+  const tail = 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}';
+  const client = makeClient(streamFrom([TOOL_DELTA, tail]));
+  const result = await client.chat({
+    messages: [{ role: 'user', content: 'x' }],
+    stream: true,
+    reasoning: 'none',
+  });
+  assert.equal(result.aborted, false);
+  assert.equal(result.finishReason, 'tool_calls');
+  assert.equal(result.toolCalls.length, 1, 'the completion marker in the tail must release tool calls');
 });
 
 test('stream: a tool-call delta then a stream error rejects as retryable', async () => {

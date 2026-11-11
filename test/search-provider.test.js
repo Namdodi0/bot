@@ -61,6 +61,29 @@ test('search failover uses only the remaining deadline, never a fresh timeout', 
   assert.equal(fallbackCalls, 0, 'no failover request may start after the operation deadline');
 });
 
+test('an already-expired deadline is not reported as a primary failure', async () => {
+  const warnings = [];
+  let fallbackCalls = 0;
+  const metrics = { inc: (name) => warnings.push(name) };
+  const router = createSearchRouter({
+    primary: { search: async () => ({ results: [], images: [] }) },
+    fallback: {
+      search: async () => {
+        fallbackCalls += 1;
+        return { results: [], images: [] };
+      },
+    },
+    logger: { warn: (message) => warnings.push(message) },
+    metrics,
+  });
+  await assert.rejects(
+    () => router.search('cat', { deadline: Date.now() - 1 }),
+    /deadline expired/,
+  );
+  assert.equal(fallbackCalls, 0);
+  assert.deepEqual(warnings, [], 'no failover log or metric for an expired caller budget');
+});
+
 test('the router reports options a provider cannot apply instead of ignoring them silently', async () => {
   const logs = [];
   const router = createSearchRouter({

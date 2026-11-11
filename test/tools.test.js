@@ -59,6 +59,51 @@ test('web_search still works when auto=off (used by /search)', async () => {
   assert.equal(result.ok, true);
 });
 
+test('web_search without a turn deadline keeps the provider default timeout', async () => {
+  /** @type {any[]} */
+  const seen = [];
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: {
+      search: async (_query, opts) => {
+        seen.push(opts);
+        return { results: [], images: [] };
+      },
+    },
+    platform: makeDiscordPlatform({ config: baseConfig(), stickers: fakeStickers }),
+    validator: okValidator,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+  });
+  await tools.run('web_search', { query: 'x' }, { chatId: 'c1' });
+  assert.equal(seen[0].timeoutMs, undefined, 'an explicit 0 would disable the HTTP timeout');
+  await tools.run('web_search', { query: 'x' }, { chatId: 'c1', deadline: Date.now() + 5000 });
+  assert.ok(seen[1].timeoutMs >= 1500 && seen[1].timeoutMs <= 9000);
+  assert.ok(Number.isFinite(seen[1].deadline));
+});
+
+test('send_image shares its budget deadline with the search failover', async () => {
+  /** @type {any[]} */
+  const seen = [];
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: {
+      search: async (_query, opts) => {
+        seen.push(opts);
+        return { results: [], images: [] };
+      },
+    },
+    platform: makeDiscordPlatform({ config: baseConfig(), stickers: fakeStickers }),
+    validator: okValidator,
+    logger: silentLogger,
+    metrics: { inc() {}, observe() {} },
+    sendDelayMs: 0,
+  });
+  await tools.run('send_image', { query: 'cats' }, { chatId: 'c1' });
+  assert.ok(seen.length > 0);
+  for (const opts of seen) assert.ok(Number.isFinite(opts.deadline), 'failover must inherit the image budget');
+});
+
 test('send_image tries the next candidate when the platform rejects the first URL', async () => {
   /** @type {string[]} */
   const attempted = [];

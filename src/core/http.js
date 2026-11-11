@@ -236,8 +236,10 @@ export function createHttp(options = {}) {
 
   /**
    * Perform an HTTP call and return JSON, with retry + circuit breaker.
+   * `deferOutcome` leaves the breaker untouched on success so a caller that validates the
+   * protocol (e.g. an LLM completion) can record the real outcome itself.
    * @param {string} url
-   * @param {{method?: string, headers?: Record<string,string>, body?: string, timeoutMs?: number, retries?: number, service?: string, label?: string, signal?: AbortSignal}} [opts]
+   * @param {{method?: string, headers?: Record<string,string>, body?: string, timeoutMs?: number, retries?: number, service?: string, label?: string, signal?: AbortSignal, deferOutcome?: boolean}} [opts]
    */
   async function requestJson(url, opts = {}) {
     const service = opts.service ?? 'http';
@@ -273,7 +275,7 @@ export function createHttp(options = {}) {
 
         // Parse before declaring the breaker healthy: a 200 with a broken body is not a success.
         const data = text ? JSON.parse(text) : null;
-        recordSuccess(service);
+        if (!opts.deferOutcome) recordSuccess(service);
         return { status: response.status, data, latencyMs: latency, headers: response.headers };
       } catch (error) {
         if (error instanceof SyntaxError) {

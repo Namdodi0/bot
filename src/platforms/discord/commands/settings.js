@@ -34,7 +34,9 @@ export function createSettingsHandlers(shared) {
       const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
       const requested = interaction.options?.getString?.('vision');
       if (requested !== null && requested !== undefined && String(requested).trim()) {
-        const saved = await chat.setVisionModel(chatId, requested, chatType);
+        const outcome = await runExclusive(interaction, () => chat.setVisionModel(chatId, requested, chatType));
+        if (!outcome.ok) return;
+        const saved = outcome.value;
         if (!saved.ok) {
           await replyEphemeral(
             interaction,
@@ -85,7 +87,11 @@ export function createSettingsHandlers(shared) {
         );
         return;
       }
-      const saved = await chat.setModel(chatId, name, interaction.guildId ? 'GROUP' : 'PRIVATE');
+      const outcome = await runExclusive(interaction, () =>
+        chat.setModel(chatId, name, interaction.guildId ? 'GROUP' : 'PRIVATE'),
+      );
+      if (!outcome.ok) return;
+      const saved = outcome.value;
       if (!saved.ok) {
         await replyEphemeral(
           interaction,
@@ -149,11 +155,14 @@ export function createSettingsHandlers(shared) {
         return;
       }
       const chatId = String(interaction.channelId);
+      // Ack before queueing: exclusive work can wait behind whole LLM turns, and Discord
+      // fails the interaction if the first response takes more than 3 seconds.
+      await interaction.deferUpdate();
       const outcome = await runExclusive(interaction, () =>
         chat.setModel(chatId, picked.alias, interaction.guildId ? 'GROUP' : 'PRIVATE'),
       );
       if (!outcome.ok) return;
-      await interaction.update(
+      await interaction.editReply(
         textPanel('Brain swapped', `Now running **${picked.label}** (\`${picked.alias}\`). Fresh neurons. 🧠`, {
           icon: '✅',
           ephemeral: true,
@@ -184,6 +193,7 @@ export function createSettingsHandlers(shared) {
       return;
     }
 
+    await interaction.deferUpdate();
     const outcome = await runExclusive(interaction, async () => {
       const record = await chat.getRecord(chatId, chatType);
       if (!record.meta) record.meta = {};
@@ -203,7 +213,7 @@ export function createSettingsHandlers(shared) {
       return settingsPayload(record);
     });
     if (!outcome.ok) return;
-    await interaction.update(outcome.value);
+    await interaction.editReply(outcome.value);
   }
 
   /** @param {any} interaction */
@@ -218,6 +228,7 @@ export function createSettingsHandlers(shared) {
     }
     const chatId = String(interaction.channelId);
     const chatType = interaction.guildId ? 'GROUP' : 'PRIVATE';
+    await interaction.deferUpdate();
     const outcome = await runExclusive(interaction, async () => {
       const record = await chat.getRecord(chatId, chatType);
       if (!record.meta) record.meta = {};
@@ -226,7 +237,7 @@ export function createSettingsHandlers(shared) {
       return settingsPayload(record);
     });
     if (!outcome.ok) return true;
-    await interaction.update(outcome.value);
+    await interaction.editReply(outcome.value);
     return true;
   }
 

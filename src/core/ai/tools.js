@@ -1,3 +1,4 @@
+import { createTtlCache } from '../cache.js';
 import { formatSearchResults } from '../search/tavily.js';
 import { REMINDER_LIMITS, formatReminderTime, parseReminderArgs } from './reminders.js';
 import { htmlToText, youtubeVideoId } from './read-url.js';
@@ -40,35 +41,8 @@ export function createToolRuntime(options) {
   const readCacheSize = options.readCacheSize ?? READ_URL_CACHE_SIZE;
   const now = options.now ?? Date.now;
 
-  /** @type {Map<string, {expires: number, result: {ok: boolean, text: string, data?: any}}>} */
-  const readCache = new Map();
-
-  /** @param {string} url */
-  function takeCachedPage(url) {
-    const hit = readCache.get(url);
-    if (!hit) return null;
-    if (hit.expires <= now()) {
-      readCache.delete(url);
-      return null;
-    }
-    // Refresh recency so a repeatedly shared link survives eviction.
-    readCache.delete(url);
-    readCache.set(url, hit);
-    return hit.result;
-  }
-
-  /**
-   * @param {string} url
-   * @param {{ok: boolean, text: string, data?: any}} result
-   */
-  function keepPage(url, result) {
-    readCache.set(url, { expires: now() + readCacheTtlMs, result });
-    while (readCache.size > readCacheSize) {
-      const oldest = readCache.keys().next().value;
-      if (oldest === undefined) break;
-      readCache.delete(oldest);
-    }
-  }
+  // LRU: a repeatedly shared link survives eviction.
+  const pageCache = createTtlCache({ ttlMs: readCacheTtlMs, size: readCacheSize, now, lru: true });
 
   function definitions() {
     /** @type {any[]} */
@@ -267,7 +241,7 @@ export function createToolRuntime(options) {
     if (!/^https?:\/\//i.test(url)) {
       return { ok: false, text: 'Only public http(s) URLs can be read.' };
     }
-    const cached = takeCachedPage(url);
+    const cached = pageCache.get(url);
     if (cached) {
       metrics?.inc('tool.readUrl.cacheHit');
       return cached;
@@ -277,7 +251,7 @@ export function createToolRuntime(options) {
     }
     const youtube = await readYouTube(url, ctx);
     if (youtube) {
-      if (youtube.ok) keepPage(url, youtube);
+      if (youtube.ok) pageCache.set(url, youtube);
       return youtube;
     }
     const result = await validator.readText(url);
@@ -301,7 +275,7 @@ export function createToolRuntime(options) {
       text: `${headerParts.join('\n')}\n\n${trimmed}${suffix}`,
       data: { url, finalUrl: result.finalUrl, title },
     };
-    keepPage(url, response);
+    pageCache.set(url, response);
     return response;
   }
 
@@ -324,10 +298,14 @@ export function createToolRuntime(options) {
         maxResults: config.search.maxResults,
         country: config.search.country,
         // The router clamps each provider attempt to what is left of this absolute deadline.
-        ...(Number.isFinite(ctx.deadline) ? { deadline: Number(ctx.deadline) } : {}),
-        timeoutMs: Number.isFinite(ctx.deadline)
-          ? Math.max(1500, Math.min(9000, /** @type {number} */ (ctx.deadline) - Date.now()))
-          : 0,
+        // Without a deadline, leave timeoutMs unset so the client's own default applies —
+        // an explicit 0 would disable the HTTP timeout entirely.
+        ...(Number.isFinite(ctx.deadline)
+          ? {
+              deadline: Number(ctx.deadline),
+              timeoutMs: Math.max(1500, Math.min(9000, /** @type {number} */ (ctx.deadline) - Date.now())),
+            }
+          : {}),
       });
       metrics?.inc('tool.webSearch');
       logger.info('web search', { query, results: data.results.length, icon: '🔍' });
@@ -391,6 +369,8 @@ export function createToolRuntime(options) {
           maxResults: Math.min(10, Math.max(3, config.search.maxResults)),
           includeImages: true,
           country: config.search.country,
+          // Share the image budget with the failover provider instead of a fresh timeout.
+          deadline: effectiveDeadline,
           timeoutMs: searchTimeout(),
         });
         const add = (image) => {

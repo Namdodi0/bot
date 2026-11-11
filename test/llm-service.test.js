@@ -111,3 +111,21 @@ test('retry: a huge retryAfterMs is capped at 30s without a deadline', async () 
   });
   assert.deepEqual(delays, [30_000]);
 });
+
+test('retry: an abort during backoff stops the retry loop immediately', async () => {
+  const controller = new AbortController();
+  let attempts = 0;
+  const executor = createRetryExecutor({ maxAttempts: 3, backoffMs: () => 5000, shouldRetry: () => true });
+  const started = Date.now();
+  const run = executor.execute(
+    async () => {
+      attempts += 1;
+      throw new LlmError(LLM_ERROR.RATE_LIMIT, 'slow down', { retryable: true });
+    },
+    { signal: controller.signal },
+  );
+  setTimeout(() => controller.abort(), 20);
+  await assert.rejects(run, (error) => error.code === LLM_ERROR.RATE_LIMIT);
+  assert.equal(attempts, 1);
+  assert.ok(Date.now() - started < 1000, 'the backoff sleep must wake on abort');
+});

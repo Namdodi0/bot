@@ -148,6 +148,10 @@ export function makeInteraction(name, options = {}, overrides = {}) {
     async update(payload) {
       edits.push(payload);
     },
+    async deferUpdate() {
+      this.deferred = true;
+      this.deferredUpdate = true;
+    },
     replies,
     edits,
     follows,

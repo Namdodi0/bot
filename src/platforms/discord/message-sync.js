@@ -41,16 +41,24 @@ export function createMessageSync(deps) {
       if (!newMessage || newMessage.author?.bot) return;
       const needsFetch = newMessage.partial || newMessage.author?.partial;
       const fresh = needsFetch ? await newMessage.fetch().catch(() => null) : newMessage;
-      if (!fresh?.content) return;
+      if (!fresh) return;
       if (oldMessage?.content === fresh.content) return;
       if (!isChannelAllowed(config.discord ?? {}, fresh.channel ?? { id: fresh.channelId })) return;
+      const chatId = String(fresh.channelId ?? fresh.channel?.id ?? '');
+      if (!fresh.content) {
+        // An edit that clears the content must not leave the old text in context.
+        const result = await withChat(chatId, () =>
+          runtime.chatServices.deleteTurns(chatId, [String(fresh.id ?? '')]),
+        );
+        if (result?.removed) metrics?.inc('discord.messages.deleted');
+        return;
+      }
       const text = stripBotMention(
         fresh.content,
         client?.user?.id,
         botRoleId(fresh, client?.user?.id),
       ).trim();
       if (!text || text.startsWith('/')) return;
-      const chatId = String(fresh.channelId ?? fresh.channel?.id ?? '');
       const result = await withChat(chatId, () =>
         runtime.chatServices.editTurn(chatId, {
           messageId: String(fresh.id ?? ''),
@@ -83,11 +91,15 @@ export function createMessageSync(deps) {
       if (!chatId || !messageId) return;
       const ownBot = message.author?.bot === true && message.author?.id === client?.user?.id;
       if (message.author?.bot && !ownBot) return;
-      const result = await withChat(chatId, () =>
-        ownBot
-          ? runtime.chatServices.deleteAnswerMessages(chatId, [messageId])
-          : runtime.chatServices.deleteTurns(chatId, [messageId]),
-      );
+      const result = await withChat(chatId, async () => {
+        if (ownBot) return runtime.chatServices.deleteAnswerMessages(chatId, [messageId]);
+        if (message.author) return runtime.chatServices.deleteTurns(chatId, [messageId]);
+        // Uncached delete (e.g. after a restart): no author, so it may be a user turn or
+        // one of the bot's own answers. Try both; each only matches its own kind.
+        const user = await runtime.chatServices.deleteTurns(chatId, [messageId]);
+        if (user?.removed) return user;
+        return runtime.chatServices.deleteAnswerMessages(chatId, [messageId]);
+      });
       if (result?.removed) {
         metrics?.inc('discord.messages.deleted');
         logger?.debug('discord message delete synced', {
@@ -117,7 +129,13 @@ export function createMessageSync(deps) {
         const ownBot = message.author?.bot === true && message.author?.id === client?.user?.id;
         if (message.author?.bot && !ownBot) continue;
         const bucket = byChat.get(chatId) ?? { user: [], answers: [] };
-        (ownBot ? bucket.answers : bucket.user).push(messageId);
+        if (ownBot) bucket.answers.push(messageId);
+        else if (message.author) bucket.user.push(messageId);
+        else {
+          // Author unknown on an uncached delete: it may be either kind.
+          bucket.user.push(messageId);
+          bucket.answers.push(messageId);
+        }
         byChat.set(chatId, bucket);
       }
       for (const [chatId, ids] of byChat) {

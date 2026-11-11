@@ -69,7 +69,6 @@ export function createAskHandlers(shared) {
     });
     if (extra.imageData) event.imageData = extra.imageData;
     return runtime.agent.stream(event, {
-      skipCommands: true,
       onDelta: extra.onDelta,
       onProgress: extra.onProgress,
     });
@@ -234,7 +233,6 @@ export function createAskHandlers(shared) {
     const prompt = `${prefix}\n\n${content}`;
     const preview = createStreamPreview((text) => interaction.editReply(v2Message(text)));
     const result = await runtime.agent.stream(askEvent(interaction, prompt, { private: true }), {
-      skipCommands: true,
       onDelta: preview.onDelta,
       onProgress: preview.onProgress,
     });
@@ -257,7 +255,10 @@ export function createAskHandlers(shared) {
       const inThread = interaction.options.getBoolean('thread') ?? record?.meta?.autoThread === true;
       const useThread = inThread && Boolean(interaction.guild);
       const form = interaction.options.getBoolean('form') === true;
-      if (form || !prompt) {
+      // An image-only /ask still runs the flow (the core phrases the image turn); only a
+      // truly empty invocation opens the modal, which cannot carry attachments.
+      const hasImage = Boolean(interaction.options.getAttachment?.('image'));
+      if (form || (!prompt && !hasImage)) {
         await interaction.showModal(askModal(priv, useThread));
         return;
       }

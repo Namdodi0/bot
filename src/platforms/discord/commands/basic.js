@@ -234,7 +234,9 @@ export function createBasicHandlers(shared) {
       if (await commandRateLimited(interaction)) return;
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
-      const outcome = await runExclusive(interaction, () => chat.compact(chatId, 'GROUP'));
+      const outcome = await runExclusive(interaction, () =>
+        chat.compact(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE'),
+      );
       if (!outcome.ok) return;
       const result = outcome.value;
       if (!result?.changed) {
