@@ -116,8 +116,8 @@ export function createMessageHandler(deps) {
           await placeholder.edit(v2Message(text));
         });
         // Keep the waiting ticker alive even when no deltas arrive; the previewer skips
-        // unchanged text, so this only edits while the rendered status actually changes.
-        const ticker = setInterval(() => previewer.push(renderPreview()), 500);
+        // unchanged text, so this edits at most once per second while waiting.
+        const ticker = setInterval(() => previewer.push(renderPreview()), 1000);
         ticker.unref?.();
 
         try {

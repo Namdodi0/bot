@@ -21,7 +21,9 @@ import { chunkText, formatDuration } from '../../core/text/format.js';
 import { photoFilename } from './transport.js';
 
 const COLORS = { info: 0x5865f2, ok: 0x57f287, warn: 0xfee75c, error: 0xed4245 };
-const PREVIEW_INTERVAL_MS = 100;
+// 2 edits/s per streaming message: fast enough to feel live, slow enough to stay inside
+// Discord's edit buckets even with several parallel turns in one channel.
+const PREVIEW_INTERVAL_MS = 500;
 /** Components V2 TextDisplay cap; answers chunk just under it instead of the 2000-char content cap. */
 const V2_TEXT_LIMIT = 4000;
 

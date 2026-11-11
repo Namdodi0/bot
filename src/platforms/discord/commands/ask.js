@@ -83,8 +83,8 @@ export function createAskHandlers(shared) {
     let streamed = '';
     const render = () => [feed.text(), streamed].filter(Boolean).join('\n\n');
     const previewer = createPreviewer((text) => edit(text));
-    // Waiting ticker: keeps the elapsed-time status fresh even without deltas.
-    const ticker = setInterval(() => previewer.push(render()), 500);
+    // Waiting ticker: keeps the elapsed-time status fresh even without deltas (1 edit/s).
+    const ticker = setInterval(() => previewer.push(render()), 1000);
     ticker.unref?.();
     return {
       onDelta(delta) {

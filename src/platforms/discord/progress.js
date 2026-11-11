@@ -142,7 +142,8 @@ export function createProgressFeed(options = {}) {
     if (base) return base;
     const elapsedMs = Math.max(0, now() - startedAt);
     const seconds = Math.floor(elapsedMs / 1000);
-    const frame = SPINNER[Math.floor(elapsedMs / 100) % SPINNER.length];
+    // Rotate once per second so the ticker text changes at most 1/s (one edit/s).
+    const frame = SPINNER[seconds % SPINNER.length];
     if (mode === 'thinking') return `> 🧠 Thinking… ${seconds}s ${frame}`;
     if (mode === 'finalizing') return `> ✍️ Writing the answer… ${seconds}s ${frame}`;
     return '';
