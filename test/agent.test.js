@@ -275,6 +275,34 @@ test("a parallel turn never sees another turn's in-flight private entries", asyn
   }
 });
 
+test("a parallel turn never answers another turn's in-flight question", async () => {
+  const { agent, nimCalls, store } = await setup({
+    delayMs: 200,
+    configOverrides: { userRateLimitPerMinute: 0 },
+  });
+  const first = agent.enqueue(textEvent('first question', { messageId: 'q1' }));
+  // The second question arrives while the first turn is still being answered.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const second = agent.enqueue(textEvent('second question', { messageId: 'q2' }));
+  await Promise.all([first, second]);
+
+  const secondCall = nimCalls.find((call) =>
+    call.messages.some((message) => String(message.content ?? '').includes('second question')),
+  );
+  assert.ok(secondCall, 'the second turn must reach the model');
+  for (const message of secondCall.messages) {
+    const text = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
+    assert.doesNotMatch(text, /first question/, "the second turn must not answer the first turn's question");
+  }
+  const record = await store.get('chat-1');
+  for (let index = 1; index < record.messages.length; index += 1) {
+    assert.ok(
+      (record.messages[index - 1].ts ?? 0) <= (record.messages[index].ts ?? 0),
+      'merged turns must stay in chronological order',
+    );
+  }
+});
+
 test('dedupes by message_id', async () => {
   const { agent, sent } = await setup();
   const event = textEvent('hi', { messageId: 'same-id' });

@@ -14,6 +14,7 @@ import { freshRecord, normalizeRecord } from './record.js';
  * @property {string} [messageId]
  * @property {string} [toolCallId]
  * @property {boolean} [private]
+ * @property {string} [turnId]
  * @property {Array<{id: string, name: string, arguments: any, rawArguments?: string}>} [toolCalls]
  */
 

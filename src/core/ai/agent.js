@@ -24,6 +24,9 @@ export function createAgent(deps) {
   const rateLimited = createRateLimiter(config, { file: deps.rateLimitFile });
   /** @type {Map<string, Set<AbortController>>} */
   const activeTurns = new Map();
+  // turnIds still running per chat: a parallel turn must not see their unanswered question.
+  /** @type {Map<string, Set<string>>} */
+  const activeTurnIds = new Map();
 
   /**
    * Merge the entries a forked turn created back into the live record. Entries are tagged
@@ -42,6 +45,9 @@ export function createAgent(deps) {
       const { turnId: _turnId, ...rest } = entry;
       live.messages.push(rest);
     }
+    // Overlapping turns finish out of order: keep the transcript chronological so the next
+    // turn sees question/answer in the order they happened.
+    live.messages.sort((first, second) => (first.ts ?? 0) - (second.ts ?? 0));
     live.turns = (live.turns ?? 0) + 1;
     store.touch(chatId);
   }
@@ -157,10 +163,20 @@ export function createAgent(deps) {
         const forked = controllers.size > 1;
         const fork = forked ? structuredClone(record) : record;
         if (forked) {
-          // In-flight private entries belong to their own turn only; a parallel turn
-          // must never send another turn's private content to the model.
-          fork.messages = (fork.messages ?? []).filter((message) => !message.private);
+          // In-flight private entries belong to their own turn only; a parallel turn must
+          // never send another turn's private content to the model. The same applies to
+          // another turn's question while it is still being answered: this turn answers
+          // its own message, not the one queued ahead of it.
+          const running = activeTurnIds.get(event.chatId);
+          fork.messages = (fork.messages ?? []).filter(
+            (message) =>
+              !message.private &&
+              !(message.turnId && message.turnId !== turnId && running?.has(message.turnId)),
+          );
         }
+        const runningForChat = activeTurnIds.get(event.chatId) ?? new Set();
+        runningForChat.add(turnId);
+        activeTurnIds.set(event.chatId, runningForChat);
         try {
           await conversation(
             event,
@@ -170,6 +186,8 @@ export function createAgent(deps) {
             collector,
           );
         } finally {
+          runningForChat.delete(turnId);
+          if (!runningForChat.size) activeTurnIds.delete(event.chatId);
           if (fork !== record) mergeTurn(record, fork, turnId, event.chatId);
         }
       }
