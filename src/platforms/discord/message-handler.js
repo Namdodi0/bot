@@ -47,6 +47,14 @@ export function createMessageHandler(deps) {
           if (attached) event.text = [event.text, attached].filter(Boolean).join('\n\n');
         }
         if (!String(event.text ?? '').trim() && !event.imageUrls?.length) return;
+        // Receipt ack while the turn queues/downloads/thinks; best effort — missing
+        // reaction permissions must never delay or break the answer.
+        message.react('👀').catch((error) => {
+          logger?.debug('discord receipt reaction failed', {
+            chatId,
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+        });
         const urls = Array.isArray(event.imageUrls) && event.imageUrls.length
           ? event.imageUrls
           : event.imageUrl
