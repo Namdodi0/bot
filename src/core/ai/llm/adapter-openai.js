@@ -208,6 +208,31 @@ export function createOpenAiCompatAdapter(options) {
   }
 
   /**
+   * A broken reasoning parser can repeat the thinking trace as the answer itself. The
+   * content is then corrupted, not a reply, and must never be sent to the user.
+   * @param {string} content
+   * @param {string} reasoning
+   */
+  function echoesReasoning(content, reasoning) {
+    const answer = content.trim();
+    const thought = reasoning.trim();
+    return answer.length > 0 && thought.length > 0 && answer === thought;
+  }
+
+  /**
+   * @param {string} service
+   * @param {string|undefined} modelId
+   */
+  function corruptedCompletionError(service, modelId) {
+    return new LlmError(LLM_ERROR.PROVIDER_ERROR, `${service} echoed its reasoning as the answer`, {
+      provider,
+      model: modelId,
+      status: 200,
+      retryable: true,
+    });
+  }
+
+  /**
    * @param {Record<string, any>} payload
    * @param {{signal?: AbortSignal|null, timeoutMs?: number}} [opts]
    */
@@ -268,6 +293,10 @@ export function createOpenAiCompatAdapter(options) {
       const data = /** @type {any} */ (response.data);
       const choice = data?.choices?.[0];
       const parsed = parseChoice(choice);
+      if (parsed.toolCalls.length === 0 && echoesReasoning(parsed.content, parsed.reasoning)) {
+        http.recordStreamFailure?.(routeKey(payload.model));
+        throw corruptedCompletionError(routeKey(payload.model), payload.model);
+      }
       if (!parsed.content.trim() && parsed.toolCalls.length === 0) {
         http.recordStreamFailure?.(routeKey(payload.model));
         throw emptyCompletionError(routeKey(payload.model), payload.model);
@@ -463,9 +492,10 @@ export function createOpenAiCompatAdapter(options) {
     }
 
     const service = routeKey(payload.model);
-    const emptyCompletion = !streamError && !content.trim() && !hasToolCalls;
+    const corrupted = !streamError && !hasToolCalls && echoesReasoning(content, reasoning);
+    const emptyCompletion = !streamError && !corrupted && !content.trim() && !hasToolCalls;
     // The circuit breaker learns the protocol outcome of a stream, not just its headers.
-    if (streamError || emptyCompletion) {
+    if (streamError || emptyCompletion || corrupted) {
       if (!input.signal?.aborted) http.recordStreamFailure?.(service);
     } else {
       http.recordStreamSuccess?.(service);
@@ -509,6 +539,10 @@ export function createOpenAiCompatAdapter(options) {
             };
           })
           .filter((call) => call.name);
+
+    if (corrupted) {
+      throw corruptedCompletionError(service, payload.model);
+    }
 
     if (!streamError && !content.trim() && toolCalls.length === 0) {
       throw emptyCompletionError(service, payload.model);

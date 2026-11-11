@@ -370,3 +370,44 @@ test('stream: content plus a partial tool-call delta returns no tool calls and i
   assert.deepEqual(result.toolCalls, []);
   assert.equal(result.aborted, true);
 });
+
+test('stream: content that repeats the reasoning trace is rejected as a corrupted reply', async () => {
+  const soup = '少/rooms盗렵\uFFFD許\uFFFD些 neoplastic Archbishop';
+  const client = makeClient(
+    streamFrom([
+      `data: {"choices":[{"index":0,"delta":{"reasoning_content":"${soup}"}}]}\n\n`,
+      `data: {"choices":[{"index":0,"delta":{"content":"${soup}"}}]}\n\n`,
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+    ]),
+  );
+  await assert.rejects(
+    () =>
+      client.chat({
+        messages: [{ role: 'user', content: 'help me' }],
+        reasoning: 'high',
+        stream: true,
+        ttftMs: 0,
+        timeoutMs: 5000,
+      }),
+    /echoed its reasoning as the answer/,
+  );
+});
+
+test('stream: distinct reasoning and content are both kept', async () => {
+  const client = makeClient(
+    streamFrom([
+      'data: {"choices":[{"index":0,"delta":{"reasoning_content":"The user said help me."}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{"content":"Sure - what do you need?"}}]}\n\n',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+    ]),
+  );
+  const result = await client.chat({
+    messages: [{ role: 'user', content: 'help me' }],
+    reasoning: 'high',
+    stream: true,
+    ttftMs: 0,
+    timeoutMs: 5000,
+  });
+  assert.equal(result.content, 'Sure - what do you need?');
+  assert.equal(result.reasoning, 'The user said help me.');
+});
