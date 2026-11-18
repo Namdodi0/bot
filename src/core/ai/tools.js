@@ -186,10 +186,11 @@ export function createToolRuntime(options) {
   /**
    * @param {string} name
    * @param {any} args
-   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender}} ctx
+   * @param {{chatId: string, senderId?: string, platform?: string, deadline?: number, signal?: AbortSignal|null, sendPhoto?: PhotoSender}} ctx
    * @returns {Promise<{ok: boolean, text: string, data?: any}>}
    */
   async function run(name, args, ctx) {
+    if (ctx.signal?.aborted) return { ok: false, text: `Tool ${name} was not executed: the turn was stopped.` };
     if (name === 'web_search') return webSearch(args, ctx);
     if (name === 'read_url') return readUrl(args, ctx);
     if (name === 'send_image') return sendImage(args, ctx);
@@ -322,7 +323,7 @@ export function createToolRuntime(options) {
 
   /**
    * @param {any} args
-   * @param {{chatId: string, platform?: string, deadline?: number, sendPhoto?: PhotoSender, suppressDirectSend?: boolean, imageBudget?: {remaining: number}}} ctx
+   * @param {{chatId: string, platform?: string, deadline?: number, signal?: AbortSignal|null, sendPhoto?: PhotoSender, suppressDirectSend?: boolean, imageBudget?: {remaining: number}}} ctx
    */
   async function sendImage(args, ctx) {
     if (!config.image.enabled) return { ok: false, text: 'Image sending is disabled.' };
@@ -360,7 +361,7 @@ export function createToolRuntime(options) {
     const seen = new Set();
     let searches = 0;
     const maxSearches = Math.max(1, Math.ceil(wanted / 3) + 2);
-    while (urls.length < wanted && searches < maxSearches && remaining() > 1500) {
+    while (!ctx.signal?.aborted && urls.length < wanted && searches < maxSearches && remaining() > 1500) {
       const searchQuery = searches === 0 ? query : `${query} ${searches + 1}`;
       searches += 1;
       try {
@@ -403,13 +404,13 @@ export function createToolRuntime(options) {
     const selected = [];
     const concurrency = 4;
     let next = 0;
-    while (selected.length < selectTarget && next < limit && remaining() > 0) {
+    while (!ctx.signal?.aborted && selected.length < selectTarget && next < limit && remaining() > 0) {
       const batch = urls.slice(next, Math.min(limit, next + concurrency));
       next += batch.length;
       if (!batch.length) break;
       const results = await Promise.all(
         batch.map(async (url) => {
-          if (remaining() <= 0) return null;
+          if (ctx.signal?.aborted || remaining() <= 0) return null;
           if (platform.capabilities.uploadMedia) {
             const file = await validator.download(url);
             if (!file.ok) {
@@ -438,7 +439,7 @@ export function createToolRuntime(options) {
     /** @type {string[]} */
     const sentUrls = [];
     for (const { url, upload } of selected) {
-      if (sent >= requested || remaining() <= 0) break;
+      if (ctx.signal?.aborted || sent >= requested || remaining() <= 0) break;
       try {
         if (typeof ctx.sendPhoto === 'function') {
           // Injected sinks collect (url, caption, asset); they add the chat id themselves.
@@ -488,9 +489,11 @@ export function createToolRuntime(options) {
       metrics?.inc('tool.sendImage.fail');
       return {
         ok: false,
-        text: timedOut
-          ? `Could not find a valid image for "${query}" within the ${seconds}s image limit.`
-          : `Could not find a valid image to send for "${query}".`,
+        text: ctx.signal?.aborted
+          ? 'Image sending was stopped.'
+          : timedOut
+            ? `Could not find a valid image for "${query}" within the ${seconds}s image limit.`
+            : `Could not find a valid image to send for "${query}".`,
       };
     }
     const text = uncertain
@@ -500,7 +503,11 @@ export function createToolRuntime(options) {
             capped ? ` (limit is ${MAX_IMAGES_PER_SEND} images per reply)` : ''
           }.`
         : `Sent ${sent} of ${requested} requested images for "${query}" — ${
-            timedOut ? `hit the ${seconds}s image time limit` : 'the search ran out of valid unique images'
+            ctx.signal?.aborted
+              ? 'the turn was stopped'
+              : timedOut
+                ? `hit the ${seconds}s image time limit`
+                : 'the search ran out of valid unique images'
           }.`;
     return { ok: true, text, data: { sent, requested, urls: sentUrls } };
   }

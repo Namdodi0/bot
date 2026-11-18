@@ -466,7 +466,7 @@ export function createTurnRunner(deps) {
       if (!response.aborted && response.toolCalls?.length) {
         await runToolRound({
           logger, metrics, tools, store, chatId: event.chatId, senderId: event.senderId,
-          deadline, sendPhoto: responseSink.sendPhoto, response, messages, record,
+          deadline, signal, sendPhoto: responseSink.sendPhoto, response, messages, record,
           privateTurn: event.private === true, imageBudget, onProgress: progress,
           ...(turnId ? { turnId } : {}),
         });
@@ -509,11 +509,11 @@ export function createTurnRunner(deps) {
       }
     }
 
-    if (finalText.trim()) {
+    if (finalText.trim() && !signal?.aborted) {
       record.messages.push(
         turnEntry({
           role: 'assistant',
-          text: truncate(normalizeWhitespace(finalText), 4000),
+          text: normalizeWhitespace(finalText),
           reasoning: thinkingText.trim() ? truncate(thinkingText.trim(), 4000) : undefined,
           ts: Date.now(),
           private: event.private === true,

@@ -71,7 +71,8 @@ export async function summarizeRange(record, options) {
   if (cut <= 0) return { changed: false };
 
   // Private turns never belong in shared compressed memory.
-  const range = messages.slice(0, cut).filter((message) => !message.private);
+  const selected = messages.slice(0, cut);
+  const range = selected.filter((message) => !message.private);
   if (!range.some((message) => (message.kind ?? MESSAGE_KIND.TURN) === MESSAGE_KIND.TURN)) {
     return { changed: false };
   }
@@ -82,6 +83,8 @@ export async function summarizeRange(record, options) {
 
   const maxChars = Math.max(100, Number(options.summaryMaxChars ?? 1200));
   const clipped = text.length > maxChars ? `${text.slice(0, maxChars - 1).trimEnd()}…` : text;
-  record.messages = [summaryEntry(clipped), ...messages.slice(cut)];
+  const replaced = new Set(selected);
+  // Parallel turns may have merged into the record while the summary request was in flight.
+  record.messages = [summaryEntry(clipped), ...record.messages.filter((message) => !replaced.has(message))];
   return { changed: true };
 }

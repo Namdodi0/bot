@@ -80,6 +80,61 @@ test('an incomplete tool call is dropped with its partial results, complete pair
   assert.equal(built.keptMessages, 2);
 });
 
+test('orphan results in mid-history and separated call/result pairs are dropped', () => {
+  const messages = [
+    { role: 'user', text: 'before', ts: 1 },
+    toolResultEntry({ toolCallId: 'orphan', text: 'orphan result', ts: 2 }),
+    toolCallEntry({ toolCalls: [{ id: 'a', name: 'web_search', arguments: {} }], ts: 3 }),
+    { role: 'user', text: 'interleaved turn', ts: 4 },
+    toolResultEntry({ toolCallId: 'a', text: 'late result', ts: 5 }),
+    { role: 'assistant', text: 'after', ts: 6 },
+  ];
+  const snapshot = structuredClone(messages);
+  const built = assemble(messages);
+  assert.deepEqual(built.messages.slice(1), [
+    { role: 'user', content: 'before' },
+    { role: 'user', content: 'interleaved turn' },
+    { role: 'assistant', content: 'after' },
+  ]);
+  assert.equal(built.keptMessages, 3);
+  assert.deepEqual(messages, snapshot, 'repair must not mutate the stored history');
+});
+
+test('complete adjacent tool groups keep only one matching result per call', () => {
+  const built = assemble([
+    toolCallEntry({ toolCalls: [
+      { id: 'a', name: 'web_search', arguments: {} },
+      { id: 'b', name: 'web_search', arguments: {} },
+    ] }),
+    toolResultEntry({ toolCallId: 'unrelated', text: 'discard this' }),
+    toolResultEntry({ toolCallId: 'b', text: 'result b' }),
+    toolResultEntry({ toolCallId: 'b', text: 'duplicate result' }),
+    toolResultEntry({ toolCallId: 'a', text: 'result a' }),
+    toolResultEntry({ toolCallId: 'unrelated-after', text: 'discard this too' }),
+  ]);
+  const wire = built.messages.slice(1);
+  assert.equal(wire.length, 3);
+  assert.deepEqual(wire[0].tool_calls.map((call) => call.id), ['a', 'b']);
+  assert.deepEqual(wire.slice(1), [
+    { role: 'tool', tool_call_id: 'b', content: 'result b' },
+    { role: 'tool', tool_call_id: 'a', content: 'result a' },
+  ]);
+  assert.equal(built.keptMessages, 3);
+});
+
+test('unrelated results cannot complete a partial tool group', () => {
+  const built = assemble([
+    toolCallEntry({ toolCalls: [
+      { id: 'a', name: 'web_search', arguments: {} },
+      { id: 'b', name: 'web_search', arguments: {} },
+    ] }),
+    toolResultEntry({ toolCallId: 'a', text: 'partial result' }),
+    toolResultEntry({ toolCallId: 'unrelated', text: 'not result b' }),
+    { role: 'user', text: 'keep this', ts: 1 },
+  ]);
+  assert.deepEqual(built.messages.slice(1), [{ role: 'user', content: 'keep this' }]);
+});
+
 test('assembled requests strip lone surrogates already stored in a record', () => {
   const built = assemble([
     { role: 'assistant', text: 'broken \ud83d', ts: 1 },

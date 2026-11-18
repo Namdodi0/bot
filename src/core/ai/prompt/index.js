@@ -1,3 +1,4 @@
+import { wellFormed } from '../../text/format.js';
 import { renderSearchContext, needsTimeContext, timeContextText } from './entries.js';
 import { createPromptRegistry } from './registry.js';
 import { TOOL_GUIDANCE, registerCoreSections } from './sections.js';
@@ -47,6 +48,6 @@ export function buildSummaryInput(messages) {
   const transcript = messages
     .map((message) => `${message.role === 'assistant' ? 'Bot' : message.name || 'User'}: ${message.text}`)
     .join('\n');
-  // Keep the newest tail: the oldest lines matter least for a running summary.
-  return transcript.length > 12_000 ? transcript.slice(-12_000) : transcript;
+  // The whole selected range will be replaced, so batching must never discard its prefix.
+  return wellFormed(transcript);
 }

@@ -15,6 +15,53 @@ test('homework detection covers problems but not casual chat', () => {
   assert.equal(isHomeworkRequest('hello'), false);
 });
 
+test('ambiguous task words do not turn narrative dialogue into homework', () => {
+  for (const text of [
+    'I draw my sword. Prove your loyalty to the king.',
+    'The commander hands me my next assignment.',
+    'Tôi nhìn vào mắt anh: chứng minh tình yêu của anh đi.',
+    'Please prove your identity.',
+    'I calculate my next move.',
+    'We need to solve this mystery.',
+    'I used to study math. Prove your loyalty to the king.',
+  ]) {
+    assert.equal(isHomeworkRequest(text), false, text);
+  }
+});
+
+test('ambiguous task words still recognize academic objects and requests', () => {
+  for (const text of [
+    'Solve for x.',
+    'Solve this inequality.',
+    'Prove the Pythagorean theorem.',
+    'Prove this algebraic identity.',
+    'Prove that the sum of two even integers is even.',
+    'Prove a + b = b + a.',
+    'Calculate the area of a circle with radius 5.',
+    'Calculate the physics result and explain your reasoning.',
+    'Chứng minh định lý Pythagoras.',
+    'Chứng minh tổng hai số chẵn là số chẵn.',
+    'Help me with my assignment.',
+    'Please complete this assignment.',
+    'Can you explain this assignment?',
+    'My chemistry assignment is about acids.',
+  ]) {
+    assert.equal(isHomeworkRequest(text), true, text);
+  }
+});
+
+test('narrowing task words preserves Vietnamese homework, coding and essays', () => {
+  for (const text of [
+    'Giải phương trình x + 2 = 5.',
+    'Giải giúp mình bài này.',
+    'Viết code sắp xếp một mảng.',
+    'Explain this programming algorithm.',
+    'Viết bài nghị luận về tình yêu quê hương.',
+  ]) {
+    assert.equal(isHomeworkRequest(text), true, text);
+  }
+});
+
 test('date-shaped numbers do not trigger homework mode', () => {
   assert.equal(isHomeworkRequest('remind me at 9:30 05/11'), false);
   assert.equal(isHomeworkRequest('nhắc tôi lúc 20:00 ngày 05-11'), false);

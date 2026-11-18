@@ -1,4 +1,4 @@
-import { chunkText } from '../../text/format.js';
+import { chunkText, normalizeWhitespace } from '../../text/format.js';
 import { preview, sleep } from './helpers.js';
 
 /**
@@ -58,10 +58,18 @@ export function createSenderFactory({ config, logger, metrics, platform }) {  co
   }
 
   /**
-   * @param {ReturnType<typeof makeSender>} sender
+   * @param {ReturnType<typeof makeSender> & {live?: boolean}} sender
    * @param {string} text
    */
   async function sendText(sender, text) {
+    if (sender.live) {
+      const content = normalizeWhitespace(text);
+      if (!content) return 0;
+      const before = sender.sent();
+      // Native renderers split the complete answer; transport chunks would lose whitespace and alter code fences.
+      await sender.enqueue(content);
+      return sender.sent() - before;
+    }
     const limit =
       config.maxMessagesPerReply > 0
         ? config.maxMessagesPerReply - sender.sent()

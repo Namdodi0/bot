@@ -14,6 +14,7 @@ import { truncate } from '../../../text/format.js';
  *   chatId: string,
  *   senderId: string,
  *   deadline: number,
+ *   signal?: AbortSignal|null,
  *   sendPhoto: (url: string, caption?: string, asset?: {data?: Buffer, contentType?: string}) => Promise<any>,
  *   response: any,
  *   messages: any[],
@@ -32,6 +33,7 @@ export async function runToolRound({
   chatId,
   senderId,
   deadline,
+  signal,
   sendPhoto,
   response,
   messages,
@@ -67,7 +69,9 @@ export async function runToolRound({
     /** @type {{ok?: boolean, text: string}} */
     let result;
     try {
-      if (call.parseError === true) {
+      if (signal?.aborted) {
+        result = { ok: false, text: `Tool ${call.name} was not executed: the turn was stopped.` };
+      } else if (call.parseError === true) {
         // Never execute arguments the provider did not finish emitting.
         result = {
           ok: false,
@@ -81,6 +85,7 @@ export async function runToolRound({
           chatId,
           senderId,
           deadline,
+          signal,
           sendPhoto,
           ...(imageBudget ? { imageBudget } : {}),
           ...(privateTurn ? { suppressDirectSend: true } : {}),

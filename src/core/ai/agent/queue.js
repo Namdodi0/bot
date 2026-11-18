@@ -298,8 +298,13 @@ export function createQueue({ config, logger, metrics, transport, handle }) {
     return (async () => {
       await acquireChatSlot(chatId);
       try {
-        await waitWhileMaintenance(chatId);
-        await acquire();
+        for (;;) {
+          await waitWhileMaintenance(chatId);
+          await acquire();
+          // Maintenance may have arrived while this turn waited for global capacity.
+          if (!(maintenancePending.get(chatId) > 0)) break;
+          release();
+        }
         try {
           chatRunning.set(chatId, (chatRunning.get(chatId) ?? 0) + 1);
           try {

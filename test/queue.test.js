@@ -4,6 +4,15 @@ import { createQueue } from '../src/core/ai/agent/queue.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
+function deferred() {
+  /** @type {() => void} */
+  let resolve = () => {};
+  const promise = new Promise((done) => {
+    resolve = /** @type {() => void} */ (done);
+  });
+  return { promise, resolve };
+}
+
 function makeQueue(overrides = {}) {
   const config = { maxConcurrentChats: 2, maxConcurrentPerChat: 3, maxQueueDepth: 50, ...overrides };
   return createQueue({
@@ -84,6 +93,81 @@ test('exclusive maintenance waits for running turns and blocks new turns', async
     'next:start',
   ]);
 });
+
+for (const maxConcurrentChats of [1, 2]) {
+  test(`pending turns yield saturated global capacity to maintenance (cap ${maxConcurrentChats})`, async () => {
+    const queue = makeQueue({ maxConcurrentChats });
+    /** @type {string[]} */
+    const events = [];
+    const releaseBlockers = deferred();
+    const blockersStarted = Array.from({ length: maxConcurrentChats }, () => deferred());
+    const blockers = blockersStarted.map((started, index) =>
+      queue.parallel(`blocker-${index}`, async () => {
+        started.resolve();
+        await releaseBlockers.promise;
+      }),
+    );
+    await Promise.all(blockersStarted.map((started) => started.promise));
+
+    const finishTurn = deferred();
+    const turn = queue.parallel('chat', async () => {
+      events.push('turn:start');
+      await finishTurn.promise;
+      events.push('turn:end');
+    });
+    // Flush admission microtasks so the turn is waiting for saturated global capacity.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const finishFirst = deferred();
+    const first = queue.exclusive('chat', async () => {
+      events.push('first:start');
+      await finishFirst.promise;
+      events.push('first:end');
+    });
+    const finishSecond = deferred();
+    const second = queue.exclusive('chat', async () => {
+      events.push('second:start');
+      await finishSecond.promise;
+      events.push('second:end');
+    });
+    let drained = false;
+    const drain = queue.drain().then((left) => {
+      drained = true;
+      return left;
+    });
+    const all = [...blockers, turn, first, second];
+    try {
+      releaseBlockers.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(events, ['first:start']);
+      assert.equal(queue.pending(), 3);
+      assert.equal(drained, false);
+
+      finishFirst.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(events, ['first:start', 'first:end', 'second:start']);
+      assert.equal(queue.pending(), 2);
+
+      finishSecond.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(events, ['first:start', 'first:end', 'second:start', 'second:end', 'turn:start']);
+      assert.equal(queue.pending(), 1);
+      assert.equal(drained, false);
+
+      finishTurn.resolve();
+      await Promise.all(all);
+      assert.equal(await drain, 0);
+      assert.equal(queue.pending(), 0);
+      assert.equal(events.at(-1), 'turn:end');
+    } finally {
+      releaseBlockers.resolve();
+      finishFirst.resolve();
+      finishSecond.resolve();
+      finishTurn.resolve();
+      await Promise.all(all);
+    }
+  });
+}
 
 test('maintenance in one chat does not block turns in another chat', async () => {
   const queue = makeQueue({ maxConcurrentChats: 4 });

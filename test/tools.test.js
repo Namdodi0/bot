@@ -40,6 +40,56 @@ function baseConfig(overrides = {}) {
   };
 }
 
+test('a stopped turn cannot dispatch a reminder', async () => {
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: null,
+    platform: makeDiscordPlatform(),
+    validator: okValidator,
+    reminders: { add: async () => assert.fail('a stopped turn must not create a reminder') },
+    logger: silentLogger,
+  });
+  const controller = new AbortController();
+  controller.abort();
+  const result = await tools.run('set_reminder', { when: '+1h', text: 'Test' }, { chatId: 'c1', signal: controller.signal });
+  assert.equal(result.ok, false);
+  assert.match(result.text, /stopped/);
+});
+
+test('stopping during image validation prevents later image delivery', { timeout: 5000 }, async () => {
+  let beginDownload;
+  let finishDownload;
+  const entered = new Promise((resolve) => { beginDownload = resolve; });
+  const release = new Promise((resolve) => { finishDownload = resolve; });
+  const controller = new AbortController();
+  let sent = 0;
+  const tools = createToolRuntime({
+    config: baseConfig(),
+    tavily: { search: async () => ({ results: [], images: ['https://x/a.png', 'https://x/b.png', 'https://x/c.png', 'https://x/d.png'] }) },
+    platform: makeDiscordPlatform({ transport: makeTransport({ sendPhoto: async () => { sent += 1; } }) }),
+    validator: {
+      ...okValidator,
+      download: async () => {
+        beginDownload();
+        await release;
+        return { ok: true, data: Buffer.from('img'), contentType: 'image/png' };
+      },
+    },
+    logger: silentLogger,
+  });
+  const pending = tools.run('send_image', { query: 'cat' }, { chatId: 'c1', signal: controller.signal });
+  try {
+    await entered;
+    controller.abort();
+  } finally {
+    finishDownload();
+  }
+  const result = await pending;
+  assert.equal(sent, 0);
+  assert.equal(result.ok, false);
+  assert.match(result.text, /stopped/);
+});
+
 test('SEARCH_AUTO=off: the model has no web_search tool', () => {
   const { tools } = runtime(
     baseConfig({ search: { enabled: true, auto: false, depth: 'fast', maxResults: 4, country: 'vietnam' } }),

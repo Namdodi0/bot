@@ -63,7 +63,8 @@ function toNimMessage(message, maxChars = DEFAULT_MAX_MESSAGE_CHARS) {
 /**
  * Drop an assistant tool-call message unless every one of its calls is answered by the
  * tool results immediately following it. A partial pair is invalid on the wire, so the
- * call and its partial results are removed together.
+ * call and its partial results are removed together. Standalone, unrelated and duplicate
+ * results are discarded wherever they occur.
  * @param {import('./store.js').StoredMessage[]} messages
  */
 function repairToolPairs(messages) {
@@ -71,20 +72,22 @@ function repairToolPairs(messages) {
   const out = [];
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
-    if ((message.kind ?? MESSAGE_KIND.TURN) !== MESSAGE_KIND.TOOL_CALL) {
+    const kind = message.kind ?? MESSAGE_KIND.TURN;
+    if (kind === MESSAGE_KIND.TOOL_RESULT) continue;
+    if (kind !== MESSAGE_KIND.TOOL_CALL) {
       out.push(message);
       continue;
     }
-    const ids = (message.toolCalls ?? []).map((call) => call.id);
+    const pending = new Set((message.toolCalls ?? []).map((call) => call.id));
     /** @type {import('./store.js').StoredMessage[]} */
     const results = [];
     let cursor = index + 1;
     while (cursor < messages.length && (messages[cursor].kind ?? MESSAGE_KIND.TURN) === MESSAGE_KIND.TOOL_RESULT) {
-      results.push(messages[cursor]);
+      const result = messages[cursor];
+      if (pending.delete(result.toolCallId)) results.push(result);
       cursor += 1;
     }
-    const answered = new Set(results.map((result) => result.toolCallId));
-    if (ids.every((id) => answered.has(id))) out.push(message, ...results);
+    if (results.length && !pending.size) out.push(message, ...results);
     index = cursor - 1;
   }
   return out;

@@ -40,14 +40,11 @@ export function createAgent(deps) {
     if (!live || !fork) return;
     const tagged = (fork.messages ?? []).filter((message) => message.turnId === turnId);
     if (!tagged.length) return;
-    for (const entry of tagged) {
-      if (entry.private) continue;
-      const { turnId: _turnId, ...rest } = entry;
-      live.messages.push(rest);
-    }
-    // Overlapping turns finish out of order: keep the transcript chronological so the next
-    // turn sees question/answer in the order they happened.
-    live.messages.sort((first, second) => (first.ts ?? 0) - (second.ts ?? 0));
+    const completed = tagged.filter((entry) => !entry.private).map(({ turnId: _turnId, ...entry }) => entry);
+    const running = activeTurnIds.get(chatId);
+    const firstActive = live.messages.findIndex((entry) => running?.has(entry.turnId));
+    // Keep summaries and completed turn blocks before unfinished work; timestamps do not encode transcript order.
+    live.messages.splice(firstActive < 0 ? live.messages.length : firstActive, 0, ...completed);
     live.turns = (live.turns ?? 0) + 1;
     store.touch(chatId);
   }

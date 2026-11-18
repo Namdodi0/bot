@@ -118,7 +118,7 @@ async function setup(options = {}) {
       latencyMs: 1,
       completionTokens: 10,
       completionMs: 1,
-      aborted: false,
+      aborted: item.aborted ?? false,
     };
   }
   const llm = {
@@ -163,6 +163,85 @@ async function setup(options = {}) {
 
   return { agent, sent, sentStickers, events, nimCalls, store, config, metrics, dir, platform };
 }
+
+test('long streamed answers preserve word, paragraph and code boundaries', async () => {
+  const content = `${'x'.repeat(1990)} alpha beta END\n\n${'y'.repeat(1990)}\n\n\`\`\`js\n${'const value = 1;\n'.repeat(150)}\`\`\``;
+  const { agent } = await setup({
+    replies: [{ content }],
+    configOverrides: { maxMessagesPerReply: 0 },
+  });
+  const result = await agent.stream(textEvent('Write a detailed scene with code.'));
+  assert.equal(result.text, content);
+});
+
+test('a following turn sees the end of an answer longer than 4000 characters', async () => {
+  const content = `${'A long corridor. '.repeat(280)}The key is hidden under the red vase.`;
+  const { agent, store, nimCalls, dir } = await setup({
+    replies: [{ content }, { content: 'Under the red vase.' }],
+    configOverrides: { maxMessagesPerReply: 0 },
+  });
+  await agent.stream(textEvent('Describe the corridor.'));
+  await store.flush();
+  const record = await store.get('chat-1');
+  assert.equal(record.messages.at(-1).text, content);
+  const reloaded = createContextStore({ dir, logger: silentLogger });
+  await reloaded.init();
+  assert.equal((await reloaded.get('chat-1')).messages.at(-1).text, content);
+  await agent.stream(textEvent('Where did you hide the key?'));
+  const previousAnswer = nimCalls[1].messages.find((message) => message.role === 'assistant');
+  assert.equal(previousAnswer.content, content);
+});
+
+test('stopping streamed narration does not establish an abandoned story event', async () => {
+  const partial = 'The captain throws the only key into the sea.';
+  const { agent, store, nimCalls } = await setup({
+    deltaText: partial,
+    replies: [{ content: partial, aborted: true }, { content: 'The key is still here.' }],
+  });
+  const result = await agent.stream(textEvent('Continue the scene.'), {
+    onDelta: () => assert.equal(agent.stop('chat-1'), true),
+  });
+  assert.equal(result.stopped, true);
+  const record = await store.get('chat-1');
+  assert.equal(record.messages.filter((message) => message.role === 'assistant').length, 0);
+  await agent.stream(textEvent('Where is the key?'));
+  assert.ok(nimCalls[1].messages.every((message) => !String(message.content ?? '').includes(partial)));
+});
+
+test('stopping during a tool batch skips subsequent side effects and keeps paired results', { timeout: 5000 }, async () => {
+  let beginTool;
+  let finishTool;
+  const entered = new Promise((resolve) => { beginTool = resolve; });
+  const release = new Promise((resolve) => { finishTool = resolve; });
+  const executed = [];
+  const names = ['web_search', 'set_reminder'];
+  const { agent, store } = await setup({
+    toolRuntime: {
+      definitions: () => names.map((name) => ({ type: 'function', function: { name, parameters: {} } })),
+      run: async (name, _args, context) => {
+        executed.push(name);
+        beginTool();
+        await release;
+        assert.equal(context.signal.aborted, true);
+        return { ok: true, text: 'Search finished.' };
+      },
+    },
+    replies: [{ toolCalls: names.map((name, index) => ({ id: `call-${index}`, name, arguments: {} })) }],
+  });
+  const turn = agent.stream(textEvent('Search and remind me.'));
+  try {
+    await entered;
+    assert.equal(agent.stop('chat-1'), true);
+  } finally {
+    finishTool();
+  }
+  assert.equal((await turn).stopped, true);
+  assert.deepEqual(executed, ['web_search']);
+  const record = await store.get('chat-1');
+  const results = record.messages.filter((message) => message.kind === 'tool-result');
+  assert.deepEqual(results.map((message) => message.toolCallId), ['call-0', 'call-1']);
+  assert.match(results[1].text, /not executed.*stopped/i);
+});
 
 test('vision turns send the image as an image_url block', async () => {
   const { agent, nimCalls, store } = await setup({ replies: [{ content: 'I see a cat' }] });
@@ -295,12 +374,9 @@ test("a parallel turn never answers another turn's in-flight question", async ()
     assert.doesNotMatch(text, /first question/, "the second turn must not answer the first turn's question");
   }
   const record = await store.get('chat-1');
-  for (let index = 1; index < record.messages.length; index += 1) {
-    assert.ok(
-      (record.messages[index - 1].ts ?? 0) <= (record.messages[index].ts ?? 0),
-      'merged turns must stay in chronological order',
-    );
-  }
+  assert.deepEqual(record.messages.map((message) => message.role), ['user', 'assistant', 'user', 'assistant']);
+  assert.equal(record.messages[0].text, 'Nam: first question');
+  assert.equal(record.messages[2].text, 'Nam: second question');
 });
 
 test('dedupes by message_id', async () => {
