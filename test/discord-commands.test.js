@@ -29,6 +29,37 @@ function payloadText(payload) {
   return String(payloadJson(payload).find((component) => component.type === 10)?.content ?? '');
 }
 
+test('/status shows estimated history tokens without counting private turns', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.record.messages = [
+    { role: 'user', kind: 'turn', text: 'x'.repeat(3200) },
+    { role: 'assistant', kind: 'turn', text: 'y'.repeat(32) },
+    { role: 'user', kind: 'summary', text: 'z'.repeat(32) },
+    { role: 'assistant', kind: 'tool-call', text: '', toolCalls: [{ name: 'search', rawArguments: '{}' }] },
+    { role: 'tool', kind: 'tool-result', text: 't'.repeat(32) },
+    { role: 'user', kind: 'turn', text: 'private'.repeat(1000), private: true },
+  ];
+  const before = structuredClone(runtime.record);
+  runtime.models.chat = async () => assert.fail('/status must not call the model');
+  const i = interaction('status');
+  await commands.handleCommand(i);
+  const panel = payloadJson(i.edits.at(-1)).find((component) => component.type === 17);
+  const text = panel.components.filter((component) => component.type === 10).map((component) => component.content).join('\n');
+  assert.match(text, /\*\*Context tokens\*\* · ~1,063 \(history only\)/);
+  assert.match(text, /\*\*Context\*\* · 5 messages/);
+  assert.ok(i.deferPayload.flags & MessageFlags.Ephemeral);
+  assert.deepEqual(runtime.record, before);
+});
+
+test('/status reports zero context tokens for an empty history', async () => {
+  const { commands } = makeCommands();
+  const i = interaction('status');
+  await commands.handleCommand(i);
+  const panel = payloadJson(i.edits.at(-1)).find((component) => component.type === 17);
+  const text = panel.components.filter((component) => component.type === 10).map((component) => component.content).join('\n');
+  assert.match(text, /\*\*Context tokens\*\* · ~0 \(history only\)/);
+});
+
 test('/ask streams a preview edit and then renders the final answer', async () => {
   const { commands } = makeCommands();
   const i = interaction('ask', { prompt: 'hello', private: true });

@@ -1,4 +1,5 @@
 import { REMINDER_LIMITS } from '../../../core/ai/reminders.js';
+import { estimateMessageTokens } from '../../../core/context/token-meter.js';
 import { COMMANDS, HELP_NOTE } from '../specs.js';
 import {
   createPreviewer,
@@ -134,12 +135,14 @@ export function createBasicHandlers(shared) {
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
       const record = await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE');
+      const history = (record.messages ?? []).filter((message) => !message.private);
       await interaction.editReply(
         statusPanel({
           model: chat.currentModel(record),
           mode: platform.transportMode,
           uptimeSec: runtime.metrics.snapshot().uptimeSec ?? 0,
-          messages: record.messages?.length ?? 0,
+          messages: history.length,
+          contextTokens: history.reduce((total, message) => total + estimateMessageTokens(message), 0),
           turns: record.turns ?? 0,
           contextFiles: await runtime.store.count(),
           ttlHours: config.context.ttlHours,

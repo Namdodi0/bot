@@ -407,7 +407,7 @@ export function askModal(priv, inThread) {
 }
 
 /**
- * @param {{model: any, mode: string, uptimeSec: number, messages: number, turns: number, contextFiles: number, ttlHours: number, ping: number, search: string, metrics: any, avatar?: string|null}} data
+ * @param {{model: any, mode: string, uptimeSec: number, messages: number, contextTokens: number, turns: number, contextFiles: number, ttlHours: number, ping: number, search: string, metrics: any, avatar?: string|null}} data
  */
 export function statusPanel(data) {
   const snapshot = data.metrics?.snapshot?.() ?? {};
@@ -424,6 +424,7 @@ export function statusPanel(data) {
       `**Transport** · ${data.mode} · ${data.ping}ms ping`,
       `**Uptime** · ${formatDuration(data.uptimeSec * 1000)}`,
       `**Context** · ${data.messages} messages · ${data.turns} turns · ${data.contextFiles} files`,
+      `**Context tokens** · ~${data.contextTokens.toLocaleString('en-US')} (history only)`,
       `**Search** · ${data.search}`,
       `**Latency** · LLM p50 ${llm ? `${llm.p50}ms` : 'n/a'} · reply p50 ${replies ? `${replies.p50}ms` : 'n/a'}`,
       `**Traffic** · ${count('messages.in')} in · ${count('messages.replied')} replies · ${count('messages.error')} errors`,
