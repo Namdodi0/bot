@@ -531,6 +531,13 @@ test('the no-tools fallback prompt does not advertise tool guidance', async () =
   assert.equal(fallback.messages[0].role, 'system');
   assert.match(String(primary.messages[0].content), /call the `web_search` tool/);
   assert.doesNotMatch(String(fallback.messages[0].content), /call the `web_search` tool/);
+  for (const call of [primary, fallback]) {
+    const prompt = String(call.messages[0].content);
+    assert.match(prompt, /LANGUAGE: Vietnamese is the default reply language/);
+    assert.match(prompt, /another language only when the user explicitly requests it/);
+    assert.match(prompt, /LENGTH:.*1–2 short sentences/);
+    assert.match(prompt, /including the tone\/roast layer/);
+  }
 });
 
 test('the final answer call after tool rounds also sends no tool guidance', async () => {
