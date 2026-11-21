@@ -40,6 +40,12 @@ export const MODEL_ALIASES = {
     modelKey: 'glmModel',
     label: 'GLM 5.3 Flash',
   },
+  kimi: {
+    provider: 'nim',
+    modelKey: 'kimiModel',
+    label: 'Kimi K3.1 Pro',
+    vision: true,
+  },
   'ds-abl-free': {
     provider: 'refuseless',
     modelKey: 'model',

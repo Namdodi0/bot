@@ -91,6 +91,7 @@ Aliases are defined in `src/core/ai/models.js` and resolved against the provider
 - `nim-light` — Nemotron 3.5 Lightning 30B
 - `mistral-large` — Mistral Large 4 (vision-capable)
 - `glm` — GLM 5.3 Flash
+- `kimi` — Kimi K3.1 Pro (vision-capable)
 - `deepseek` / `pro` — DeepSeek API aliases
 - `ds-abl-free` — Refuseless alias
 - `abliterated` — Abliterated Large Flash (abliteration.ai, vision-capable)

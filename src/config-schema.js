@@ -34,6 +34,7 @@ const SECTION_KEYS = {
     'fallbackModel',
     'mistralModel',
     'glmModel',
+    'kimiModel',
     'temperature',
     'visionTemperature',
     'docsTemperature',

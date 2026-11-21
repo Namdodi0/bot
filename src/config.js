@@ -504,6 +504,7 @@ export function loadConfig(input = {}) {
         'mistralai/mistral-large-4-1t-a52b',
       ),
       glmModel: asString(nimSection.glmModel, 'config.nim.glmModel', 'z-ai/glm-5.3-flash'),
+      kimiModel: asString(nimSection.kimiModel, 'config.nim.kimiModel', 'moonshotai/kimi-k3.1-pro'),
       temperature: asNumber(nimSection.temperature, 'config.nim.temperature', 0.7, { min: 0, max: 2 }),
       visionTemperature: nimVisionTemperature,
       docsTemperature: nimDocsTemperature,

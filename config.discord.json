@@ -22,6 +22,7 @@
     "fallbackModel": "nvidia/nemotron-3.5-lightning-30b-a3b",
     "mistralModel": "mistralai/mistral-large-4-1t-a52b",
     "glmModel": "z-ai/glm-5.3-flash",
+    "kimiModel": "moonshotai/kimi-k3.1-pro",
     "temperature": 0.4,
     "visionTemperature": 0.6,
     "docsTemperature": 0.7,
