@@ -515,8 +515,8 @@ export function loadConfig(input = {}) {
       topK: nimTopK,
       minP: nimMinP,
       repetitionPenalty: nimRepetitionPenalty,
-      // Models listed here get only `reasoning_effort`; every sampling knob stays at the
-      // provider default (used for models whose sampler mangles an explicit config).
+      // Models listed here use the provider's documented request profile: thinking via
+      // chat_template_kwargs plus a reasoning cap, with sampling fields still applied.
       samplingDefaultsModels: asStringList(
         nimSection.samplingDefaultsModels,
         'config.nim.samplingDefaultsModels',

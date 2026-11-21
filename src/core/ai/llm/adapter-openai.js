@@ -181,9 +181,9 @@ export function createOpenAiCompatAdapter(options) {
   const metrics = options.metrics;
   const defaultTemperature = options.defaultTemperature ?? 1.0;
   const reasoningMap = options.reasoningMap ?? NIM_REASONING_MAP;
-  // Documented docs-profile models: no sampling knobs, no `reasoning_effort`; thinking is
-  // controlled the way the provider docs show it, through chat_template_kwargs. An optional
-  // docsTemperature overrides just the temperature, which those docs also send.
+  // Documented docs-profile models: no `reasoning_effort`; thinking is controlled through
+  // chat_template_kwargs and a reasoning cap, while the sampling fields are still sent
+  // (the provider's own examples pass temperature and top_p alongside the kwargs).
   const samplingDefaultsFor = new Set(options.samplingDefaultsFor ?? []);
   const reasoningBudget = Number.isFinite(options.reasoningBudget) ? Number(options.reasoningBudget) : null;
   const docsTemperature = Number.isFinite(options.docsTemperature) ? Number(options.docsTemperature) : null;
@@ -265,20 +265,21 @@ export function createOpenAiCompatAdapter(options) {
     /** @type {any} */
     const payload = { model: modelId, messages: input.messages };
     if (providerDefaults) {
-      // Documented profile: only the provider's own defaults plus the thinking controls.
+      // Documented profile: thinking controls instead of reasoning_effort.
       payload.chat_template_kwargs = docsTemplateKwargs(
         input.reasoning ?? 'none',
         Boolean(input.tools?.length),
       );
       if (reasoningBudget !== null) payload.reasoning_budget = reasoningBudget;
-      if (docsTemperature !== null) payload.temperature = input.temperature ?? docsTemperature;
     } else {
       payload.reasoning_effort = reasoningEffort(input.reasoning ?? 'none', reasoningMap);
-      payload.temperature = input.temperature ?? defaultTemperature;
-      for (const [key, apiKey] of Object.entries(SAMPLING_FIELDS)) {
-        const value = input.sampling?.[key];
-        if (value !== undefined && value !== null) payload[apiKey] = value;
-      }
+    }
+    // A docs-profile model has no temperature unless docsTemperature opts it in.
+    const temperature = input.temperature ?? (providerDefaults ? docsTemperature : defaultTemperature);
+    if (temperature !== null) payload.temperature = temperature;
+    for (const [key, apiKey] of Object.entries(SAMPLING_FIELDS)) {
+      const value = input.sampling?.[key];
+      if (value !== undefined && value !== null) payload[apiKey] = value;
     }
     if (input.tools?.length) {
       payload.tools = input.tools;
