@@ -36,6 +36,7 @@ const SECTION_KEYS = {
     'glmModel',
     'temperature',
     'visionTemperature',
+    'docsTemperature',
     'visionTimeoutMs',
     'timeoutMs',
     'topP',

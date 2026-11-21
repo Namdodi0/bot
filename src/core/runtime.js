@@ -141,6 +141,7 @@ export async function createRuntime(input) {
         reasoningMap: NIM_REASONING_MAP,
         samplingDefaultsFor: config.nim.samplingDefaultsModels ?? [],
         reasoningBudget: config.nim.reasoningBudget ?? null,
+        docsTemperature: config.nim.docsTemperature ?? null,
       }),
     );
   }

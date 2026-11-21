@@ -169,7 +169,7 @@ const SAMPLING_FIELDS = {
 /**
  * OpenAI-compatible adapter (NVIDIA NIM, DeepSeek, ...).
  * The wire format lives entirely here; the service only knows the neutral vocabulary.
- * @param {{provider?: string, apiKey: string, baseUrl: string, model: string, http: ReturnType<typeof import('../../http.js').createHttp>, logger: import('../../logger.js').Logger, metrics?: any, defaultTemperature?: number, reasoningMap?: Record<string,string>, samplingDefaultsFor?: string[], reasoningBudget?: number|null}} options
+ * @param {{provider?: string, apiKey: string, baseUrl: string, model: string, http: ReturnType<typeof import('../../http.js').createHttp>, logger: import('../../logger.js').Logger, metrics?: any, defaultTemperature?: number, reasoningMap?: Record<string,string>, samplingDefaultsFor?: string[], reasoningBudget?: number|null, docsTemperature?: number|null}} options
  */
 export function createOpenAiCompatAdapter(options) {
   const provider = options.provider ?? 'nim';
@@ -182,9 +182,11 @@ export function createOpenAiCompatAdapter(options) {
   const defaultTemperature = options.defaultTemperature ?? 1.0;
   const reasoningMap = options.reasoningMap ?? NIM_REASONING_MAP;
   // Documented docs-profile models: no sampling knobs, no `reasoning_effort`; thinking is
-  // controlled the way the provider docs show it, through chat_template_kwargs.
+  // controlled the way the provider docs show it, through chat_template_kwargs. An optional
+  // docsTemperature overrides just the temperature, which those docs also send.
   const samplingDefaultsFor = new Set(options.samplingDefaultsFor ?? []);
   const reasoningBudget = Number.isFinite(options.reasoningBudget) ? Number(options.reasoningBudget) : null;
+  const docsTemperature = Number.isFinite(options.docsTemperature) ? Number(options.docsTemperature) : null;
 
   const endpoint = `${baseUrl}/chat/completions`;
 
@@ -269,6 +271,7 @@ export function createOpenAiCompatAdapter(options) {
         Boolean(input.tools?.length),
       );
       if (reasoningBudget !== null) payload.reasoning_budget = reasoningBudget;
+      if (docsTemperature !== null) payload.temperature = input.temperature ?? docsTemperature;
     } else {
       payload.reasoning_effort = reasoningEffort(input.reasoning ?? 'none', reasoningMap);
       payload.temperature = input.temperature ?? defaultTemperature;

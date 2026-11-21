@@ -76,11 +76,12 @@ test('DeepSeek maps medium to high, none stays none', async () => {
   assert.equal(http.calls[1].payload.model, 'deepseek-flash');
 });
 
-test('a docs-profile model sends chat_template_kwargs instead of sampling or reasoning_effort', async () => {
+test('a docs-profile model keeps chat_template_kwargs and its own temperature', async () => {
   const http = fakeHttp([], standardResponse);
   const client = makeClient(http, {
     samplingDefaultsFor: ['nvidia/nemotron-3-ultra-550b-a55b'],
     reasoningBudget: 16384,
+    docsTemperature: 0.7,
   });
   const tools = [{ type: 'function', function: { name: 'web_search', parameters: { type: 'object' } } }];
   await client.chat({
@@ -97,9 +98,9 @@ test('a docs-profile model sends chat_template_kwargs instead of sampling or rea
     force_nonempty_content: true,
   });
   assert.equal(payload.reasoning_budget, 16384);
+  assert.equal(payload.temperature, 0.3);
   for (const key of [
     'reasoning_effort',
-    'temperature',
     'top_p',
     'top_k',
     'frequency_penalty',
@@ -114,6 +115,7 @@ test('a docs-profile model sends chat_template_kwargs instead of sampling or rea
     reasoning: 'none',
   });
   assert.deepEqual(http.calls[1].payload.chat_template_kwargs, { enable_thinking: false });
+  assert.equal(http.calls[1].payload.temperature, 0.7);
 
   await client.chat({
     model: 'nvidia/nemotron-3-ultra-550b-a55b',

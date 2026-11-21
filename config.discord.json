@@ -24,6 +24,7 @@
     "glmModel": "z-ai/glm-5.3-flash",
     "temperature": 0.4,
     "visionTemperature": 0.6,
+    "docsTemperature": 0.7,
     "visionTimeoutMs": 180000,
     "timeoutMs": 0,
     "topP": 0.85,

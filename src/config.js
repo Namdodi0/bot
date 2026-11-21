@@ -446,6 +446,11 @@ export function loadConfig(input = {}) {
   // NVIDIA recommends 0.6 for image/video input and 1.0 for text.
   const nimVisionTemperature =
     asOptionalNumber(nimSection.visionTemperature, 'config.nim.visionTemperature', { min: 0, max: 2 }) ?? 0.6;
+  // Docs-profile models (Ultra) skip the sampling knobs; an explicit temperature still applies.
+  const nimDocsTemperature = asOptionalNumber(nimSection.docsTemperature, 'config.nim.docsTemperature', {
+    min: 0,
+    max: 2,
+  });
   // Vision turns get their own wall-clock cap: a stalled VL request must not hold the
   // chat forever, but a 1T-class vision model may need minutes for the first token.
   // 0 disables the cap and falls back to the turn deadline.
@@ -501,6 +506,7 @@ export function loadConfig(input = {}) {
       glmModel: asString(nimSection.glmModel, 'config.nim.glmModel', 'z-ai/glm-5.3-flash'),
       temperature: asNumber(nimSection.temperature, 'config.nim.temperature', 0.7, { min: 0, max: 2 }),
       visionTemperature: nimVisionTemperature,
+      docsTemperature: nimDocsTemperature,
       visionTimeoutMs: nimVisionTimeoutMs,
       // 0 = no request timeout (wait for the provider as long as it needs).
       timeoutMs: /** @type {number} */ (asInt(nimSection.timeoutMs, 'config.nim.timeoutMs', 0, { min: 0 })),
