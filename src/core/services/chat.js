@@ -5,8 +5,8 @@ const SUMMARY_MAX_COUNT = 200;
 const SUMMARY_MAX_TRANSCRIPT = 12_000;
 const SUMMARY_TIMEOUT_MS = 15_000;
 // /compact is user-initiated and waits on an interaction; slow models get a wider window
-// than the silent auto-compaction budget.
-const MANUAL_COMPACT_BUDGET_MS = 60_000;
+// than the silent auto-compaction budget (still well inside the 15-minute token).
+const MANUAL_COMPACT_BUDGET_MS = 300_000;
 
 /**
  * Keep the newest whole lines within the character cap; summaries must not silently
