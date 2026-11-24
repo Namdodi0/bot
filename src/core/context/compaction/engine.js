@@ -31,23 +31,29 @@ export function createCompactionEngine(options) {
   }
 
   /**
-   * @param {{record: any, trigger?: 'pressure'|'overflow'|'manual'|'dropped', deadline?: number, measure?: () => {pressure: number|null, tokens: number}}} input
+   * @param {{record: any, trigger?: 'pressure'|'overflow'|'manual'|'dropped', deadline?: number, budgetMs?: number, measure?: () => {pressure: number|null, tokens: number}}} input
    */
   async function compactIfNeeded(input) {
     const trigger = input.trigger ?? 'pressure';
     if (!shouldCompact(trigger, input.measure)) return null;
-    return run(input.record, { trigger, deadline: input.deadline, measure: input.measure });
+    return run(input.record, {
+      trigger,
+      deadline: input.deadline,
+      budgetMs: input.budgetMs,
+      measure: input.measure,
+    });
   }
 
   /**
    * @param {any} record
-   * @param {{trigger: string, deadline?: number, measure?: () => {pressure: number|null, tokens: number}}} context
+   * @param {{trigger: string, deadline?: number, budgetMs?: number, measure?: () => {pressure: number|null, tokens: number}}} context
    */
   async function run(record, context) {
     const limits = spec();
     const before = context.measure?.() ?? null;
     let changed = false;
     let summarized = false;
+    let summaryEmpty = false;
     let pruned = false;
 
     const enough = () => {
@@ -68,9 +74,11 @@ export function createCompactionEngine(options) {
         keepRecent: limits.keepRecent,
         summaryMaxChars: limits.summaryMaxChars,
         deadline: context.deadline,
+        budgetMs: context.budgetMs,
         summarize,
       });
       summarized = summaryResult.changed;
+      summaryEmpty = summaryResult.empty === true;
       changed = changed || summarized;
     }
 
@@ -90,6 +98,7 @@ export function createCompactionEngine(options) {
     return {
       changed,
       summarized,
+      summaryEmpty,
       pruned,
       tokensBefore: before?.tokens ?? null,
       tokensAfter: after?.tokens ?? null,

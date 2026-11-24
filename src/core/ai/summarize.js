@@ -1,6 +1,9 @@
 import { truncate } from '../text/format.js';
 import { SUMMARY_SYSTEM_PROMPT, buildSummaryInput } from './prompt/index.js';
 
+/** Silent compaction gets a short budget; a manual /compact widens it. */
+const DEFAULT_SUMMARY_BUDGET_MS = 15_000;
+
 /**
  * Summarizer used for compaction — keeps the chat's route when a record is present.
  * @param {{llm: any, logger?: import('../logger.js').Logger}} options
@@ -12,11 +15,18 @@ export function createSummarizer(options) {
    * @param {any[]} messages
    * @param {number} [deadline]
    * @param {any} [record]
+   * @param {number} [budgetMs]
    */
-  return async function summarize(messages, deadline = Number.POSITIVE_INFINITY, record = null) {
+  return async function summarize(
+    messages,
+    deadline = Number.POSITIVE_INFINITY,
+    record = null,
+    budgetMs = DEFAULT_SUMMARY_BUDGET_MS,
+  ) {
     if (!messages?.length) return '';
     // Auxiliary work has one budget, even when the reply itself has no deadline.
-    const endTime = Math.min(deadline, Date.now() + 15_000);
+    const budget = Math.max(1000, Number(budgetMs) || DEFAULT_SUMMARY_BUDGET_MS);
+    const endTime = Math.min(deadline, Date.now() + budget);
     const transcript = buildSummaryInput(messages);
     const left = endTime - Date.now();
     if (left <= 0) return '';

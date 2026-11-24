@@ -344,3 +344,27 @@ test('engine: runs the pipeline above the threshold', async () => {
   assert.equal(result.summarized, true);
   assert.equal(record.messages[0].kind, 'summary');
 });
+
+test('engine: forwards the manual compaction budget to the summarizer', async () => {
+  /** @type {any[][]} */
+  const calls = [];
+  const engine = createCompactionEngine({
+    config: makeConfig(),
+    logger: silentLogger,
+    summarize: async (...args) => {
+      calls.push(args);
+      return 'T';
+    },
+  });
+  const record = recordWith(turns(12));
+  await engine.compactIfNeeded({ record, trigger: 'manual', budgetMs: 60_000 });
+  assert.equal(calls[0][3], 60_000);
+});
+
+test('engine: reports an empty summary instead of claiming nothing to compact', async () => {
+  const engine = createCompactionEngine({ config: makeConfig(), logger: silentLogger, summarize: async () => '  ' });
+  const record = recordWith(turns(12));
+  const result = await engine.compactIfNeeded({ record, trigger: 'manual' });
+  assert.equal(result.changed, false);
+  assert.equal(result.summaryEmpty, true);
+});

@@ -303,6 +303,19 @@ test('/settings model "Default" clears the pinned model', async () => {
   assert.match(JSON.stringify(pick.edits.at(-1)), /Default \(deepseek\)/);
 });
 
+test('/compact reports a stalled summarizer instead of a generic crash', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.compaction.compactIfNeeded = async () => {
+    throw new Error('request aborted due to timeout');
+  };
+  const i = interaction('compact');
+  await commands.handleCommand(i);
+
+  const payload = JSON.stringify(i.edits.at(-1));
+  assert.match(payload, /Compact stalled/);
+  assert.doesNotMatch(payload, /Something broke/);
+});
+
 test('/reasoning shows the latest answer thinking only to the caller', async () => {
   const { commands, runtime } = makeCommands();
   runtime.record.messages.push(

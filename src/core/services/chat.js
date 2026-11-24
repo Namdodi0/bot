@@ -4,6 +4,9 @@ const SUMMARY_DEFAULT_COUNT = 30;
 const SUMMARY_MAX_COUNT = 200;
 const SUMMARY_MAX_TRANSCRIPT = 12_000;
 const SUMMARY_TIMEOUT_MS = 15_000;
+// /compact is user-initiated and waits on an interaction; slow models get a wider window
+// than the silent auto-compaction budget.
+const MANUAL_COMPACT_BUDGET_MS = 60_000;
 
 /**
  * Keep the newest whole lines within the character cap; summaries must not silently
@@ -105,7 +108,11 @@ export function createChatServices({ config, store, models, compaction }) {
   /** @param {string} chatId @param {string} [chatType] @param {any} [record] */
   async function compact(chatId, chatType = 'GROUP', record = null) {
     const target = record ?? (await getRecord(chatId, chatType));
-    const result = await compaction.compactIfNeeded({ record: target, trigger: 'manual' });
+    const result = await compaction.compactIfNeeded({
+      record: target,
+      trigger: 'manual',
+      budgetMs: MANUAL_COMPACT_BUDGET_MS,
+    });
     if (result?.changed) store.touch?.(chatId);
     return result;
   }

@@ -50,7 +50,7 @@ function repairToolBlocks(messages) {
  * Compress an old range into a SINGLE summary message (user role), replacing exactly
  * that range. The range must have balanced tool-call/tool-result pairs.
  * @param {any} record
- * @param {{keepRecent: number, summaryMaxChars: number, deadline?: number, summarize: (messages: any[], deadline?: number, record?: any) => Promise<string>}} options
+ * @param {{keepRecent: number, summaryMaxChars: number, deadline?: number, budgetMs?: number, summarize: (messages: any[], deadline?: number, record?: any, budgetMs?: number) => Promise<string>}} options
  */
 export async function summarizeRange(record, options) {
   let messages = record.messages ?? [];
@@ -77,9 +77,9 @@ export async function summarizeRange(record, options) {
     return { changed: false };
   }
 
-  const summary = await options.summarize(range, options.deadline, record);
+  const summary = await options.summarize(range, options.deadline, record, options.budgetMs);
   const text = String(summary ?? '').trim();
-  if (!text) return { changed: false };
+  if (!text) return { changed: false, empty: true };
 
   const maxChars = Math.max(100, Number(options.summaryMaxChars ?? 1200));
   const clipped = text.length > maxChars ? `${text.slice(0, maxChars - 1).trimEnd()}…` : text;

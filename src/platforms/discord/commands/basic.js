@@ -238,13 +238,33 @@ export function createBasicHandlers(shared) {
       if (await commandRateLimited(interaction)) return;
       await interaction.deferReply(ephemeral);
       const chatId = String(interaction.channelId);
-      const outcome = await runExclusive(interaction, () =>
-        chat.compact(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE'),
-      );
+      const outcome = await runExclusive(interaction, async () => {
+        try {
+          return await chat.compact(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE');
+        } catch (error) {
+          logger?.warn('manual compact failed', {
+            error: String(/** @type {any} */ (error)?.message ?? error),
+          });
+          return null;
+        }
+      });
       if (!outcome.ok) return;
       const result = outcome.value;
-      if (!result?.changed) {
-        await interaction.editReply({ content: '📦 Nothing to squeeze — the context is already lean.' });
+      if (!result) {
+        await interaction.editReply(
+          errorPanel(
+            'The summary model stalled, so the context is untouched. Try `/compact` again in a moment. 🧰',
+            'Compact stalled',
+          ),
+        );
+        return;
+      }
+      if (!result.changed) {
+        await interaction.editReply({
+          content: result.summaryEmpty
+            ? '📦 The summary came back empty, so nothing was removed. Try again?'
+            : '📦 Nothing to squeeze — the context is already lean.',
+        });
         return;
       }
       await interaction.editReply({
