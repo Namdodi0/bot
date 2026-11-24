@@ -1,6 +1,6 @@
 import { PermissionFlagsBits } from 'discord.js';
 import { tailTranscript } from '../../../core/services/chat.js';
-import { catchupPanel, createPreviewer, paginationRow, textPanel, v2Message } from '../ui.js';
+import { catchupPanel, createPreviewer, paginationRow, textPanel, v2Message, withoutEphemeral } from '../ui.js';
 
 const CATCHUP_MAX_MESSAGES = 500;
 const CATCHUP_PAGE_SIZE = 100;
@@ -124,7 +124,7 @@ export function createCatchupHandlers(shared) {
         );
         return;
       }
-      await interaction.editReply(catchupPanel(hours, transcript.count, summary.text));
+      await interaction.editReply(withoutEphemeral(catchupPanel(hours, transcript.count, summary.text)));
     },
   };
 

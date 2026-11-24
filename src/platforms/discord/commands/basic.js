@@ -12,6 +12,7 @@ import {
   textPanel,
   v2Answer,
   v2Message,
+  withoutEphemeral,
 } from '../ui.js';
 
 /**
@@ -137,7 +138,7 @@ export function createBasicHandlers(shared) {
       const record = await chat.getRecord(chatId, interaction.guildId ? 'GROUP' : 'PRIVATE');
       const history = (record.messages ?? []).filter((message) => !message.private);
       await interaction.editReply(
-        statusPanel({
+        withoutEphemeral(statusPanel({
           model: chat.currentModel(record),
           mode: platform.transportMode,
           uptimeSec: runtime.metrics.snapshot().uptimeSec ?? 0,
@@ -150,7 +151,7 @@ export function createBasicHandlers(shared) {
           search: config.search.enabled ? `${config.search.depth}/${config.search.maxResults}` : 'off',
           metrics: runtime.metrics,
           avatar: avatarUrl(),
-        }),
+        })),
       );
     },
 

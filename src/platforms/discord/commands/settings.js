@@ -1,5 +1,5 @@
 import { MessageFlags } from 'discord.js';
-import { errorPanel, modelSelect, REASONING_MODES, settingsPanel, settingsRows, textPanel, TONES } from '../ui.js';
+import { errorPanel, modelSelect, REASONING_MODES, settingsPanel, settingsRows, textPanel, TONES, withoutEphemeral } from '../ui.js';
 
 /**
  * `/settings` and `/model`, plus the select menus and autocomplete that back them.
@@ -16,7 +16,7 @@ export function createSettingsHandlers(shared) {
       config,
       current,
       chat.currentVisionModel(record),
-      settingsRows(chat.listModels(), record, current),
+      settingsRows(chat.listModels(), record, current, config.model?.defaultAlias ?? null),
     );
   }
 
@@ -163,10 +163,12 @@ export function createSettingsHandlers(shared) {
       );
       if (!outcome.ok) return;
       await interaction.editReply(
-        textPanel('Brain swapped', `Now running **${picked.label}** (\`${picked.alias}\`). Fresh neurons. 🧠`, {
-          icon: '✅',
-          ephemeral: true,
-        }),
+        withoutEphemeral(
+          textPanel('Brain swapped', `Now running **${picked.label}** (\`${picked.alias}\`). Fresh neurons. 🧠`, {
+            icon: '✅',
+            ephemeral: true,
+          }),
+        ),
       );
       return;
     }
@@ -188,7 +190,7 @@ export function createSettingsHandlers(shared) {
       await interaction.deferUpdate();
       return;
     }
-    if (field === 'model' && !chat.findModel(value)) {
+    if (field === 'model' && value !== '__default' && !chat.findModel(value)) {
       await interaction.update(errorPanel('That model walked off the stage. Pick another. 🚪', 'No dice'));
       return;
     }
@@ -198,7 +200,8 @@ export function createSettingsHandlers(shared) {
       const record = await chat.getRecord(chatId, chatType);
       if (!record.meta) record.meta = {};
       if (field === 'model') {
-        await chat.setModel(chatId, value, chatType, record);
+        if (value === '__default') delete record.meta.model;
+        else await chat.setModel(chatId, value, chatType, record);
       } else if (field === 'tone') {
         record.meta.tone = value !== '__default' && TONES.some((item) => item.value === value) ? value : null;
       } else if (field === 'reasoning') {
@@ -213,7 +216,7 @@ export function createSettingsHandlers(shared) {
       return settingsPayload(record);
     });
     if (!outcome.ok) return;
-    await interaction.editReply(outcome.value);
+    await interaction.editReply(withoutEphemeral(outcome.value));
   }
 
   /** @param {any} interaction */
@@ -237,7 +240,7 @@ export function createSettingsHandlers(shared) {
       return settingsPayload(record);
     });
     if (!outcome.ok) return true;
-    await interaction.editReply(outcome.value);
+    await interaction.editReply(withoutEphemeral(outcome.value));
     return true;
   }
 

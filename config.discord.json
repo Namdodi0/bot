@@ -65,7 +65,7 @@
     "timeoutMs": 0
   },
   "model": {
-    "defaultAlias": "glm",
+    "defaultAlias": "ultra",
     "fallbackAlias": "glm",
     "visionAlias": "mistral-large",
     "visionReasoning": "high"

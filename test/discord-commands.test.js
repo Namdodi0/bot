@@ -272,6 +272,37 @@ test('/settings vision rejects text-only models', async () => {
   assert.match(JSON.stringify(i.replies.at(-1)), /not a vision-capable model/);
 });
 
+test('/settings select edits never resend the immutable ephemeral flag', async () => {
+  const { commands, runtime } = makeCommands();
+  const pick = interaction('', {}, {
+    customId: 'settings:model',
+    values: ['nim'],
+    isChatInputCommand: () => false,
+    isStringSelectMenu: () => true,
+  });
+  await commands.handleSelect(pick);
+
+  assert.equal(runtime.record.meta.model, 'nim');
+  const payload = pick.edits.at(-1);
+  assert.equal(payload.flags & MessageFlags.Ephemeral, 0, 'Discord rejects the ephemeral flag on edit');
+  assert.ok((payload.flags & MessageFlags.IsComponentsV2) !== 0, 'the V2 flag must survive the edit');
+});
+
+test('/settings model "Default" clears the pinned model', async () => {
+  const { commands, runtime } = makeCommands();
+  runtime.record.meta.model = 'nim';
+  const pick = interaction('', {}, {
+    customId: 'settings:model',
+    values: ['__default'],
+    isChatInputCommand: () => false,
+    isStringSelectMenu: () => true,
+  });
+  await commands.handleSelect(pick);
+
+  assert.equal(runtime.record.meta.model, undefined);
+  assert.match(JSON.stringify(pick.edits.at(-1)), /Default \(deepseek\)/);
+});
+
 test('/reasoning shows the latest answer thinking only to the caller', async () => {
   const { commands, runtime } = makeCommands();
   runtime.record.messages.push(

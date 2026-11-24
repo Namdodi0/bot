@@ -47,6 +47,16 @@ export function v2Message(content, rows = [], options = {}) {
 }
 
 /**
+ * Strip the immutable Ephemeral bit before an edit: Discord only accepts SUPPRESS_EMBEDS
+ * and IS_COMPONENTS_V2 when editing a webhook message, and the ephemeral state is fixed
+ * on the original reply anyway.
+ * @param {any} payload
+ */
+export function withoutEphemeral(payload) {
+  return { ...payload, flags: Number(payload?.flags ?? 0) & ~MessageFlags.Ephemeral };
+}
+
+/**
  * MediaGallery plus its attachment files. Names are unique because `photoFilename`
  * returns the same name for every photo of a format.
  * @param {any[]} photos
@@ -661,22 +671,37 @@ function selectRow(input) {
  * @param {Array<{alias: string, label: string, provider: string, model: string}>} models
  * @param {any} record
  * @param {{alias: string}} currentModel
+ * @param {string|null} [defaultAlias] configured default, offered as an explicit unpin option
  */
-export function settingsRows(models, record, currentModel) {
+export function settingsRows(models, record, currentModel, defaultAlias = null) {
   const meta = record?.meta ?? {};
-  const model = typeof meta.model === 'string' && meta.model ? meta.model : currentModel.alias;
+  const pinned = typeof meta.model === 'string' && meta.model ? meta.model : null;
+  const model = pinned ?? currentModel.alias;
   const tone = typeof meta.tone === 'string' && meta.tone ? meta.tone : '__default';
   const reasoning = typeof meta.thinking === 'string' && meta.thinking ? meta.thinking : '__default';
+  const modelOptions = [
+    ...(defaultAlias
+      ? [
+          {
+            label: `Default (${defaultAlias})`,
+            value: '__default',
+            description: 'Follow the configured default',
+            default: !pinned,
+          },
+        ]
+      : []),
+    ...models.slice(0, 24).map((item) => ({
+      label: item.label,
+      value: item.alias,
+      description: `${item.provider}/${item.model}`,
+      default: Boolean(pinned) && item.alias === model,
+    })),
+  ];
   return [
     selectRow({
       customId: 'settings:model',
       placeholder: 'Pick a brain',
-      options: models.slice(0, 25).map((item) => ({
-        label: item.label,
-        value: item.alias,
-        description: `${item.provider}/${item.model}`,
-        default: item.alias === model,
-      })),
+      options: modelOptions,
     }),
     selectRow({
       customId: 'settings:tone',
