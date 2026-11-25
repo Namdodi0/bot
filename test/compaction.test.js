@@ -104,7 +104,7 @@ test('real summarizer carries prior canon through every batch before replacing t
       chat: async (request) => {
         assert.equal(request.record, record);
         assert.deepEqual(record, before);
-        assert.equal(request.maxTokens, 200);
+        assert.equal(request.maxTokens, 1024);
         assert.equal(request.reasoning, 'none');
         assert.equal(request.messages[0].content, SUMMARY_SYSTEM_PROMPT);
         const input = request.messages[1].content;

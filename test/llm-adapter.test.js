@@ -112,6 +112,9 @@ test('a docs-profile model keeps chat_template_kwargs and still sends sampling',
   });
   assert.deepEqual(http.calls[1].payload.chat_template_kwargs, { enable_thinking: false });
   assert.equal(http.calls[1].payload.temperature, 0.7);
+  // Thinking off must not carry a budget: NIM requires reasoning_budget < max_tokens,
+  // and summaries run with a small max_tokens cap.
+  assert.equal(http.calls[1].payload.reasoning_budget, undefined);
 
   await client.chat({
     model: 'nvidia/nemotron-3-ultra-550b-a55b',
@@ -122,6 +125,14 @@ test('a docs-profile model keeps chat_template_kwargs and still sends sampling',
     enable_thinking: true,
     medium_effort: true,
   });
+
+  await client.chat({
+    model: 'nvidia/nemotron-3-ultra-550b-a55b',
+    messages: [{ role: 'user', content: 'x' }],
+    reasoning: 'low',
+    maxTokens: 300,
+  });
+  assert.equal(http.calls[3].payload.reasoning_budget, 299);
 });
 
 test('reads cached prompt tokens from OpenAI and DeepSeek usage shapes', async () => {

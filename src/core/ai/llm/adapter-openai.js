@@ -266,11 +266,15 @@ export function createOpenAiCompatAdapter(options) {
     const payload = { model: modelId, messages: input.messages };
     if (providerDefaults) {
       // Documented profile: thinking controls instead of reasoning_effort.
-      payload.chat_template_kwargs = docsTemplateKwargs(
-        input.reasoning ?? 'none',
-        Boolean(input.tools?.length),
-      );
-      if (reasoningBudget !== null) payload.reasoning_budget = reasoningBudget;
+      const mode = input.reasoning ?? 'none';
+      payload.chat_template_kwargs = docsTemplateKwargs(mode, Boolean(input.tools?.length));
+      // A thinking budget is meaningless with thinking off, and NIM requires it to stay
+      // strictly below max_tokens.
+      if (mode !== 'none' && reasoningBudget !== null) {
+        const cap = Number(input.maxTokens);
+        const bounded = Number.isFinite(cap) && cap > 0;
+        payload.reasoning_budget = bounded ? Math.min(reasoningBudget, cap - 1) : reasoningBudget;
+      }
     } else {
       payload.reasoning_effort = reasoningEffort(input.reasoning ?? 'none', reasoningMap);
     }

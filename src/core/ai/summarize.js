@@ -49,7 +49,8 @@ export function createSummarizer(options) {
         ],
         reasoning: 'none',
         temperature: 0.3,
-        maxTokens: 200,
+        // The summary is capped at 900 chars, so leave room for the whole answer.
+        maxTokens: 1024,
         timeoutMs: timeout,
         signal,
       });
